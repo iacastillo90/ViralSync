@@ -30,17 +30,26 @@ def simple_embedding(text: str) -> List[float]:
     return vec
 
 
+from backend.cache.rag_cache import rag_cache
+
+
 def query_rag_knowledge(
     query: str, collection_name: str = COLLECTION_NAME, limit: int = 3
 ) -> List[Dict[str, Any]]:
     """
-    Realiza una búsqueda semántica RAG en Qdrant.
+    Realiza una búsqueda semántica RAG en Qdrant con caché semántica Redis.
     
     :param query: Texto de consulta (ej. 'personaje de marca', 'fórmula RUM').
     :param collection_name: Nombre de la colección en Qdrant.
     :param limit: Máximo de documentos a retornar.
     :return: Lista de payloads recuperados.
     """
+    # 1. Verificar si existe la respuesta en la Caché Semántica Redis (0ms)
+    cached = rag_cache.get(query)
+    if cached:
+        return cached
+
+    result = []
     try:
         from qdrant_client import QdrantClient
         client = QdrantClient(url=QDRANT_URL, timeout=3.0)
@@ -53,18 +62,23 @@ def query_rag_knowledge(
         )
         
         if search_res:
-            return [hit.payload for hit in search_res if hit.payload]
+            result = [hit.payload for hit in search_res if hit.payload]
     except Exception as exc:
         logger.warning(f"Qdrant no disponible ({exc}). Retornando contexto de marca base.")
 
-    # Contexto RAG estático de respaldo para dev/offline
-    return [
-        {
-            "filename": "brand_character.md",
-            "content": f"Personaje de Marca para {query}: Tono Autoridad/Empático, Iluminación Neón Azul, Micrófono Dinámico Rode.",
-        },
-        {
-            "filename": "rum_formula.md",
-            "content": "Fórmula RUM = U * I * C * S * D * A. Umbral dinámico por nicho.",
-        },
-    ]
+    if not result:
+        # Contexto RAG estático de respaldo para dev/offline
+        result = [
+            {
+                "filename": "brand_character.md",
+                "content": f"Personaje de Marca para {query}: Tono Autoridad/Empático, Iluminación Neón Azul, Micrófono Dinámico Rode.",
+            },
+            {
+                "filename": "rum_formula.md",
+                "content": "Fórmula RUM = U * I * C * S * D * A. Umbral dinámico por nicho.",
+            },
+        ]
+
+    # 2. Guardar en la caché Redis para futuras consultas
+    rag_cache.set(query, result)
+    return result
