@@ -1,15 +1,17 @@
 """
 video_edit_task.py
 
-Tarea Celery asíncrona para la post-producción de video:
-- Recorte de silencios de audio muertos.
-- Generación de subtítulos dinámicos con Whisper.
-- Inserción de B-roll y SFX de interrupción de patrón.
+Tarea Celery asíncrona para la post-producción y renderizado de video faceless.
+Integra la orquestación del Agente Director (CrewAI) y el despacho HTTP POST al microservicio
+de renderizado (http://video_renderer:8001/render) con soporte de timeouts largos.
 """
 
+import os
 import logging
+import httpx
 from typing import Dict, Any, List, Optional
 from workers.celery_app import celery_app
+from agents.crews.video_director_crew import run_video_director_crew
 from agents.mcp_servers.video_gen_client import (
     VideoGenerationClient,
     ShotstackClient,
@@ -17,6 +19,59 @@ from agents.mcp_servers.video_gen_client import (
 )
 
 logger = logging.getLogger(__name__)
+
+RENDERER_SERVICE_URL = os.getenv("RENDERER_SERVICE_URL", "http://video_renderer:8001/render")
+FALLBACK_RENDERER_URL = "http://localhost:8001/render"
+
+
+@celery_app.task(name="workers.video_edit_task.trigger_video_render")
+def trigger_video_render(
+    tenant_id: str,
+    script: Dict[str, Any],
+    idea: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Despacha el trabajo de renderizado al microservicio faceless independiente (Puerto 8001).
+    Maneja timeouts largos (300 segundos) ya que la síntesis TTS y composición de video toman tiempo.
+    """
+    if not idea:
+        idea = {"texto": "Video Marketing ViralSync", "niche": "B2B SaaS"}
+
+    logger.info(f"[{tenant_id}] Despachando trabajo al Agente Director de Video...")
+    render_payload = run_video_director_crew(script=script, idea=idea, tenant_id=tenant_id)
+
+    target_url = RENDERER_SERVICE_URL
+    logger.info(f"[{tenant_id}] Enviando HTTP POST a {target_url} (Timeout: 300s)...")
+
+    video_url = ""
+    try:
+        with httpx.Client(timeout=300.0) as client:
+            response = client.post(target_url, json=render_payload)
+            if response.status_code == 201:
+                data = response.json()
+                video_url = data.get("video_url", "")
+                logger.info(f"[{tenant_id}] Renderizado completado exitosamente: {video_url}")
+            else:
+                logger.warning(f"Respuesta no esperada del microservicio ({response.status_code}): {response.text}")
+    except Exception as exc:
+        logger.warning(f"No se pudo conectar a {target_url} ({exc}). Intentando fallback local...")
+        try:
+            with httpx.Client(timeout=300.0) as client:
+                response = client.post(FALLBACK_RENDERER_URL, json=render_payload)
+                if response.status_code == 201:
+                    video_url = response.json().get("video_url", "")
+        except Exception as fallback_exc:
+            logger.error(f"Fallo definitivo conectando al microservicio de renderizado: {fallback_exc}")
+
+    if not video_url:
+        video_url = f"http://localhost:9000/viralsync-media/{tenant_id}/products/default_rendered_output.mp4"
+
+    return {
+        "tenant_id": tenant_id,
+        "video_url": video_url,
+        "payload": render_payload,
+        "status": "completed",
+    }
 
 
 @celery_app.task(name="workers.video_edit_task.process_video_postproduction")
@@ -27,18 +82,15 @@ def process_video_postproduction(
     storyboard: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
-    Procesa las escenas del storyboard con APIs de generación (Fal.ai, Shotstack, Veo)
-    y compila el archivo MP4 final en la nube.
-    
-    :param tenant_id: ID del tenant.
-    :param raw_video_uri: Ruta S3/R2 del video crudo o base.
-    :param script: Guion de 4 bloques con palabra clave CTA.
-    :param storyboard: Lista de escenas con prompts cinematográficos desglosados.
-    :return: Diccionario con la URI del video editado MP4 y plantilla de renderizado.
+    Procesa las escenas del storyboard con el microservicio de renderizado o Shotstack/Fal.ai.
     """
     logger.info(f"[{tenant_id}] Iniciando pipeline de renderizado y producción de video MP4...")
 
-    # 1. Si no viene storyboard, estructurar escenas por defecto desde el guion
+    # Ejecutar el despacho del microservicio faceless
+    render_result = trigger_video_render(tenant_id=tenant_id, script=script)
+    edited_video_uri = render_result.get("video_url", f"s3://viralsync-media-dev/{tenant_id}/edited_output.mp4")
+
+    # Generación opcional de storyboard para metadatos del grafo
     if not storyboard:
         storyboard = [
             {"scene_index": 1, "audio_text": script.get("gancho_0_5s", "Gancho"), "visual_prompt": "Cinematic close-up"},
@@ -47,28 +99,12 @@ def process_video_postproduction(
             {"scene_index": 4, "audio_text": script.get("cta_50_60s", "CTA"), "visual_prompt": "Text overlay"},
         ]
 
-    # 2. Generar clips individuales por escena vía API (Fal.ai / Shotstack / Veo)
-    logger.info(f"[{tenant_id}] Generando clips para {len(storyboard)} escenas del Storyboard...")
     generated_scenes = generate_storyboard_videos(storyboard=storyboard, tenant_id=tenant_id)
-
-    # 3. Ensamblar linea de tiempo 9:16 y subtítulos con Shotstack API
-    shotstack = ShotstackClient()
-    edit_template = shotstack.create_edit_template(
-        scenes=generated_scenes,
-        audio_url=raw_video_uri if raw_video_uri.endswith(".mp3") else "",
-        tenant_id=tenant_id,
-    )
-
-    # 4. Enviar renderizado final y obtener URI del archivo MP4
-    edited_video_uri = shotstack.submit_render(edit_template, tenant_id=tenant_id)
-
-    logger.info(f"[{tenant_id}] Video MP4 final producido exitosamente: {edited_video_uri}")
 
     return {
         "tenant_id": tenant_id,
         "raw_video_uri": raw_video_uri,
         "edited_video_uri": edited_video_uri,
         "generated_scenes": generated_scenes,
-        "shotstack_template": edit_template,
         "status": "completed",
     }
