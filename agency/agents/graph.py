@@ -28,6 +28,9 @@ class AgencyState(TypedDict, total=False):
     selected_idea: Dict[str, Any]
     idea_approved: bool
     script: Dict[str, Any]
+    product_image_url: str
+    business_type: str
+    video_storyboard: List[Dict[str, Any]]
     raw_video_uri: str
     edited_video_uri: str
     publish_approved: bool
