@@ -3,7 +3,7 @@
 ## 🎯 Visión General & Filosofía de Diseño
 ViralSync es un **SaaS multi-tenant** que automatiza el ciclo completo de agencias de contenido con inteligencia artificial. No es un wrapper genérico de LLM: codificamos estrategias probadas de marketing (**fórmula RUM**, **filtro 5/50**, **promesa PPP**, **guion de 4 bloques** y **clasificación 80/20**) en un flujo orquestado por agentes autónomos con **LangGraph**, **CrewAI** y **LiteLLM Gateway**.
 
-La arquitectura del frontend adopta los principios de **Domain-Driven Design (DDD)** y un enfoque **Feature-First** para **Next.js 14 (App Router) + React 18 + Tailwind CSS**. Ofrece una interfaz premium con estética moderna (glassmorphism, modo oscuro nativo, micro-animaciones HSL y consumo en tiempo real mediante **Server-Sent Events - SSE**).
+La arquitectura del frontend adopta los principios de **Domain-Driven Design (DDD)** y un enfoque **Feature-First** para **Next.js 14 (App Router) + React 18 + Tailwind CSS**. Ofrece una interfaz premium con estética moderna (glassmorphism, modo oscuro nativo, micro-animaciones HSL y consumo en tiempo real mediante **Server-Sent Events - SSE** con gestor de estado ultra-liviano **Zustand**).
 
 ---
 
@@ -11,6 +11,7 @@ La arquitectura del frontend adopta los principios de **Domain-Driven Design (DD
 
 ```
 agency/frontend/src/
+├── middleware.js               # Guardián de enrutamiento Multi-Tenant en servidor (Seguridad JWT & URL Isolation)
 ├── app/                        # Next.js App Router (Rutas y Puntos de Entrada)
 │   ├── layout.js               # Layout raíz (Proveedores de contexto, HTML base, CSS global)
 │   ├── page.js                 # Dashboard Principal unificado (Tabs & Vistas)
@@ -21,19 +22,20 @@ agency/frontend/src/
 │               ├── page.js     # Vista detallada de un tenant
 │               └── leads/
 │                   └── page.js # Vista de atribución de leads
-├── components/                 # Design System Atómico y Componentes UI Compartidos (Dumb/UI)
-│   ├── ui/
+├── components/                 # Design System (Basado en Primitivas Headless Radix UI / shadcn)
+│   ├── ui/                     # Componentes Atómicos con Tailwind Glassmorphism
 │   │   ├── Button/             # Botones de acción (Primary, Danger, Glass)
 │   │   ├── Card/               # Contenedores Glassmorphism
 │   │   ├── Badge/              # Badges de estado (Rojo/Amarillo/Verde/Pending)
-│   │   ├── Modal/              # Modales de confirmación y checkpoints
+│   │   ├── Dialog/             # Modales accesibles (Radix UI Primitive)
+│   │   ├── Tabs/               # Pestañas desacopladas
 │   │   └── ProgressBar/        # Barras de medición RUM y presupuesto LLM
 │   └── layout/
 │       ├── Header.jsx          # Barra superior con selector de tenant y presupuesto LLM
 │       └── Sidebar.jsx         # Navegación principal por módulos DDD
-├── contexts/                   # Contextos React Globales
-│   ├── TenantContext.js        # Tenant activo, Virtual Keys y límites presupuestarios
-│   └── SSEContext.js           # Conexión persistente Server-Sent Events (LangGraph Stream)
+├── stores/                     # Estado Global Ultraligero (Zustand - Sin re-renders en cascada)
+│   ├── useAgentStore.js        # Estado del grafo LangGraph, streaming SSE y logs en vivo
+│   └── useTenantStore.js       # Tenant activo, Virtual Keys y límites presupuestarios LLM
 ├── hooks/                      # Custom Hooks Universales / Utilitarios
 │   ├── useSSEStream.js         # Suscripción al endpoint SSE /realtime/sse/{tenant_id}
 │   ├── useTenantBudget.js      # Monitoreo en tiempo real del consumo de LiteLLM
@@ -84,17 +86,17 @@ Cada carpeta dentro de `features/` representa un **Dominio de Negocio** exclusiv
 - **Encapsulamiento Estricto:** Los componentes de interfaz, hooks de estado y llamadas API de un dominio viven dentro de su subcarpeta en `features/`.
 - **Public API Pattern (`features/index.js`):** Cada módulo expone únicamente sus vistas principales (`Views`) o componentes exportables. La lógica interna permanece privada.
 
-### 2. Capa de Presentación: `pages/` vs `views/` vs `components/`
-- **`app/` (Next.js Pages & Containers):** Puntos de entrada de la URL. Carga identificadores de tenant, conecta parámetros y pasa props a las vistas principales.
-- **`views/` (Layouts de Feature):** Ensambla los componentes UI y la lógica específica del dominio. Renderiza las pantallas del dashboard.
-- **`components/` (UI Compartida vs UI Específica):**
-  - `src/components/ui/`: Componentes puramente presentacionales reusables (Botones Glassmorphism, Badges, Modales).
-  - `features/[Feature]/components/`: Componentes con lógica o estructura propia de ese paso del pipeline (ej: `RUMBreakdownBarChart`, `Script4BlockReader`).
+### 2. Estado Global Reactivo con Zustand (`stores/`)
+- **Evitar Re-renders en Cascada:** Se reemplaza Context API tradicional por **Zustand** (`useAgentStore.js`, `useTenantStore.js`).
+- Como los eventos SSE emiten logs a alta frecuencia mientras los agentes trabajan, Zustand permite que solo el componente `SSELogConsole` o `NodeStepMap` se vuelva a renderizar ante un log entrante, manteniendo el resto del dashboard a 60 FPS estables.
 
-### 3. Capa de Servicios, SSE y Estado (`services/`, `hooks/`, `contexts/`)
-- **`services/`:** Comunicación con la API REST de FastAPI (`http://localhost:8000`).
-- **`contexts/SSEContext.js`:** Mantiene la suscripción activa Server-Sent Events con `/realtime/sse/{tenant_id}` para recibir cambios de nodo del grafo en tiempo real sin polling.
-- **`contexts/TenantContext.js`:** Gestiona el tenant activo, su presupuesto mensual de LLM y su clave virtual en LiteLLM Proxy.
+### 3. Seguridad Multi-Tenant en Servidor (`middleware.js`)
+- **Seguridad en la Frontera:** El middleware de Next.js intercepta cada solicitud entrante a `/tenants/[tenantId]`.
+- Lee la cookie o token de sesión del operador y valida en el servidor que la sesión pertenezca al `tenantId` solicitado antes de renderizar la página. Bloquea de inmediato manipulaciones de URL dirigidas a ver datos de otras marcas.
+
+### 4. Primitivas Headless & Design System (`components/ui/`)
+- **Ahorro de Tiempo con Radix UI / shadcn:** Los componentes base interactivas (modales, diálogos de confirmación, menús desplegables, tablas accesibles) utilizan las primitivas sin estilo de Radix UI.
+- Sobre estas primitivas se inyectan las clases del Design System de ViralSync (`glass-panel`, bordes neón HSL, micro-animaciones HSL).
 
 ---
 
@@ -108,16 +110,16 @@ Cada carpeta dentro de `features/` representa un **Dominio de Negocio** exclusiv
    - `camelCase` para hooks y utilidades (`useSSEStream.js`, `formatRUMScore.js`).
 3. **Manejo Multi-Tenant Estricto:**
    - Toda solicitud HTTP enviada al backend incluye el parámetro `tenant_id` o el header `X-Tenant-ID`.
-4. **Diseño Visual & Estética:**
-   - Paleta de color oscura coherente (fondos `#080c14`, `#0d1320`, acentos en cian `#06b6d4`, púrpura `#8b5cf6` y esmeralda `#10b981`).
-   - Efectos `glass-panel` con `backdrop-filter: blur(16px)` e iluminación sutil por neón.
+4. **Optimización de Hardware Local (4 Núcleos / 16GB RAM):**
+   - La arquitectura SSE unidireccional desacopla el cliente del servidor. El frontend no realiza polling.
+   - Combinado con la ejecución serializada de los workers Celery (`--concurrency=1`), el consumo del procesador se mantiene bajo mínimos.
 
 ---
 
 ## 🧪 Estrategia de Testing
 
-- **Colocación:** Las pruebas unitarias se ubican junto a sus respectivos archivos (`IdeaCard.test.jsx`, `useSSEStream.test.js`).
-- **Herramientas:** React Testing Library + Jest / Vitest.
+- **Colocación:** Las pruebas unitarias se ubican junto a sus respectivos archivos (`IdeaCard.test.jsx`, `useAgentStore.test.js`).
+- **Herramientas:** React Testing Library + Vitest.
 
 ---
 
@@ -134,7 +136,7 @@ El frontend de **ViralSync** cuenta con **40 vistas/sub-módulos organizados en 
 
 ### 2. Orquestador de Grafo & Pipeline Monitor (`/tenants/:tenantId/pipeline`) (5 Módulos)
 - **Diagrama de Pasos del StateGraph:** Visor visual interactivo del recorrido de nodos en LangGraph (`ideation` ➔ `human_approval_idea` ➔ `scriptwriting` ➔ `video_edit` ➔ `human_approval_publish` ➔ `publish`).
-- **Consola de Eventos SSE en Tiempo Real:** Monitor de logs streaming alimentado por `sse_manager.py`.
+- **Consola de Eventos SSE en Tiempo Real:** Monitor de logs streaming alimentado por `useAgentStore` y `sse_manager.py`.
 - **Disparador Manual del Grafo:** Botón de inicio de hilo de ejecución (`POST /tenants/{id}/run`).
 - **Historial de Ejecuciones del Grafo:** Registro de ejecuciones anteriores por `thread_id`.
 - **Inspector de Errores y Excepciones:** Panel de diagnóstico ante caídas de proveedores o límites de API.
