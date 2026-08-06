@@ -83,12 +83,12 @@ def download_pexels_videos(keywords: List[str], temp_dir: str) -> List[str]:
             videos = data.get("videos", [])
             for idx, video in enumerate(videos[:4]):
                 video_files = video.get("video_files", [])
-                # Buscar el mejor archivo de video vertical HD
-                hd_file = next((vf for vf in video_files if vf.get("height", 0) >= 1280), None) or video_files[0] if video_files else None
-                if hd_file and hd_file.get("link"):
-                    video_url = hd_file["link"]
+                # Filtro de Hardware: Buscar clip ligero (720p o max 1080p)
+                light_file = next((vf for vf in video_files if 720 <= vf.get("height", 0) <= 1080), None) or video_files[0] if video_files else None
+                if light_file and light_file.get("link"):
+                    video_url = light_file["link"]
                     file_path = os.path.join(temp_dir, f"pexels_clip_{idx}.mp4")
-                    logger.info(f"Descargando clip de Pexels {idx + 1}: {video_url[:50]}...")
+                    logger.info(f"Filtro Hardware (720p): Descargando clip Pexels {idx + 1}...")
                     with requests.get(video_url, stream=True, timeout=15.0) as r:
                         r.raise_for_status()
                         with open(file_path, "wb") as f:
@@ -102,12 +102,13 @@ def download_pexels_videos(keywords: List[str], temp_dir: str) -> List[str]:
 
 
 def compose_video_moviepy(audio_path: str, video_paths: List[str], output_path: str) -> float:
-    """Compone y renderiza el video vertical 9:16 (1080x1920) combinando audios y clips con MoviePy."""
+    """Compone y renderiza el video vertical 9:16 combinando audios y clips con MoviePy (Máx 45s)."""
     from moviepy.editor import AudioFileClip, VideoFileClip, concatenate_videoclips, ColorClip
 
     logger.info("Componiendo video final con MoviePy...")
     audio_clip = AudioFileClip(audio_path)
-    audio_duration = audio_clip.duration
+    # Filtro de Hardware: Limitar duración máxima a 45 segundos para cuidar CPU y disco
+    audio_duration = min(audio_clip.duration, 45.0)
 
     clip_objects = []
     if video_paths:

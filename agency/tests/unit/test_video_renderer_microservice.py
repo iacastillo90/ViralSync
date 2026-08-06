@@ -11,22 +11,25 @@ from workers.video_edit_task import trigger_video_render
 
 def test_video_director_crew_payload_formatting():
     script = {
-        "gancho_0_5s": "El mayor error al escalar tu negocio.",
-        "contexto_5_30s": "Intentar hacer todo manualmente sin automatización.",
-        "moraleja_30_50s": "Implementa sistemas automatizados con IA.",
+        "gancho_0_5s": "3 errores fatales al escalar tu software SaaS en 2026.",
+        "contexto_5_30s": "El problema principal es intentar abarcar todo sin foco ni automatización. Cuando simplificas tu arquitectura, la conversión aumenta.",
+        "moraleja_30_50s": "Primero valida la tracción orgánica y la entrega de valor sin fricción antes de invertir en anuncios.",
         "cta_50_60s": "Comenta SISTEMA abajo.",
         "keyword": "SISTEMA",
     }
     idea = {"texto": "Automatización Empresarial B2B"}
 
-    payload = run_video_director_crew(script=script, idea=idea, tenant_id="tenant-director-test")
+    director_res = run_video_director_crew(script=script, idea=idea, tenant_id="tenant-director-test")
 
-    assert payload["title"] == "Automatización Empresarial B2B"
-    assert "El mayor error al escalar" in payload["script_text"]
-    assert "Comenta SISTEMA" in payload["script_text"]
-    assert isinstance(payload["keywords"], list)
-    assert len(payload["keywords"]) > 0
-    assert payload["tenant_id"] == "tenant-director-test"
+    assert director_res["approved_for_render"] is True
+    assert director_res["quality_score"] >= 0.70
+    render_payload = director_res["render_payload"]
+    assert "Automatización Empresarial B2B" in render_payload["title"]
+    assert "3 errores fatales" in render_payload["script_text"]
+    assert "Comenta SISTEMA" in render_payload["script_text"]
+    assert isinstance(render_payload["keywords"], list)
+    assert len(render_payload["keywords"]) > 0
+    assert render_payload["tenant_id"] == "tenant-director-test"
 
 
 def test_extract_keywords_from_script():
@@ -37,13 +40,14 @@ def test_extract_keywords_from_script():
 
 
 def test_trigger_video_render_task_fallback():
-    script = {
-        "gancho_0_5s": "3 Secretos de Marketing",
-        "contexto_5_30s": "Aplica estrategias basadas en datos",
-        "moraleja_30_50s": "Revisa tus métricas",
-        "cta_50_60s": "Comenta REEL",
+    good_script = {
+        "gancho_0_5s": "3 errores masivos al escalar tu software SaaS en 2026.",
+        "contexto_5_30s": "El problema principal es intentar abarcar todo sin foco ni automatización. Cuando simplificas tu arquitectura, la conversión aumenta.",
+        "moraleja_30_50s": "Primero valida la tracción orgánica y la entrega de valor sin fricción antes de invertir en anuncios.",
+        "cta_50_60s": "Comenta la palabra DEMO abajo y te enviamos el desglose.",
+        "keyword": "DEMO",
     }
-    result = trigger_video_render.run(tenant_id="tenant-task-test", script=script)
+    result = trigger_video_render.run(tenant_id="tenant-task-test", script=good_script)
 
     assert result["status"] == "completed"
     assert "video_url" in result

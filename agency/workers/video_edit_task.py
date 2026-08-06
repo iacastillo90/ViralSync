@@ -37,11 +37,25 @@ def trigger_video_render(
     if not idea:
         idea = {"texto": "Video Marketing ViralSync", "niche": "B2B SaaS"}
 
-    logger.info(f"[{tenant_id}] Despachando trabajo al Agente Director de Video...")
-    render_payload = run_video_director_crew(script=script, idea=idea, tenant_id=tenant_id)
+    logger.info(f"[{tenant_id}] Despachando trabajo al Agente Director (Guardián de Calidad y Rendimiento)...")
+    director_result = run_video_director_crew(script=script, idea=idea, tenant_id=tenant_id)
+
+    # 1. Filtro de Valor: Verificar si el guion fue aprobado por el Guardián
+    if not director_result.get("approved_for_render", False):
+        logger.warning(f"[{tenant_id}] Guion RECHAZADO por Filtro de Valor RUM (Score: {director_result.get('quality_score')})")
+        return {
+            "tenant_id": tenant_id,
+            "status": "rejected_quality",
+            "quality_score": director_result.get("quality_score"),
+            "feedback": director_result.get("quality_feedback"),
+            "message": "El guion no superó el umbral de calidad RUM (0.70). Devuelto para refinamiento.",
+        }
+
+    render_payload = director_result.get("render_payload", {})
+    curated_metadata = director_result.get("metadata", {})
 
     target_url = RENDERER_SERVICE_URL
-    logger.info(f"[{tenant_id}] Enviando HTTP POST a {target_url} (Timeout: 300s)...")
+    logger.info(f"[{tenant_id}] Filtro de Valor APROBADO (Score: {director_result.get('quality_score')}). Enviando HTTP POST a {target_url} (Timeout: 300s)...")
 
     video_url = ""
     try:
