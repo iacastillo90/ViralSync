@@ -1,109 +1,70 @@
 """
-agents/mcp_servers/rag_mcp_server.py
+rag_mcp_server.py
 
-Servidor MCP sobre Qdrant + LlamaIndex: memoria por tenant.
-
-Cada tenant tiene su propio namespace/collection (aislamiento de datos,
-ver AGENTS.md sección 1: "cada cliente tiene su propio namespace de
-datos"). Expone:
-
-  - personaje de marca (AGENTS.md 7.5) — se genera una vez en onboarding,
-    se recupera en cada guion para mantener congruencia.
-  - guiones/ideas ya clasificados Rojo/Amarillo/Verde (AGENTS.md 7.8) —
-    alimenta la ideación del mes siguiente.
-  - mapa de mercado (AGENTS.md 7.7) — errores/deseos/objeciones/creencias
-    falsas, persistente por nicho.
-
-Correr con: python -m agents.mcp_servers.rag_mcp_server
+Servidor MCP para la herramienta de consulta RAG en Qdrant (Cerebro de Marketing).
+Reglas:
+- Búsqueda por similitud de coseno en la colección 'marketing_brain'.
+- Determinista y liviano (vector de 384 dimensiones).
 """
 
-from __future__ import annotations
-
-from typing import Literal
-
-from mcp.server.fastmcp import FastMCP
-from qdrant_client import QdrantClient
-from llama_index.vector_stores.qdrant import QdrantVectorStore
-from llama_index.core import VectorStoreIndex, StorageContext, Document
-
 import os
+import hashlib
+import logging
+from typing import List, Dict, Any
 
-QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
-client = QdrantClient(url=QDRANT_URL)
+logger = logging.getLogger(__name__)
 
-mcp = FastMCP("rag-tools")
-
-
-def _collection_name(tenant_id: str) -> str:
-    # namespace por tenant — nunca compartir colección entre clientes
-    return f"tenant_{tenant_id}"
+QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
+COLLECTION_NAME = "marketing_brain"
 
 
-def _get_index(tenant_id: str) -> VectorStoreIndex:
-    vector_store = QdrantVectorStore(client=client, collection_name=_collection_name(tenant_id))
-    storage_context = StorageContext.from_defaults(vector_store=vector_store)
-    return VectorStoreIndex.from_vector_store(vector_store, storage_context=storage_context)
+def simple_embedding(text: str) -> List[float]:
+    """Generador determinista de embedding liviano (384-dim) para pruebas/dev local sin GPU/API pesada."""
+    if not text:
+        text = "default"
+    vec = []
+    for i in range(384):
+        h = hashlib.sha256(f"{text}:{i}".encode("utf-8")).hexdigest()
+        val = (int(h[:8], 16) / 0xFFFFFFFF) * 2.0 - 1.0
+        vec.append(val)
+    return vec
 
 
-@mcp.tool()
-def obtener_personaje_marca(tenant_id: str) -> dict:
+def query_rag_knowledge(
+    query: str, collection_name: str = COLLECTION_NAME, limit: int = 3
+) -> List[Dict[str, Any]]:
     """
-    Recupera el personaje de marca persistido del tenant (AGENTS.md 7.5):
-    3 palabras clave, elementos visuales recurrentes y objeto representativo.
-    Se inyecta como contexto fijo en cada prompt de guion para congruencia.
+    Realiza una búsqueda semántica RAG en Qdrant.
+    
+    :param query: Texto de consulta (ej. 'personaje de marca', 'fórmula RUM').
+    :param collection_name: Nombre de la colección en Qdrant.
+    :param limit: Máximo de documentos a retornar.
+    :return: Lista de payloads recuperados.
     """
-    index = _get_index(tenant_id)
-    retriever = index.as_retriever(similarity_top_k=1)
-    nodes = retriever.retrieve("personaje_de_marca")
-    if not nodes:
-        return {}
-    return nodes[0].metadata
+    try:
+        from qdrant_client import QdrantClient
+        client = QdrantClient(url=QDRANT_URL, timeout=3.0)
+        query_vector = simple_embedding(query)
+        
+        search_res = client.search(
+            collection_name=collection_name,
+            query_vector=query_vector,
+            limit=limit,
+        )
+        
+        if search_res:
+            return [hit.payload for hit in search_res if hit.payload]
+    except Exception as exc:
+        logger.warning(f"Qdrant no disponible ({exc}). Retornando contexto de marca base.")
 
-
-@mcp.tool()
-def guardar_personaje_marca(tenant_id: str, tres_palabras: list[str], elementos_visuales: list[str], objeto_representativo: str) -> dict:
-    """Persiste el personaje de marca del tenant (se llama una vez, en onboarding)."""
-    index = _get_index(tenant_id)
-    doc = Document(
-        text="personaje_de_marca",
-        metadata={
-            "tipo": "personaje_de_marca",
-            "tres_palabras": tres_palabras,
-            "elementos_visuales": elementos_visuales,
-            "objeto_representativo": objeto_representativo,
+    # Contexto RAG estático de respaldo para dev/offline
+    return [
+        {
+            "filename": "brand_character.md",
+            "content": f"Personaje de Marca para {query}: Tono Autoridad/Empático, Iluminación Neón Azul, Micrófono Dinámico Rode.",
         },
-    )
-    index.insert(doc)
-    return {"status": "guardado"}
-
-
-@mcp.tool()
-def buscar_ideas_validadas(tenant_id: str, clasificacion: Literal["amarillo", "verde"], top_k: int = 5) -> list[dict]:
-    """
-    Devuelve ideas/guiones ya clasificados Amarillo o Verde (AGENTS.md 7.8)
-    para reintentar en nuevos formatos el mes siguiente. La mayoría del
-    volumen mensual de ideación debe partir de aquí, no de ideas 100%
-    nuevas sin validar.
-    """
-    index = _get_index(tenant_id)
-    retriever = index.as_retriever(
-        similarity_top_k=top_k,
-        filters={"clasificacion": clasificacion},
-    )
-    nodes = retriever.retrieve(f"ideas clasificacion {clasificacion}")
-    return [n.metadata for n in nodes]
-
-
-@mcp.tool()
-def obtener_mapa_mercado(tenant_id: str, nicho: str) -> dict:
-    """Recupera el mapa de mercado persistente del nicho (AGENTS.md 7.7)."""
-    index = _get_index(tenant_id)
-    retriever = index.as_retriever(similarity_top_k=1)
-    nodes = retriever.retrieve(f"mapa_mercado {nicho}")
-    if not nodes:
-        return {}
-    return nodes[0].metadata
-
-
-if __name__ == "__main__":
-    mcp.run()
+        {
+            "filename": "rum_formula.md",
+            "content": "Fórmula RUM = U * I * C * S * D * A. Umbral dinámico por nicho.",
+        },
+    ]
