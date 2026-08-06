@@ -1,43 +1,28 @@
 # litellm_config.production.yaml
-# AGENCY_ENV=production
-#
-# Decisión de proveedor pagado único (AGENTS.md sección 2 pedía dejarla
-# documentada explícitamente, no ambigua): Claude Haiku.
-# Razón: buena relación costo/calidad justo para las tareas que este
-# pipeline le pide al LLM (scoring RUM, guion JSON estructurado, filtro
-# 5/50) — no necesita el modelo más grande, necesita salidas consistentes
-# y baratas cuando el pool gratuito falla o se satura.
-#
-# Regla no negociable (AGENTS.md sección 2 y 8): UN SOLO proveedor pagado.
-# No agregar un segundo sin actualizar esta decisión aquí Y en AGENTS.md.
+# AGENCY_ENV=production — Pool gratuito con fallback pagado único a Claude Haiku ante errores 429.
 
 model_list:
-  - model_name: motor-agencia
-    litellm_params:
-      model: groq/llama-3.3-70b-versatile
-      api_key: "os.environ/GROQ_API_KEY"
-
-  - model_name: motor-agencia
+  - model_name: gemini-flash
     litellm_params:
       model: gemini/gemini-2.5-flash
       api_key: "os.environ/GEMINI_API_KEY"
 
-  - model_name: motor-agencia
+  - model_name: groq-llama
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: "os.environ/GROQ_API_KEY"
+
+  - model_name: github-gpt4o
     litellm_params:
       model: github/gpt-4o
       api_key: "os.environ/GITHUB_MODELS_TOKEN"
 
   - model_name: motor-agencia
     litellm_params:
-      model: cerebras/llama3.1-8b
-      api_key: "os.environ/CEREBRAS_API_KEY"
+      model: groq/llama-3.3-70b-versatile
+      api_key: "os.environ/GROQ_API_KEY"
 
-  - model_name: motor-agencia
-    litellm_params:
-      model: sambanova/Meta-Llama-3.1-405B-Instruct
-      api_key: "os.environ/SAMBANOVA_API_KEY"
-
-  # --- único fallback pagado (ver decisión arriba) ---
+  # --- único fallback pagado ---
   - model_name: fallback-pagado
     litellm_params:
       model: claude-haiku-4-5-20251001
@@ -45,15 +30,13 @@ model_list:
 
 router_settings:
   routing_strategy: "least-busy"
-  fallbacks: [{"motor-agencia": ["fallback-pagado"]}]
   num_retries: 3
-  cooldown_time: 300
-  allowed_fails: 2
+  cooldown_time: 60
+  allowed_fails: 1
+  fallbacks:
+    - gemini-flash: ["groq-llama", "github-gpt4o", "fallback-pagado"]
+    - groq-llama: ["gemini-flash", "github-gpt4o", "fallback-pagado"]
+    - motor-agencia: ["fallback-pagado"]
 
 general_settings:
   master_key: "os.environ/LITELLM_MASTER_KEY"
-  # una virtual key + budget mensual por tenant, generadas al onboarding.
-  # Ejemplo de creación (no se hardcodea, va vía API de LiteLLM):
-  #   POST /key/generate
-  #   {"models": ["motor-agencia", "fallback-pagado"],
-  #    "max_budget": 50, "metadata": {"tenant_id": "<uuid>"}}

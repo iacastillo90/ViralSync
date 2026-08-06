@@ -296,10 +296,19 @@ async def receive_instagram_webhook(
             raise HTTPException(status_code=401, detail="Firma HMAC SHA-256 inválida")
 
     payload = await request.json()
-    extracted_leads = process_instagram_webhook_payload(payload)
 
-    return {
-        "status": "ok",
-        "processed_leads_count": len(extracted_leads),
-        "leads": extracted_leads,
-    }
+    try:
+        extracted_leads = process_instagram_webhook_payload(payload)
+        return {
+            "status": "ok",
+            "processed_leads_count": len(extracted_leads),
+            "leads": extracted_leads,
+        }
+    except Exception as exc:
+        # Si falla el procesamiento en caliente, encolar en Celery DLQ con reintentos
+        from workers.webhook_dlq_task import process_failed_webhook_retry
+        process_failed_webhook_retry.delay(payload=payload, tenant_id="default")
+        return {
+            "status": "queued_dlq",
+            "message": f"Error en procesamiento síncrono ({exc}). Encolado en Celery DLQ.",
+        }
