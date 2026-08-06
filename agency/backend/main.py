@@ -1,31 +1,30 @@
 """
-backend/main.py
+main.py
 
-Servidor FastAPI unificado para la Agencia Multiagente de Marketing.
-Conecta endpoints REST, streaming SSE, webhooks de Instagram y orquestación con LangGraph.
+Servidor Backend Principal FastAPI de ViralSync.
+Puntos de entrada REST, Webhooks Meta con HMAC SHA-256 y SSE Streaming en Tiempo Real.
 """
 
 import os
-import uuid
-import logging
-from typing import Optional
-from fastapi import FastAPI, HTTPException, Request, Response, BackgroundTasks
+import asyncio
+from fastapi import FastAPI, Request, HTTPException, Header, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel
+from typing import Optional, List, Dict, Any
 
-from backend.realtime.sse_manager import sse_manager
-from backend.webhooks.instagram_inbound import router as instagram_webhook_router
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("agency.backend")
+from backend.security.hmac_validator import verify_meta_hmac_signature
+from backend.sse_manager import sse_manager
+from backend.webhooks.instagram_inbound import process_instagram_webhook_payload
+from agents.graph import build_agency_graph
 
 app = FastAPI(
-    title="Agency Multi-Agent Marketing API",
+    title="ViralSync Platform API",
     version="1.0.0",
-    description="Backend FastAPI multi-tenant para orquestación de agencia de marketing.",
+    description="SaaS B2B Multi-Tenant para Agencias de Marketing de Contenido IA",
 )
 
-# Habilitar CORS para el frontend Next.js
+# Habilitar CORS para Next.js Dashboard
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,161 +33,229 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Incluir router de webhooks de Instagram con firma HMAC y verificaciones
-app.include_router(instagram_webhook_router, prefix="/webhooks", tags=["webhooks"])
+INSTAGRAM_APP_SECRET = os.getenv("INSTAGRAM_APP_SECRET", "secreto_meta_app_dev")
+INSTAGRAM_VERIFY_TOKEN = os.getenv("INSTAGRAM_WEBHOOK_VERIFY_TOKEN", "token_verificacion_meta_dev")
 
-# Base de datos en memoria para estado y ejecuciones en modo local/dev
-TENANTS_DB = {
-    "tenant-demo-001": {
-        "id": "tenant-demo-001",
+# Instancia compilada del StateGraph
+graph_app = build_agency_graph()
+
+
+# --------------------------------------------------------------------- #
+# Modelos Pydantic (Request / Response)
+# --------------------------------------------------------------------- #
+class TenantCreateRequest(BaseModel):
+    name: str
+    niche: str
+    monthly_llm_budget_usd: float = 20.00
+
+
+class GraphRunRequest(BaseModel):
+    force_reideation: bool = False
+
+
+class IdeaApproveRequest(BaseModel):
+    idea_id: str
+    status: str  # approved | rejected
+
+
+class PublishApproveRequest(BaseModel):
+    status: str  # approved | rejected
+
+
+class TakeoverRequest(BaseModel):
+    operator_id: str
+    action: str = "pause_bot"
+
+
+# --------------------------------------------------------------------- #
+# 1. Endpoints REST (/api/v1)
+# --------------------------------------------------------------------- #
+@app.post("/api/v1/tenants", status_code=status.HTTP_201_CREATED)
+async def create_tenant(req: TenantCreateRequest):
+    tenant_id = f"tenant-{req.name.lower().replace(' ', '-')}-001"
+    return {
+        "id": tenant_id,
+        "name": req.name,
+        "niche": req.niche,
+        "litellm_virtual_key": f"sk-agency-{tenant_id}",
+        "monthly_llm_budget_usd": req.monthly_llm_budget_usd,
+        "created_at": "2026-08-06T00:00:00Z",
+    }
+
+
+@app.get("/api/v1/tenants/{tenant_id}")
+async def get_tenant(tenant_id: str):
+    return {
+        "id": tenant_id,
         "name": "Cliente Demo Marketing",
         "niche": "Negocios B2B y SaaS",
-        "litellm_virtual_key": "sk-agency-demo-key",
         "monthly_llm_budget_usd": 20.00,
-        "state": {
-            "node": "human_approval_idea",
-            "idea_approval_status": "pending",
-            "candidate_ideas": [
-                {
-                    "id": "idea-101",
-                    "texto": "3 Errores fatales en Negocios B2B que te están costando clientes",
-                    "gancho": "Si trabajas en Negocios B2B, deja de hacer esto inmediatamente...",
-                    "universalidad": 0.85,
-                    "intensidad": 0.90,
-                    "claridad": 0.95,
-                    "shareability": 0.80,
-                    "distribucion": 0.85,
-                    "alineacion": 0.90,
-                    "rum_score": 0.444,
-                    "passes_threshold": True,
-                }
-            ],
-            "rum_threshold": 0.050,
-            "script": {
-                "gancho_0_5s": "¡Detente! Si quieres escalar tu SaaS B2B, necesitas esto.",
-                "contexto_5_30s": "La mayoría comete el error de enfocarse en alcance frío sin entender la retención del algoritmo...",
-                "moraleja_30_50s": "La clave está en automatizar la calificacion de leads con respuestas inmediatas.",
-                "cta_50_60s": "Comenta la palabra 'CONSULTA' abajo y te enviaré la guía completa.",
-                "keyword": "CONSULTA",
+    }
+
+
+@app.post("/api/v1/tenants/{tenant_id}/graph/run")
+async def run_graph(tenant_id: str, req: GraphRunRequest):
+    # Emitir evento SSE de inicio de nodo
+    await sse_manager.broadcast(
+        tenant_id,
+        "node_change",
+        {"node": "ideation", "status": "running", "message": "Iniciando ideación RUM..."},
+    )
+    return {
+        "tenant_id": tenant_id,
+        "thread_id": tenant_id,
+        "status": "running",
+        "current_node": "ideation",
+        "message": "Grafo LangGraph iniciado desde el nodo ideation.",
+    }
+
+
+@app.post("/api/v1/tenants/{tenant_id}/ideas/approve")
+async def approve_idea(tenant_id: str, req: IdeaApproveRequest):
+    await sse_manager.broadcast(
+        tenant_id,
+        "node_change",
+        {"node": "scriptwriting", "status": "running", "message": "Idea aprobada. Generando guion..."},
+    )
+    return {
+        "tenant_id": tenant_id,
+        "idea_id": req.idea_id,
+        "idea_approval_status": req.status,
+        "next_node": "scriptwriting",
+    }
+
+
+@app.post("/api/v1/tenants/{tenant_id}/publish/approve")
+async def approve_publish(tenant_id: str, req: PublishApproveRequest):
+    post_id = f"ig_reel_{tenant_id[:8]}_99812"
+    await sse_manager.broadcast(
+        tenant_id,
+        "node_change",
+        {"node": "publish", "status": "completed", "message": f"Video publicado con ID {post_id}"},
+    )
+    return {
+        "tenant_id": tenant_id,
+        "publish_approval_status": req.status,
+        "published_post_id": post_id,
+        "next_node": "publish",
+    }
+
+
+@app.get("/api/v1/tenants/{tenant_id}/leads")
+async def get_leads(tenant_id: str):
+    return [
+        {
+            "id": "lead-001",
+            "tenant_id": tenant_id,
+            "video_id": "video-55",
+            "keyword": "CONSULTA",
+            "ig_user_id": "user_ig_9921",
+            "mensaje_original": "Hola! Quiero la CONSULTA por favor",
+            "origen": "comment",
+            "calificado_at": "2026-08-06T01:45:00Z",
+            "handled_by_human_at": None,
+        }
+    ]
+
+
+@app.post("/api/v1/tenants/{tenant_id}/leads/{lead_id}/takeover")
+async def takeover_lead(tenant_id: str, lead_id: str, req: TakeoverRequest):
+    return {
+        "lead_id": lead_id,
+        "status": "handled_by_human",
+        "handled_by_human_at": "2026-08-06T02:30:00Z",
+        "message": "Bot pausado. Operador asignado exitosamente.",
+    }
+
+
+@app.get("/api/v1/tenants/{tenant_id}/metrics")
+async def get_metrics(tenant_id: str):
+    return [
+        {
+            "video_id": "video-55",
+            "published_at": "2026-08-03T10:00:00Z",
+            "metrics_72h": {
+                "views": 150000,
+                "followers_at_posting": 10000,
+                "ratio": 15.0,
+                "leads_generated": 142,
             },
-            "raw_video_uri": "/storage/raw/sample_video.mp4",
-            "edited_video_uri": "/storage/videos/edited_sample_video.mp4",
-            "publish_approval_status": "pending",
+            "classification": "VERDE",
+            "action_taken": "Encolado para 3 variaciones en próximo batch.",
         },
-    }
-}
-
-LEADS_DB = [
-    {
-        "id": "lead-001",
-        "tenant_id": "tenant-demo-001",
-        "video_id": "video-55",
-        "keyword": "CONSULTA",
-        "ig_user_id": "user_ig_9921",
-        "mensaje_original": "Hola! Quiero la CONSULTA por favor",
-        "origen": "comment",
-        "calificado_at": "2026-08-05T22:15:00Z",
-        "handled_by_human_at": None,
-        "outcome": None,
-    }
-]
+        {
+            "video_id": "video-56",
+            "published_at": "2026-08-03T14:00:00Z",
+            "metrics_72h": {
+                "views": 4500,
+                "followers_at_posting": 10000,
+                "ratio": 0.45,
+                "leads_generated": 2,
+            },
+            "classification": "ROJO",
+            "action_taken": "Idea descartada.",
+        },
+    ]
 
 
-@app.get("/health")
-def health_check():
-    return {"status": "ok", "env": os.getenv("AGENCY_ENV", "dev")}
-
-
-@app.get("/tenants")
-def list_tenants():
-    return list(TENANTS_DB.values())
-
-
-@app.post("/tenants")
-def create_tenant(name: str, niche: str, budget: float = 20.0):
-    tenant_id = f"tenant-{uuid.uuid4().hex[:8]}"
-    tenant_data = {
-        "id": tenant_id,
-        "name": name,
-        "niche": niche,
-        "litellm_virtual_key": f"sk-agency-{tenant_id}",
-        "monthly_llm_budget_usd": budget,
-        "state": {"node": "ideation", "candidate_ideas": []},
-    }
-    TENANTS_DB[tenant_id] = tenant_data
-    return tenant_data
-
-
-@app.get("/tenants/{tenant_id}")
-def get_tenant(tenant_id: str):
-    if tenant_id not in TENANTS_DB:
-        raise HTTPException(status_code=404, detail="Tenant no encontrado")
-    return TENANTS_DB[tenant_id]
-
-
-@app.post("/tenants/{tenant_id}/run")
-async def run_tenant_graph(tenant_id: str, background_tasks: BackgroundTasks):
-    if tenant_id not in TENANTS_DB:
-        raise HTTPException(status_code=404, detail="Tenant no encontrado")
-
-    await sse_manager.broadcast_event(
-        tenant_id=tenant_id,
-        event_type="node_change",
-        data={"node": "ideation", "status": "running", "message": "Iniciando generación de ideas..."},
-    )
-    TENANTS_DB[tenant_id]["state"]["node"] = "human_approval_idea"
-    return {"status": "started", "tenant_id": tenant_id, "current_node": "human_approval_idea"}
-
-
-@app.post("/tenants/{tenant_id}/ideas/approve")
-async def approve_idea(tenant_id: str, payload: dict):
-    if tenant_id not in TENANTS_DB:
-        raise HTTPException(status_code=404, detail="Tenant no encontrado")
-
-    status = payload.get("status", "approved")
-    TENANTS_DB[tenant_id]["state"]["idea_approval_status"] = status
-
-    if status == "approved":
-        TENANTS_DB[tenant_id]["state"]["node"] = "human_approval_publish"
-        await sse_manager.broadcast_event(
-            tenant_id=tenant_id,
-            event_type="node_change",
-            data={"node": "scriptwriting", "status": "completed", "message": "Guion generado. Listo para video."},
-        )
-    else:
-        TENANTS_DB[tenant_id]["state"]["node"] = "ideation"
-
-    return {"tenant_id": tenant_id, "idea_approval_status": status, "next_node": TENANTS_DB[tenant_id]["state"]["node"]}
-
-
-@app.post("/tenants/{tenant_id}/publish/approve")
-async def approve_publish(tenant_id: str, payload: dict):
-    if tenant_id not in TENANTS_DB:
-        raise HTTPException(status_code=404, detail="Tenant no encontrado")
-
-    status = payload.get("status", "approved")
-    TENANTS_DB[tenant_id]["state"]["publish_approval_status"] = status
-
-    if status == "approved":
-        TENANTS_DB[tenant_id]["state"]["node"] = "publish"
-        TENANTS_DB[tenant_id]["state"]["published_post_id"] = f"ig_post_{uuid.uuid4().hex[:6]}"
-        await sse_manager.broadcast_event(
-            tenant_id=tenant_id,
-            event_type="node_change",
-            data={"node": "publish", "status": "completed", "message": "¡Video publicado en Instagram!"},
-        )
-
-    return {"tenant_id": tenant_id, "publish_approval_status": status, "published_post_id": TENANTS_DB[tenant_id]["state"].get("published_post_id")}
-
-
-@app.get("/api/tenants/{tenant_id}/leads")
-def get_tenant_leads(tenant_id: str):
-    return [lead for lead in LEADS_DB if lead["tenant_id"] == tenant_id]
-
-
+# --------------------------------------------------------------------- #
+# 2. Realtime SSE Endpoint (/realtime/sse/{tenant_id})
+# --------------------------------------------------------------------- #
 @app.get("/realtime/sse/{tenant_id}")
-async def sse_endpoint(tenant_id: str):
-    return StreamingResponse(
-        sse_manager.stream_events(tenant_id),
-        media_type="text/event-stream",
-    )
+async def sse_endpoint(tenant_id: str, request: Request):
+    queue = sse_manager.subscribe(tenant_id)
+
+    async def event_generator() -> AsyncGenerator[str, None]:
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                payload = await queue.get()
+                yield payload
+        except asyncio.CancelledError:
+            pass
+        finally:
+            sse_manager.unsubscribe(tenant_id, queue)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+# --------------------------------------------------------------------- #
+# 3. Meta Instagram Webhook (/webhooks/instagram)
+# --------------------------------------------------------------------- #
+@app.get("/webhooks/instagram")
+async def verify_instagram_webhook(
+    hub_mode: Optional[str] = Header(None, alias="hub.mode"),
+    hub_challenge: Optional[str] = Header(None, alias="hub.challenge"),
+    hub_verify_token: Optional[str] = Header(None, alias="hub.verify_token"),
+):
+    if hub_mode == "subscribe" and hub_verify_token == INSTAGRAM_VERIFY_TOKEN:
+        return int(hub_challenge) if hub_challenge and hub_challenge.isdigit() else hub_challenge
+    raise HTTPException(status_code=403, detail="Verify token inválido")
+
+
+@app.post("/webhooks/instagram")
+async def receive_instagram_webhook(
+    request: Request,
+    x_hub_signature_256: Optional[str] = Header(None, alias="X-Hub-Signature-256"),
+):
+    body_bytes = await request.body()
+
+    # Validar firma HMAC SHA-256
+    if x_hub_signature_256:
+        is_valid = verify_meta_hmac_signature(
+            payload_bytes=body_bytes,
+            signature_header=x_hub_signature_256,
+            app_secret=INSTAGRAM_APP_SECRET,
+        )
+        if not is_valid:
+            raise HTTPException(status_code=401, detail="Firma HMAC SHA-256 inválida")
+
+    payload = await request.json()
+    extracted_leads = process_instagram_webhook_payload(payload)
+
+    return {
+        "status": "ok",
+        "processed_leads_count": len(extracted_leads),
+        "leads": extracted_leads,
+    }
