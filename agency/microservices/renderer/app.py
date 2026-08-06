@@ -177,6 +177,21 @@ def upload_to_minio(file_path: str, tenant_id: str) -> str:
     return public_url
 
 
+BACKEND_API_URL = os.getenv("BACKEND_API_URL", "http://backend:8000/api/v1")
+FALLBACK_BACKEND_URL = "http://localhost:8000/api/v1"
+
+
+def report_render_progress(tenant_id: str, stage: str, message: str, percent: int):
+    """Notifica el avance del renderizado a la API principal para retransmitir por SSE."""
+    payload = {"stage": stage, "message": message, "percent": percent}
+    for base_url in [BACKEND_API_URL, FALLBACK_BACKEND_URL]:
+        try:
+            requests.post(f"{base_url}/tenants/{tenant_id}/progress", json=payload, timeout=2.0)
+            break
+        except Exception:
+            pass
+
+
 @app.post("/render", response_model=RenderResponse, status_code=status.HTTP_201_CREATED)
 async def render_video_endpoint(req: RenderRequest):
     """
@@ -188,19 +203,26 @@ async def render_video_endpoint(req: RenderRequest):
     output_mp4_path = os.path.join(temp_dir, "final_output.mp4")
 
     logger.info(f"[{req.tenant_id}] Iniciando renderizado faceless: '{req.title}'")
+    report_render_progress(req.tenant_id, "start", "Iniciando renderizado faceless...", 5)
 
     try:
         # 1. Generar audio con Edge-TTS
+        report_render_progress(req.tenant_id, "audio", "Sintetizando voz en español con Edge-TTS...", 25)
         await generate_speech_audio(req.script_text, audio_path)
 
         # 2. Descargar clips de Pexels API
+        report_render_progress(req.tenant_id, "broll", "Buscando y descargando clips B-roll 720p desde Pexels...", 50)
         downloaded_clips = download_pexels_videos(req.keywords, temp_dir)
 
         # 3. Componer video con MoviePy
+        report_render_progress(req.tenant_id, "moviepy", "Componiendo y ajustando formato 9:16 con MoviePy...", 75)
         duration = compose_video_moviepy(audio_path, downloaded_clips, output_mp4_path)
 
         # 4. Subir a MinIO
+        report_render_progress(req.tenant_id, "minio", "Subiendo video MP4 producido a MinIO Storage...", 90)
         video_url = upload_to_minio(output_mp4_path, req.tenant_id)
+
+        report_render_progress(req.tenant_id, "completed", "Renderizado completado con éxito.", 100)
 
         return RenderResponse(
             status="completed",

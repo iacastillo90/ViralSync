@@ -137,6 +137,28 @@ async def ingest_product_data(
     }
 
 
+class ProgressReportRequest(BaseModel):
+    stage: str
+    message: str
+    percent: Optional[int] = 0
+
+
+@app.post("/api/v1/tenants/{tenant_id}/progress")
+async def report_progress(tenant_id: str, req: ProgressReportRequest):
+    """Recibe reportes de progreso de microservicios externos y los transmite vía SSE al Frontend."""
+    await sse_manager.broadcast(
+        tenant_id,
+        "render_progress",
+        {
+            "stage": req.stage,
+            "message": req.message,
+            "percent": req.percent,
+            "tenant_id": tenant_id,
+        },
+    )
+    return {"status": "broadcasted", "stage": req.stage, "percent": req.percent}
+
+
 @app.post("/api/v1/tenants/{tenant_id}/graph/run")
 async def run_graph(tenant_id: str, req: GraphRunRequest):
     # Emitir evento SSE de inicio de nodo
