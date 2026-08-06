@@ -125,7 +125,7 @@ Este documento define los **contratos API oficiales**, la especificación exacta
 
 ---
 
-### 3.5 `GET /api/v1/tenants/{tenant_id}/leads` (Listar Leads)
+### 3.5 `GET /api/v1/tenants/{tenant_id}/leads` (Listar Leads Calificados)
 **Response 200 OK:**
 ```json
 [
@@ -146,6 +146,64 @@ Este documento define los **contratos API oficiales**, la especificación exacta
 
 ---
 
+### 3.6 `POST /api/v1/tenants/{tenant_id}/leads/{lead_id}/takeover` (Toma de Control Humano)
+**Descripción:** El Account Manager o el cliente asume la conversación en Instagram desde el dashboard. El bot calificador deja de enviar respuestas automáticas a este usuario.
+
+**Request Payload:**
+```json
+{
+  "operator_id": "admin_uuid_443",
+  "action": "pause_bot"
+}
+```
+
+**Response 200 OK:**
+```json
+{
+  "lead_id": "lead-001",
+  "status": "handled_by_human",
+  "handled_by_human_at": "2026-08-06T02:30:00Z",
+  "message": "Bot pausado. Operador asignado exitosamente."
+}
+```
+
+---
+
+### 3.7 `GET /api/v1/tenants/{tenant_id}/metrics` (Clasificación 80/20 a las 72h)
+**Descripción:** Obtiene el listado de videos publicados clasificados mediante el ratio de vistas/seguidores a las 72h (Rojo, Amarillo, Verde).
+
+**Response 200 OK:**
+```json
+[
+  {
+    "video_id": "video-55",
+    "published_at": "2026-08-03T10:00:00Z",
+    "metrics_72h": {
+      "views": 150000,
+      "followers_at_posting": 10000,
+      "ratio": 15.0,
+      "leads_generated": 142
+    },
+    "classification": "VERDE",
+    "action_taken": "Encolado para 3 variaciones en próximo batch."
+  },
+  {
+    "video_id": "video-56",
+    "published_at": "2026-08-03T14:00:00Z",
+    "metrics_72h": {
+      "views": 4500,
+      "followers_at_posting": 10000,
+      "ratio": 0.45,
+      "leads_generated": 2
+    },
+    "classification": "ROJO",
+    "action_taken": "Idea descartada."
+  }
+]
+```
+
+---
+
 ## 📡 4. Flujo SSE (Server-Sent Events) & Hook `useSSEStream.js`
 
 ### 4.1 Endpoint SSE Backend (`GET /realtime/sse/{tenant_id}`)
@@ -158,7 +216,7 @@ Cache-Control: no-cache
 Connection: keep-alive
 ```
 
-**Estructura del Evento SSE:**
+**Estructura de Eventos SSE:**
 ```
 event: node_change
 data: {"node":"ideation","status":"running","message":"Investigando tendencias en SearXNG..."}
@@ -172,46 +230,68 @@ data: {"node":"human_approval_idea","status":"paused","message":"Esperando aprob
 
 ---
 
-### 4.2 Integración en Next.js (`useSSEStream.js`)
+### 4.2 Integración en Next.js (`useSSEStream.js`) con Reconexión Resiliente
 
-El hook `useSSEStream.js` se suscribe al canal SSE y actualiza la tienda global de **Zustand** (`useAgentStore`) sin provocar re-renderizados pesados en todo el árbol de React:
+Para blindar la conexión contra parpadeos de red en producción, el custom hook implementa **reconexión automática con retry exponencial** y re-suscripción limpia a la tienda de **Zustand** (`useAgentStore`):
 
 ```javascript
 // agency/frontend/src/hooks/useSSEStream.js
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useAgentStore } from "@/stores/useAgentStore";
 
 export function useSSEStream(tenantId) {
   const { setNodeState, addLog, setCheckpointPaused } = useAgentStore();
+  const retryCountRef = useRef(0);
+  const maxRetries = 5;
 
   useEffect(() => {
     if (!tenantId) return;
 
-    const sseUrl = `http://localhost:8000/realtime/sse/${tenantId}`;
-    const eventSource = new EventSource(sseUrl);
+    let eventSource = null;
+    let timeoutId = null;
 
-    eventSource.addEventListener("node_change", (e) => {
-      const data = JSON.parse(e.data);
-      setNodeState(data.node, data.status);
-    });
+    const connectSSE = () => {
+      const sseUrl = `http://localhost:8000/realtime/sse/${tenantId}`;
+      eventSource = new EventSource(sseUrl);
 
-    eventSource.addEventListener("log_entry", (e) => {
-      const data = JSON.parse(e.data);
-      addLog(`[${data.module}] ${data.message}`);
-    });
+      eventSource.onopen = () => {
+        retryCountRef.current = 0; // Resetear intentos en éxito
+      };
 
-    eventSource.addEventListener("checkpoint_paused", (e) => {
-      const data = JSON.parse(e.data);
-      setCheckpointPaused(data.node, true);
-    });
+      eventSource.addEventListener("node_change", (e) => {
+        const data = JSON.parse(e.data);
+        setNodeState(data.node, data.status);
+      });
 
-    eventSource.onerror = (err) => {
-      console.error("Error en conexión SSE:", err);
-      eventSource.close();
+      eventSource.addEventListener("log_entry", (e) => {
+        const data = JSON.parse(e.data);
+        addLog(`[${data.module}] ${data.message}`);
+      });
+
+      eventSource.addEventListener("checkpoint_paused", (e) => {
+        const data = JSON.parse(e.data);
+        setCheckpointPaused(data.node, true);
+      });
+
+      eventSource.onerror = (err) => {
+        console.warn("Parpadeo de red en SSE. Reconectando...", err);
+        eventSource.close();
+
+        if (retryCountRef.current < maxRetries) {
+          const timeout = Math.pow(2, retryCountRef.current) * 1000; // Exponential backoff (1s, 2s, 4s, 8s...)
+          retryCountRef.current += 1;
+          timeoutId = setTimeout(connectSSE, timeout);
+        } else {
+          console.error("Límite de reconexiones SSE alcanzado.");
+        }
+      };
     };
 
+    connectSSE();
+
     return () => {
-      eventSource.close();
+      if (eventSource) eventSource.close();
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, [tenantId, setNodeState, addLog, setCheckpointPaused]);
 }
