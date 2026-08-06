@@ -16,6 +16,8 @@ import {
   Sparkles,
 } from "lucide-react";
 
+import ProductIngestModal from "@/components/ProductIngestModal";
+
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("monitor");
   const {
@@ -127,6 +129,9 @@ export default function DashboardPage() {
           <Play className="w-4 h-4 fill-current" /> Ejecutar Grafo
         </button>
       </header>
+
+      {/* Formulario de Ingesta de Producto/Servicio a MinIO */}
+      <ProductIngestModal />
 
       {/* Navegación por Pestañas */}
       <nav className="flex gap-2 my-6 border-b border-slate-800 pb-2">
