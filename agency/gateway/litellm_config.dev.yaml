@@ -1,0 +1,24 @@
+# litellm_config.dev.yaml
+# AGENCY_ENV=dev — SOLO Ollama local. Cero costo, cero cuota de terceros.
+# Objetivo: validar la ESTRUCTURA del grafo (ramas, checkpoints, estado),
+# no el comportamiento real de ninguna API.
+
+model_list:
+  - model_name: motor-agencia
+    litellm_params:
+      model: ollama/qwen2.5-coder:7b
+      api_base: "http://localhost:11434"
+
+  - model_name: motor-agencia-fallback-local
+    litellm_params:
+      model: ollama/llama3.2
+      api_base: "http://localhost:11434"
+
+router_settings:
+  fallbacks: [{"motor-agencia": ["motor-agencia-fallback-local"]}]
+  num_retries: 2
+  cooldown_time: 30
+
+general_settings:
+  # en dev no hace falta master_key estricta ni virtual keys por tenant
+  master_key: "os.environ/LITELLM_MASTER_KEY"

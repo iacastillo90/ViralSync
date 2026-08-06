@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*$py.class
+node_modules/
+.next/
+out/
+build/
+.env
+*.log
+Doc/agency_pending_files.zip
