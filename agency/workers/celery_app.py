@@ -14,7 +14,12 @@ celery_app = Celery(
     "viralsync_workers",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=["workers.video_edit_task", "workers.metrics_loop_task"],
+    include=[
+        "workers.video_edit_task",
+        "workers.metrics_loop_task",
+        "workers.webhook_dlq_task",
+        "workers.trend_scraper_task",
+    ],
 )
 
 celery_app.conf.update(
@@ -23,6 +28,12 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    task_routes={
+        "workers.video_edit_task.*": {"queue": "rendering"},
+        "workers.webhook_dlq_task.*": {"queue": "webhooks"},
+        "workers.metrics_loop_task.*": {"queue": "default"},
+        "workers.trend_scraper_task.*": {"queue": "default"},
+    },
 )
 
 # Soporte para Celery Eager Mode en pytest
