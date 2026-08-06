@@ -3,76 +3,101 @@ version: "3.9"
 services:
   postgres:
     image: postgres:16
+    container_name: viralsync_postgres
     environment:
-      POSTGRES_USER: agency
-      POSTGRES_PASSWORD: agency
-      POSTGRES_DB: agency
+      POSTGRES_USER: ${POSTGRES_USER:-agency}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agency}
+      POSTGRES_DB: ${POSTGRES_DB:-agency}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agency}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7
+    container_name: viralsync_redis
     ports:
       - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   qdrant:
     image: qdrant/qdrant
+    container_name: viralsync_qdrant
     ports:
       - "6333:6333"
     volumes:
       - qdrantdata:/qdrant/storage
+    restart: unless-stopped
 
   searxng:
     image: searxng/searxng
+    container_name: viralsync_searxng
     ports:
       - "8080:8080"
     volumes:
       - ./searxng-settings:/etc/searxng
     environment:
       - SEARXNG_BASE_URL=http://localhost:8080
+    restart: unless-stopped
 
   ollama:
     image: ollama/ollama
+    container_name: viralsync_ollama
     ports:
       - "11434:11434"
     volumes:
       - ollamadata:/root/.ollama
-    # solo estrictamente necesario cuando AGENCY_ENV=dev
+    restart: unless-stopped
+    # Solo estrictamente necesario cuando AGENCY_ENV=dev
 
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
+    container_name: viralsync_litellm
     ports:
       - "4000:4000"
     volumes:
       - ./gateway:/app/config
     command: ["--config", "/app/config/litellm_config.${AGENCY_ENV:-dev}.yaml"]
-    env_file: .env
+    env_file: ../.env
+    restart: unless-stopped
     depends_on:
       - ollama
 
-  backend:
-    build: ./backend
-    ports:
-      - "8000:8000"
-    env_file: .env
-    depends_on:
-      - postgres
-      - redis
-      - litellm
-      - qdrant
-
-  celery_worker:
-    build: ./backend
-    # concurrency=1 es obligatorio en dev — ver regla de concurrencia,
-    # AGENTS.md sección 8 (4 núcleos / 16GB de referencia local)
-    command: celery -A worker worker --loglevel=info --concurrency=1
-    env_file: .env
-    depends_on:
-      - redis
-      - postgres
+  # ===================================================================== #
+  # SERVICIOS DE APLICACIÓN (Comentados hasta completar código FastAPI)
+  # ===================================================================== #
+  # backend:
+  #   build: ./backend
+  #   container_name: viralsync_backend
+  #   ports:
+  #     - "8000:8000"
+  #   env_file: ../.env
+  #   depends_on:
+  #     - postgres
+  #     - redis
+  #     - litellm
+  #     - qdrant
+  #
+  # celery_worker:
+  #   build: ./backend
+  #   container_name: viralsync_celery_worker
+  #   # concurrency=1 es obligatorio en dev — ver regla de concurrencia en AGENTS.md sección 8
+  #   command: celery -A agency.workers.celery_app worker --loglevel=info --concurrency=1
+  #   env_file: ../.env
+  #   depends_on:
+  #     - redis
+  #     - postgres
 
 volumes:
   pgdata:
