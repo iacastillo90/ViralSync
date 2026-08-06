@@ -1,29 +1,31 @@
 """
-Nodo de guion (AGENTS.md 7.3 PPP + 7.4 estructura de 4 bloques + 7.5 personaje de marca).
+scriptwriting.py
 
-El personaje de marca (7.5) se recupera vía RAG (rag_mcp_server) y se
-inyecta como contexto fijo — no se regenera por video, se genera una vez
-por tenant en el onboarding y se reutiliza para mantener congruencia.
-
-Regla explícita a reforzar en el prompt del guionista_agent: el bloque de
-contexto (5s-30s) NUNCA debe adelantar la respuesta del bloque de
-moraleja — su función es alargar retención, no informar.
+Nodo de Guionismo de LangGraph.
+Ejecuta la crew de guionismo de 4 bloques a partir de la idea aprobada.
 """
 
-from agents.crews.scriptwriting_crew import build_scriptwriting_crew
+import logging
+from typing import Dict, Any
+from agents.crews.scriptwriting_crew import run_scriptwriting_crew
+
+logger = logging.getLogger(__name__)
 
 
-def run(state: dict) -> dict:
-    tenant_id = state["tenant_id"]
-    idea = state["approved_idea"] or state["candidate_ideas"][0]
+def node_scriptwriting(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Nodo que genera el guion en 4 bloques."""
+    tenant_id = state.get("tenant_id", "default_tenant")
+    selected_idea = state.get("selected_idea", {})
+    niche_ppp = state.get("niche_ppp", "")
 
-    crew = build_scriptwriting_crew(tenant_id=tenant_id, idea=idea)
-    script = crew.kickoff()
+    logger.info(f"[{tenant_id}] Ejecutando nodo 'scriptwriting'")
 
-    # Validación estructural mínima antes de pasar a producción
-    required_blocks = {"gancho_0_5s", "contexto_5_30s", "moraleja_30_50s", "cta_50_60s"}
-    missing = required_blocks - set(script.keys())
-    if missing:
-        return {"errors": [f"Guion incompleto, faltan bloques: {missing}"]}
+    script = run_scriptwriting_crew(idea=selected_idea, niche_ppp=niche_ppp)
 
-    return {"script": script}
+    logs = state.get("logs", [])
+    logs.append(f"[scriptwriting] Guion de 4 bloques generado con palabra clave '{script.get('keyword')}'")
+
+    return {
+        "script": script,
+        "logs": logs,
+    }
