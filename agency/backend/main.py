@@ -93,6 +93,50 @@ async def get_tenant(tenant_id: str):
     }
 
 
+from fastapi import FastAPI, Request, HTTPException, Header, Depends, status, File, UploadFile, Form
+from backend.storage.minio_client import save_product_photo_to_minio
+from agents.criterion.niche_classifier import classify_business_type
+
+
+@app.post("/api/v1/tenants/{tenant_id}/product-ingest")
+async def ingest_product_data(
+    tenant_id: str,
+    product_name: str = Form(...),
+    description: str = Form(...),
+    business_type: str = Form("auto"),
+    file: Optional[UploadFile] = File(None),
+):
+    """Sube la foto del producto a MinIO y clasifica si es Producto Físico o Servicio Intangible."""
+    product_image_url = ""
+    if file:
+        content = await file.read()
+        product_image_url = save_product_photo_to_minio(content, file.filename, tenant_id)
+    else:
+        product_image_url = f"http://localhost:9000/viralsync-media/{tenant_id}/products/default_product.jpg"
+
+    classification = classify_business_type(description, user_choice=business_type)
+
+    await sse_manager.broadcast(
+        tenant_id,
+        "node_change",
+        {
+            "node": "ingestion",
+            "status": "completed",
+            "message": f"Producto/Servicio '{product_name}' ingresado exitosamente. Tipo: {classification['business_type']}",
+        },
+    )
+
+    return {
+        "tenant_id": tenant_id,
+        "product_name": product_name,
+        "description": description,
+        "business_type": classification["business_type"],
+        "visual_mode": classification["visual_mode"],
+        "product_image_url": product_image_url,
+        "status": "ingested",
+    }
+
+
 @app.post("/api/v1/tenants/{tenant_id}/graph/run")
 async def run_graph(tenant_id: str, req: GraphRunRequest):
     # Emitir evento SSE de inicio de nodo
