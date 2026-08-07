@@ -31,11 +31,14 @@ app = FastAPI(
     description="SaaS B2B Multi-Tenant para Agencias de Marketing de Contenido IA",
 )
 
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
+is_dev = os.getenv("AGENCY_ENV", "dev") == "dev"
+
 # 1. Habilitar CORS para Next.js Dashboard
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["*"] if is_dev else ALLOWED_ORIGINS,
+    allow_credentials=False if is_dev else True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
