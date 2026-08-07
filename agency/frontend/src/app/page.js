@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import ProductIngestModal from "@/components/ProductIngestModal";
+import { fetchWithTenant } from "@/services/apiConfig";
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("monitor");
@@ -37,67 +38,74 @@ export default function DashboardPage() {
 
   // Cargar datos iniciales desde el backend FastAPI
   useEffect(() => {
-    const apiBase =
-      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-
-    fetch(`${apiBase}/tenants/${tenantId}/leads`)
-      .then((res) => res.json())
+    fetchWithTenant(`/tenants/${tenantId}/leads`, {}, tenantId)
       .then((data) => setLeads(data))
       .catch(() => {});
 
-    fetch(`${apiBase}/tenants/${tenantId}/metrics`)
-      .then((res) => res.json())
+    fetchWithTenant(`/tenants/${tenantId}/metrics`, {}, tenantId)
       .then((data) => setMetrics(data))
       .catch(() => {});
   }, [tenantId, setLeads, setMetrics]);
 
   const handleRunGraph = async () => {
-    const apiBase =
-      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
     addLog("Solicitando inicio de StateGraph en FastAPI...");
-    await fetch(`${apiBase}/tenants/${tenantId}/graph/run`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ force_reideation: false }),
-    });
+    try {
+      await fetchWithTenant(
+        `/tenants/${tenantId}/graph/run`,
+        {
+          method: "POST",
+          body: JSON.stringify({ force_reideation: false }),
+        },
+        tenantId
+      );
+    } catch (err) {}
   };
 
   const handleApproveIdea = async (approved) => {
-    const apiBase =
-      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
     addLog(`Enviando decisión de idea: ${approved ? "APROBADA" : "RECHAZADA"}`);
-    await fetch(`${apiBase}/tenants/${tenantId}/ideas/approve`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        idea_id: "idea-101",
-        status: approved ? "approved" : "rejected",
-      }),
-    });
+    try {
+      await fetchWithTenant(
+        `/tenants/${tenantId}/ideas/approve`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            idea_id: "idea-101",
+            status: approved ? "approved" : "rejected",
+          }),
+        },
+        tenantId
+      );
+    } catch (err) {}
   };
 
   const handleApprovePublish = async (approved) => {
-    const apiBase =
-      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
     addLog(`Enviando decisión de publicación: ${approved ? "APROBADA" : "RECHAZADA"}`);
-    await fetch(`${apiBase}/tenants/${tenantId}/publish/approve`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        status: approved ? "approved" : "rejected",
-      }),
-    });
+    try {
+      await fetchWithTenant(
+        `/tenants/${tenantId}/publish/approve`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            status: approved ? "approved" : "rejected",
+          }),
+        },
+        tenantId
+      );
+    } catch (err) {}
   };
 
   const handleTakeover = async (leadId) => {
-    const apiBase =
-      process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
     addLog(`Account Manager asumiendo control humano para lead '${leadId}'`);
-    await fetch(`${apiBase}/tenants/${tenantId}/leads/${leadId}/takeover`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ operator_id: "admin_uuid_443", action: "pause_bot" }),
-    });
+    try {
+      await fetchWithTenant(
+        `/tenants/${tenantId}/leads/${leadId}/takeover`,
+        {
+          method: "POST",
+          body: JSON.stringify({ operator_id: "admin_uuid_443", action: "pause_bot" }),
+        },
+        tenantId
+      );
+    } catch (err) {}
     setLeads(
       leads.map((l) =>
         l.id === leadId
@@ -106,6 +114,7 @@ export default function DashboardPage() {
       )
     );
   };
+
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-6">

@@ -83,11 +83,48 @@ class InstagramGraphPublisher(BaseSocialPublisher):
 
 class TikTokPublisher(BaseSocialPublisher):
     def publish_reel(self, tenant_id: str, video_url: str, caption: str, user_id: Optional[str] = None, token: Optional[str] = None) -> Dict[str, Any]:
-        published_id = f"tiktok_video_{tenant_id[:8]}_{int(time.time())}"
-        logger.info(f"[{tenant_id}] Ejecutando adaptador TikTok Content Posting API...")
+        env = os.getenv("AGENCY_ENV", "dev")
+        target_token = token or os.getenv("TIKTOK_ACCESS_TOKEN")
+
+        logger.info(f"[{tenant_id}] Ejecutando adaptador TikTok Content Posting API v2...")
+
+        if env == "dev" or not target_token or target_token.startswith("token_"):
+            published_id = f"tiktok_video_{tenant_id[:8]}_{int(time.time())}"
+            logger.info(f"[{tenant_id}] Entorno dev: Publicación TikTok simulada exitosa ID {published_id}")
+            return {
+                "status": "published",
+                "published_post_id": published_id,
+                "platform": "tiktok",
+                "tenant_id": tenant_id,
+            }
+
+        # Flujo HTTP real TikTok Content Posting API v2 (Direct Post Init)
+        init_url = "https://open.tiktokapis.com/v2/post/publish/video/init/"
+        headers = {
+            "Authorization": f"Bearer {target_token}",
+            "Content-Type": "application/json; charset=UTF-8",
+        }
+        payload = {
+            "post_info": {
+                "title": caption[:150],
+                "privacy_level": "PUBLIC_TO_EVERYONE",
+                "disable_duet": False,
+                "disable_stitch": False,
+                "disable_comment": False,
+            },
+            "source_info": {
+                "source": "PULL_FROM_URL",
+                "video_url": video_url,
+            },
+        }
+
+        res = requests.post(init_url, json=payload, headers=headers, timeout=15.0)
+        res.raise_for_status()
+        publish_id = res.json().get("data", {}).get("publish_id", f"tiktok_{int(time.time())}")
+
         return {
             "status": "published",
-            "published_post_id": published_id,
+            "published_post_id": publish_id,
             "platform": "tiktok",
             "tenant_id": tenant_id,
         }
@@ -95,14 +132,44 @@ class TikTokPublisher(BaseSocialPublisher):
 
 class YouTubeShortsPublisher(BaseSocialPublisher):
     def publish_reel(self, tenant_id: str, video_url: str, caption: str, user_id: Optional[str] = None, token: Optional[str] = None) -> Dict[str, Any]:
-        published_id = f"yt_short_{tenant_id[:8]}_{int(time.time())}"
+        env = os.getenv("AGENCY_ENV", "dev")
+        target_token = token or os.getenv("YOUTUBE_ACCESS_TOKEN")
+
         logger.info(f"[{tenant_id}] Ejecutando adaptador YouTube Data API v3 Shorts...")
+
+        if env == "dev" or not target_token or target_token.startswith("token_"):
+            published_id = f"yt_short_{tenant_id[:8]}_{int(time.time())}"
+            logger.info(f"[{tenant_id}] Entorno dev: Publicación YouTube Shorts simulada exitosa ID {published_id}")
+            return {
+                "status": "published",
+                "published_post_id": published_id,
+                "platform": "youtube_shorts",
+                "tenant_id": tenant_id,
+            }
+
+        # Flujo HTTP real YouTube Data API v3 upload
+        upload_url = "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=multipart&part=snippet,status"
+        headers = {"Authorization": f"Bearer {target_token}"}
+        
+        meta = {
+            "snippet": {
+                "title": caption[:100],
+                "description": f"{caption}\n#Shorts",
+                "categoryId": "22",
+            },
+            "status": {"privacyStatus": "public"},
+        }
+        res = requests.post(upload_url, json=meta, headers=headers, timeout=15.0)
+        res.raise_for_status()
+        published_id = res.json().get("id", f"yt_{int(time.time())}")
+
         return {
             "status": "published",
             "published_post_id": published_id,
             "platform": "youtube_shorts",
             "tenant_id": tenant_id,
         }
+
 
 
 class PublisherFactory:

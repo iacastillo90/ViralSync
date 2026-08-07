@@ -18,7 +18,7 @@ def run_scriptwriting_crew(
     idea: Dict[str, Any], niche_ppp: str = ""
 ) -> Dict[str, Any]:
     """
-    Genera un guion viral en 4 bloques a partir de una idea aprobada RUM.
+    Genera un guion viral en 4 bloques a partir de una idea aprobada RUM usando LiteLLM y RAG context.
     
     :param idea: Diccionario de la idea aprobada (texto, gancho, rum_score).
     :param niche_ppp: Promesa Principal de Producto del nicho.
@@ -36,19 +36,70 @@ def run_scriptwriting_crew(
     idea_title = idea.get("texto", "Estrategia de Crecimiento")
     gancho_base = idea.get("gancho", f"Si buscas escalar en {idea_title}, escucha esto")
 
-    # 3. Generación de los 4 Bloques (AGENTS.md sección 7.4)
-    script = {
-        "gancho_0_5s": gancho_base,
-        "contexto_5_30s": (
-            "El problema principal no es la falta de herramientas, sino intentar abarcar todo sin foco. "
-            "Cuando aplicas la simplificación estructural, tu tasa de conversión se triplica en cuestión de días."
-        ),
-        "moraleja_30_50s": (
-            "No necesitas invertir miles de dólares en anuncios antes de validar tu oferta. "
-            "Primero domina la tracción orgánica y la entrega de valor sin fricción."
-        ),
-        "cta_50_60s": "Comenta la palabra CONSULTA abajo y te enviamos el desglose estratégico por DM.",
-        "keyword": "CONSULTA",
-    }
+    script = {}
+
+    # 3. Generación asistida por LLM (LiteLLM)
+    try:
+        import os
+        import json
+        import litellm
+        model = os.getenv("LITELLM_DEFAULT_MODEL", "gemini/gemini-1.5-flash")
+
+        system_prompt = (
+            "Eres un Guionista Viral de elite para Instagram Reels y TikTok. "
+            "Redacta un guion hiper-efectivo estructurado en exactamente 4 bloques cronológicos y una palabra clave de CTA. "
+            "Responde ÚNICAMENTE con un objeto JSON sin formato markdown."
+        )
+
+        user_prompt = (
+            f"Título de la idea: {idea_title}\n"
+            f"Gancho inicial sugerido: {gancho_base}\n"
+            f"Promesa Principal de Producto (PPP): {niche_ppp}\n"
+            f"Contexto de Marca (RAG): {json.dumps(brand_context, ensure_ascii=False)}\n\n"
+            "Devuelve un objeto JSON con la siguiente estructura exacta:\n"
+            "{\n"
+            '  "gancho_0_5s": "Frase de gancho inicial (0-5s)",\n'
+            '  "contexto_5_30s": "Desarrollo del problema y contexto (5-30s)",\n'
+            '  "moraleja_30_50s": "Moraleja o solución clave (30-50s)",\n'
+            '  "cta_50_60s": "Llamada a la acción clara instando a comentar una palabra clave (50-60s)",\n'
+            '  "keyword": "PALABRA_CLAVE"\n'
+            "}"
+        )
+
+        res = litellm.completion(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.7,
+            max_tokens=800,
+        )
+
+        content = res.choices[0].message.content.strip()
+        if content.startswith("```"):
+            content = content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        parsed = json.loads(content)
+        if isinstance(parsed, dict) and "gancho_0_5s" in parsed:
+            script = parsed
+    except Exception as exc:
+        logger.warning(f"LiteLLM no disponible para guionismo ({exc}). Usando fallback dinámico.")
+
+    # Fallback dinámico si el LLM no está disponible
+    if not script:
+        script = {
+            "gancho_0_5s": gancho_base,
+            "contexto_5_30s": (
+                f"En {idea_title}, el problema principal no es la falta de herramientas, sino intentar abarcar todo sin foco. "
+                "Cuando aplicas la simplificación estructural, tu tasa de conversión se triplica en cuestión de días."
+            ),
+            "moraleja_30_50s": (
+                "No necesitas invertir miles de dólares en anuncios antes de validar tu oferta. "
+                "Primero domina la tracción orgánica y la entrega de valor sin fricción."
+            ),
+            "cta_50_60s": "Comenta la palabra CONSULTA abajo y te enviamos el desglose estratégico por DM.",
+            "keyword": "CONSULTA",
+        }
 
     return script
+

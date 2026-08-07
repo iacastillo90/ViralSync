@@ -2,10 +2,16 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
 
 export async function fetchWithTenant(endpoint, options = {}, tenantId = "tenant-demo-001") {
+  let token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+
   const defaultHeaders = {
     "Content-Type": "application/json",
     "X-Tenant-ID": tenantId,
   };
+
+  if (token) {
+    defaultHeaders["Authorization"] = `Bearer ${token}`;
+  }
 
   const config = {
     ...options,
@@ -21,3 +27,4 @@ export async function fetchWithTenant(endpoint, options = {}, tenantId = "tenant
   }
   return response.json();
 }
+

@@ -137,8 +137,27 @@ services:
       - INSTAGRAM_DEFAULT_USER_ID=${INSTAGRAM_DEFAULT_USER_ID:-17841400000000000}
     restart: unless-stopped
 
+  pg_backup:
+    image: postgres:16
+    container_name: viralsync_pg_backup
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-agency}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agency}
+      POSTGRES_DB: ${POSTGRES_DB:-agency}
+      BACKUP_DIR: /backups
+    volumes:
+      - ./scripts/backup_postgres.sh:/backup_postgres.sh:ro
+      - pgbackupdata:/backups
+    entrypoint: ["/bin/sh", "-c", "chmod +x /backup_postgres.sh && while true; do /backup_postgres.sh; sleep 86400; done"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   pgdata:
   qdrantdata:
   ollamadata:
   miniodata:
+  pgbackupdata:
+

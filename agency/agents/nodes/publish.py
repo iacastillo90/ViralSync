@@ -1,27 +1,34 @@
-"""
-publish.py
-
-Nodo de Publicación de LangGraph.
-Realiza la publicación del video editado en la Instagram Graph API.
-"""
-
 import logging
 from typing import Dict, Any
+from microservices.publisher.adapters import PublisherFactory
 
 logger = logging.getLogger(__name__)
 
 
 def node_publish(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Nodo que efectúa la publicación final en Instagram."""
+    """Nodo que efectúa la publicación final en redes sociales vía Publisher Adapter."""
     tenant_id = state.get("tenant_id", "default_tenant")
-    post_id = f"ig_reel_{tenant_id[:8]}_99812"
+    edited_uri = state.get("edited_video_uri", f"s3://viralsync-media-dev/{tenant_id}/edited_output.mp4")
+    script = state.get("script", {})
+    caption = f"{script.get('gancho_0_5s', '')}\n\n{script.get('cta_50_60s', '')}"
+    platform = state.get("target_platform", "instagram")
 
-    logger.info(f"[{tenant_id}] Ejecutando nodo 'publish'")
+    logger.info(f"[{tenant_id}] Ejecutando nodo 'publish' en plataforma '{platform}' para video '{edited_uri}'")
+
+    publisher = PublisherFactory.get_publisher(platform=platform)
+    publish_result = publisher.publish_reel(
+        tenant_id=tenant_id,
+        video_url=edited_uri,
+        caption=caption,
+    )
+
+    post_id = publish_result.get("published_post_id", f"post_{tenant_id[:8]}")
 
     logs = state.get("logs", [])
-    logs.append(f"[publish] Video publicado en Instagram con Post ID '{post_id}'")
+    logs.append(f"[publish] Video publicado en {platform.capitalize()} con Post ID '{post_id}'")
 
     return {
         "published_post_id": post_id,
         "logs": logs,
     }
+

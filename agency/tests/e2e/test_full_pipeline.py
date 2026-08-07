@@ -1,13 +1,7 @@
-"""
-test_full_pipeline.py
-
-Prueba de Integración End-to-End (E2E) para la Plataforma ViralSync.
-Verifica el ciclo de vida completo de un tenant de forma determinista y sin gasto de tokens.
-"""
-
 import pytest
 from httpx import AsyncClient, ASGITransport
 from backend.main import app
+from backend.security.auth import create_access_token
 from agents.crews.ideation_crew import run_ideation_crew
 from agents.crews.scriptwriting_crew import run_scriptwriting_crew
 from workers.video_edit_task import process_video_postproduction
@@ -35,6 +29,10 @@ async def test_complete_viral_sync_lifecycle():
         tenant_id = tenant_data["id"]
         assert "litellm_virtual_key" in tenant_data
 
+        # Crear token JWT autenticado para el tenant recién creado (Anti-IDOR)
+        token = create_access_token(user_id="usr_e2e_001", tenant_id=tenant_id)
+        auth_headers = {"Authorization": f"Bearer {token}", "X-Tenant-ID": tenant_id}
+
         # Step 2: Ejecución de Ideación RUM
         ideas = run_ideation_crew(
             niche="Fitness B2B y Gimnasios",
@@ -48,6 +46,7 @@ async def test_complete_viral_sync_lifecycle():
         res_idea_app = await ac.post(
             f"/api/v1/tenants/{tenant_id}/ideas/approve",
             json={"idea_id": "idea-e2e-001", "status": "approved"},
+            headers=auth_headers,
         )
         assert res_idea_app.status_code == 200
         assert res_idea_app.json()["idea_approval_status"] == "approved"
@@ -72,6 +71,7 @@ async def test_complete_viral_sync_lifecycle():
         res_pub_app = await ac.post(
             f"/api/v1/tenants/{tenant_id}/publish/approve",
             json={"status": "approved"},
+            headers=auth_headers,
         )
         assert res_pub_app.status_code == 200
         post_id = res_pub_app.json()["published_post_id"]
@@ -103,6 +103,7 @@ async def test_complete_viral_sync_lifecycle():
         res_takeover = await ac.post(
             f"/api/v1/tenants/{tenant_id}/leads/lead-001/takeover",
             json={"operator_id": "manager_uuid_99", "action": "pause_bot"},
+            headers=auth_headers,
         )
         assert res_takeover.status_code == 200
         assert res_takeover.json()["status"] == "handled_by_human"
@@ -116,3 +117,4 @@ async def test_complete_viral_sync_lifecycle():
         )
         assert metrics_res["classification"] == "VERDE"
         assert metrics_res["ratio"] == 12.0
+

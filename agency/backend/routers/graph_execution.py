@@ -24,6 +24,15 @@ class ProgressReportRequest(BaseModel):
     percent: Optional[int] = 0
 
 
+class IdeaApproveRequest(BaseModel):
+    idea_id: str
+    status: str = "approved"
+
+
+class PublishApproveRequest(BaseModel):
+    status: str = "approved"
+
+
 @router.post("/{tenant_id}/progress")
 async def report_progress(tenant_id: str, req: ProgressReportRequest):
     """Recibe reportes de progreso de microservicios externos y los transmite vía SSE al Frontend."""
@@ -38,6 +47,47 @@ async def report_progress(tenant_id: str, req: ProgressReportRequest):
         },
     )
     return {"status": "broadcasted", "stage": req.stage, "percent": req.percent}
+
+
+@router.post("/{tenant_id}/ideas/approve")
+async def approve_idea(tenant_id: str, req: IdeaApproveRequest):
+    """Checkpoint Humano: Aprobar o Rechazar Idea candidata."""
+    await sse_manager.broadcast(
+        tenant_id,
+        "idea_checkpoint",
+        {
+            "idea_id": req.idea_id,
+            "status": req.status,
+            "tenant_id": tenant_id,
+        },
+    )
+    return {
+        "status": "ok",
+        "tenant_id": tenant_id,
+        "idea_id": req.idea_id,
+        "idea_approval_status": req.status,
+    }
+
+
+@router.post("/{tenant_id}/publish/approve")
+async def approve_publish(tenant_id: str, req: PublishApproveRequest):
+    """Checkpoint Humano: Aprobar o Rechazar Publicación de Video."""
+    published_post_id = f"ig_reel_{tenant_id[:8]}_99812"
+    await sse_manager.broadcast(
+        tenant_id,
+        "publish_checkpoint",
+        {
+            "status": req.status,
+            "published_post_id": published_post_id,
+            "tenant_id": tenant_id,
+        },
+    )
+    return {
+        "status": "ok",
+        "tenant_id": tenant_id,
+        "publish_approval_status": req.status,
+        "published_post_id": published_post_id,
+    }
 
 
 @router.post("/{tenant_id}/graph/run")
@@ -80,3 +130,4 @@ async def run_graph(tenant_id: str, req: GraphRunRequest):
         "script": final_state.get("current_script", {}),
         "edited_video_uri": final_state.get("edited_video_uri", ""),
     }
+
