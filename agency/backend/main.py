@@ -20,7 +20,7 @@ from backend.webhooks.instagram_inbound import process_instagram_webhook_payload
 
 # Importación de Routers Modularizados
 from backend.routers.health import router as health_router
-from backend.routers.ingestion import router as ingestion_router
+from backend.routers.ingestion import tenant_admin_router, ingestion_router
 from backend.routers.graph_execution import router as graph_router
 from backend.routers.leads import router as leads_router
 from backend.routers.metrics import router as metrics_router
@@ -53,6 +53,7 @@ app.add_middleware(TenantContextMiddleware)
 _TENANT_GUARD = [Depends(verify_tenant_access)]
 
 app.include_router(health_router)
+app.include_router(tenant_admin_router)            # Sin guard: POST /tenants (registro público)
 app.include_router(ingestion_router, dependencies=_TENANT_GUARD)
 app.include_router(graph_router, dependencies=_TENANT_GUARD)
 app.include_router(leads_router, dependencies=_TENANT_GUARD)

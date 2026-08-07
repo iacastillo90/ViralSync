@@ -56,7 +56,7 @@ async def run_graph(tenant_id: str, req: GraphRunRequest):
         "niche_ppp": req.niche_ppp,
     }
 
-    final_state = graph_app.invoke(initial_state)
+    final_state = await graph_app.ainvoke(initial_state)
 
     await sse_manager.broadcast(
         tenant_id,

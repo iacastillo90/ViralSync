@@ -78,10 +78,32 @@ class Lead(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
-    lead_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    instagram_handle: Mapped[str] = mapped_column(String(128), nullable=False)
-    score: Mapped[float] = mapped_column(Float, default=0.0)
+    video_id: Mapped[Optional[str]] = mapped_column(String(64))
+    keyword: Mapped[Optional[str]] = mapped_column(String(128))
+    ig_user_id: Mapped[Optional[str]] = mapped_column(String(128))
+    mensaje_original: Mapped[Optional[str]] = mapped_column(Text)
+    origen: Mapped[str] = mapped_column(String(64), default="comment")
     status: Mapped[str] = mapped_column(String(32), default="new")
+    calificado_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    handled_by_human_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class VideoMetric(Base):
+    """Métricas de rendimiento de video por tenant en ventana de 72 horas."""
+    __tablename__ = "video_metrics"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    video_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    views: Mapped[int] = mapped_column(Integer, default=0)
+    followers_at_posting: Mapped[int] = mapped_column(Integer, default=0)
+    leads_generated: Mapped[int] = mapped_column(Integer, default=0)
+    completion_rate: Mapped[Optional[float]] = mapped_column(Float)
+    engagement_rate: Mapped[Optional[float]] = mapped_column(Float)
+    classification: Mapped[str] = mapped_column(String(32), default="VERDE")
+    action_taken: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
