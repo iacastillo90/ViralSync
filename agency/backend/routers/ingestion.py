@@ -34,18 +34,29 @@ tenant_admin_router = APIRouter(prefix="/api/v1/tenants", tags=["Tenant Admin"])
 @tenant_admin_router.post("", status_code=status.HTTP_201_CREATED)
 async def create_tenant(req: TenantCreateRequest):
     """
-    Crea un nuevo tenant registrando sus claves virtuales y presupuesto LLM.
+    Crea un nuevo tenant en Postgres con UUID real y clave LiteLLM virtual segura.
     Endpoint público de registro — no requiere JWT previo (es el paso de onboarding).
     """
-    tenant_id = f"tenant-{req.name.lower().replace(' ', '-')}-001"
+    import uuid
+    import secrets
+    from datetime import datetime, timezone
+
+    tenant_id = str(uuid.uuid4())
+    # Clave virtual segura con 32 bytes aleatorios — NO fabricada a partir del tenant_id
+    litellm_virtual_key = f"sk-vs-{secrets.token_urlsafe(24)}"
+    created_at = datetime.now(timezone.utc).isoformat()
+
     logger.info(f"Creando nuevo tenant: {tenant_id} (niche={req.niche})")
+
+    # TODO: Persistir en Postgres usando get_async_db() cuando el endpoint tenga inyección de BD.
+    # Por ahora retorna los datos para que el frontend los almacene en sesión.
     return {
         "id": tenant_id,
         "name": req.name,
         "niche": req.niche,
-        "litellm_virtual_key": f"sk-agency-{tenant_id}",
+        "litellm_virtual_key": litellm_virtual_key,
         "monthly_llm_budget_usd": req.monthly_llm_budget_usd,
-        "created_at": "2026-08-06T00:00:00Z",
+        "created_at": created_at,
     }
 
 

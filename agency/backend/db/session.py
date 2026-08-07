@@ -24,13 +24,24 @@ POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
 if AGENCY_ENV in ["prod", "production", "staging"] and POSTGRES_PASSWORD == "postgres":
     raise ValueError("SEGURIDAD: La contraseña de PostgreSQL 'postgres' por defecto está prohibida en entornos staging/prod.")
 
-DATABASE_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+)
+
+# Normalizar URL: si viene como postgresql:// (psycopg2 style) convertirla a asyncpg
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+
 SQLITE_FALLBACK_URL = "sqlite+aiosqlite:///:memory:"
 
-# Determinar si se usa PostgreSQL o SQLite fallback para desarrollo/pruebas
-TARGET_DB_URL = DATABASE_URL if os.getenv("USE_POSTGRES", "False").lower() in ["true", "1"] else SQLITE_FALLBACK_URL
+# Usar PostgreSQL siempre que el entorno tenga la URL correcta.
+# SQLite solo si se fuerza explícitamente con FORCE_SQLITE=true (para tests unitarios rápidos).
+TARGET_DB_URL = SQLITE_FALLBACK_URL if os.getenv("FORCE_SQLITE", "false").lower() in ["true", "1"] else DATABASE_URL
 
-engine_kwargs = {"echo": False}
+logger.info(f"[DB] Usando motor: {'SQLite (test)' if 'sqlite' in TARGET_DB_URL else 'PostgreSQL'} | ENV={AGENCY_ENV}")
+
+engine_kwargs: dict = {"echo": AGENCY_ENV == "dev"}
 if "sqlite" not in TARGET_DB_URL:
     engine_kwargs.update({
         "pool_pre_ping": True,
