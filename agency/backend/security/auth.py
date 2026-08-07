@@ -173,7 +173,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                         content={"detail": "Token JWT inválido o expirado."},
                     )
 
-        # 2. Fallback: solo permitido en modo dev
+        # 2. Fallback: solo permitido estrictamente en modo dev
         if not tenant_id and AGENCY_ENV in ("dev", "development"):
             tenant_id = request.headers.get("X-Tenant-ID") or request.headers.get("x-tenant-id")
 
@@ -182,7 +182,8 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             if len(path_parts) >= 5:
                 tenant_id = path_parts[4]
 
-        # 3. En staging/prod, sin JWT válido → rechazar 401
+        # 3. En staging/prod, sin JWT válido → rechazar 401 inmediatamente
+        # NUNCA hacer fallback a "default_tenant" en prod.
         if not tenant_id:
             if AGENCY_ENV not in ("dev", "development"):
                 from fastapi.responses import JSONResponse
