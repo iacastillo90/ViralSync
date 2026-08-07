@@ -2,7 +2,7 @@
 auth.py
 
 Módulo de Seguridad Fundacional, Autenticación JWT, Control de Acceso por Roles (RBAC)
-y Aislamiento Estricto de Contexto de Tenant.
+y Aislamiento Estricto de Contexto de Tenant con Verificación Fail-Closed.
 """
 
 import os
@@ -19,8 +19,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
 
+AGENCY_ENV = os.getenv("AGENCY_ENV", "dev").lower()
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "viralsync_enterprise_secret_key_2026")
 JWT_EXPIRATION_SECONDS = 86400  # 24 horas
+
+# Guardia de Seguridad Fail-Fast para JWT_SECRET_KEY en Producción
+if AGENCY_ENV in ["prod", "production", "staging"] and JWT_SECRET_KEY == "viralsync_enterprise_secret_key_2026":
+    raise ValueError("CRÍTICO DE SEGURIDAD: JWT_SECRET_KEY por defecto 'viralsync_enterprise_secret_key_2026' está prohibida en entornos staging/prod.")
 
 security = HTTPBearer(auto_error=False)
 
@@ -86,7 +91,7 @@ def decode_access_token(token: str) -> Dict[str, Any]:
 async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Security(security)) -> Dict[str, Any]:
     """Dependencia FastAPI para extraer y verificar el usuario del encabezado Authorization: Bearer <token>."""
     if not credentials:
-        if os.getenv("AGENCY_ENV", "dev") == "dev":
+        if AGENCY_ENV == "dev":
             return {"sub": "usr_dev_001", "tenant_id": "default_tenant", "role": "admin"}
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Encabezado de autorización ausente")
 
@@ -108,8 +113,8 @@ def require_roles(allowed_roles: List[str]):
 
 class TenantContextMiddleware(BaseHTTPMiddleware):
     """
-    Middleware para forzar el aislamiento estricto de Tenant.
-    Inspecciona los encabezados X-Tenant-ID o el payload JWT y lo asocia al estado de la solicitud.
+    Middleware para forzar el aislamiento de contexto de Tenant.
+    Inspecciona y valida prioritariamente el token JWT o el encabezado X-Tenant-ID.
     """
 
     async def dispatch(self, request: Request, call_next):
@@ -117,9 +122,21 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         if any(request.url.path.startswith(path) for path in public_paths):
             return await call_next(request)
 
-        tenant_id = request.headers.get("X-Tenant-ID") or request.headers.get("x-tenant-id")
+        tenant_id = None
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+            try:
+                payload = decode_access_token(token)
+                tenant_id = payload.get("tenant_id")
+                request.state.authenticated_user = payload
+            except Exception:
+                pass
 
-        if not tenant_id and request.url.path.startswith("/api/v1/tenants/"):
+        if not tenant_id:
+            tenant_id = request.headers.get("X-Tenant-ID") or request.headers.get("x-tenant-id")
+
+        if not tenant_id and AGENCY_ENV == "dev" and request.url.path.startswith("/api/v1/tenants/"):
             path_parts = request.url.path.split("/")
             if len(path_parts) >= 5:
                 tenant_id = path_parts[4]
