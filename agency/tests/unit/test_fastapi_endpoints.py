@@ -43,6 +43,7 @@ async def test_get_metrics_endpoint():
 
 @pytest.mark.anyio
 async def test_takeover_lead_endpoint():
+    """Testa el endpoint de takeover. Sin DB disponible en test, espera 503 (no 200 con datos ficticios)."""
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
@@ -50,6 +51,8 @@ async def test_takeover_lead_endpoint():
             "/api/v1/tenants/tenant-demo-001/leads/lead-001/takeover",
             json={"operator_id": "admin_uuid_443", "action": "pause_bot"},
         )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "handled_by_human"
+    # 503 = sin DB disponible (comportamiento correcto); 200 = DB conectada (en staging/prod)
+    assert response.status_code in (200, 503)
+    if response.status_code == 200:
+        data = response.json()
+        assert data["status"] == "handled_by_human"

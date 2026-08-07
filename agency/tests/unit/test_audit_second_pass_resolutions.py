@@ -25,17 +25,53 @@ def test_celery_acks_late_configuration():
     assert celery_app.conf.task_reject_on_worker_lost is True
 
 
-def test_anti_idor_cross_tenant_rejection():
-    """Verifica que el aislamiento Anti-IDOR en leads.py rechace accesos cruzados entre tenants."""
+def test_anti_idor_unit_verified_user_mismatch():
+    """
+    Test unitario: verifica que _verify_tenant_access_fail_closed rechace cuando
+    el usuario autenticado es de un tenant distinto al de la URL (tenant-B != tenant-A).
+    En AGENCY_ENV=dev se omite la exigencia de authenticated_user para permitir testing local.
+    """
     scope = {"type": "http", "method": "GET", "path": "/api/v1/tenants/tenant-A/leads", "headers": []}
     request = Request(scope)
-    request.state.tenant_id = "tenant-B"  # Inyección de tenant autenticado diferente al de la URL
+    # Simular usuario JWT autenticado del tenant-B intentando acceder a tenant-A
+    request.state.authenticated_user = {"sub": "user-B", "tenant_id": "tenant-B", "role": "editor"}
+    request.state.tenant_id = "tenant-B"
 
     with pytest.raises(HTTPException) as exc_info:
         _verify_tenant_access_fail_closed(request, "tenant-A")
 
     assert exc_info.value.status_code == 403
     assert "Aislamiento Anti-IDOR violado" in exc_info.value.detail
+
+
+def test_anti_idor_e2e_no_jwt_rejected():
+    """
+    Test de integración end-to-end (TestClient contra la app real):
+    Verifica que GET /tenants/tenant-A/leads sin JWT válido y con
+    X-Tenant-ID: tenant-B devuelva 401 o 403 (nunca 200 con datos de otro tenant).
+    """
+    import os
+    # Importar la app real de FastAPI
+    from backend.main import app
+    from fastapi.testclient import TestClient
+
+    # Ejecutar en AGENCY_ENV=dev para evitar que el middleware corte antes
+    # (en staging/prod el 401 viene del middleware, en dev viene del guard de leads.py)
+    os.environ["AGENCY_ENV"] = "dev"
+
+    client = TestClient(app, raise_server_exceptions=False)
+
+    # Petición sin JWT, con X-Tenant-ID falsificado
+    response = client.get(
+        "/api/v1/tenants/tenant-A/leads",
+        headers={"X-Tenant-ID": "tenant-B"},
+    )
+
+    # En dev, el middleware asigna tenant_id = "tenant-B" desde el header
+    # pero la URL pide tenant-A → el guard debe devolver 403
+    assert response.status_code in (401, 403), (
+        f"Se esperaba 401 o 403, pero se recibió {response.status_code} — posible IDOR activo."
+    )
 
 
 def test_dm_intent_classification():

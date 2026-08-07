@@ -58,7 +58,18 @@ def generate_grounded_reply(message: str, rag_context: str, tenant_id: str = "de
     # Intento de generación con LiteLLM / Gemini Gateway en entorno conectado
     try:
         import litellm
-        from backend.services.llm_budget_service import track_llm_token_usage
+        import redis as _redis
+        from backend.services.llm_budget_service import track_llm_token_usage, check_tenant_llm_budget
+
+        # Guard de presupuesto: bloquear si el tenant ya superó el límite mensual
+        _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        try:
+            _r = _redis.Redis.from_url(_redis_url, socket_timeout=1.0)
+            accumulated = float(_r.get(f"llm_spend:{tenant_id}") or 0.0)
+            if not check_tenant_llm_budget(tenant_id, accumulated):
+                raise Exception(f"Presupuesto LLM mensual excedido para tenant '{tenant_id}' (${accumulated:.2f})")
+        except _redis.RedisError as _re:
+            logger.warning(f"[{tenant_id}] Redis no disponible para verificar presupuesto ({_re}). Continuando sin guard.")
 
         model = os.getenv("LITELLM_DEFAULT_MODEL", "gemini/gemini-1.5-flash")
         prompt = (
