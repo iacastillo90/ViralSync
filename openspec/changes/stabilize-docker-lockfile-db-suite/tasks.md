@@ -26,21 +26,21 @@ Chain strategy: feature-branch-chain
 
 ## Phase 1: Docker + Lockfile + DB
 
-- [ ] 1.1 Create repo-root `.dockerignore` excluding `.venv`, `venv`, `node_modules`, `__pycache__`, `.git`, `frontend/.next`, `.coverage`, test caches. — Test: `docker build` context send is empty for those paths.
-- [ ] 1.2 `agency/docker-compose.yml`: `backend` + `celery_worker` `build:` → `{context: .., dockerfile: agency/Dockerfile}`. — Test: `docker compose config` resolves context; `docker build .` from repo root succeeds.
-- [ ] 1.3 `agency/docker-compose.yml`: `postgres` mounts `./migrations:/docker-entrypoint-initdb.d:ro`. — Test: fresh volume `\dt` lists all migration-001/002 tables (spec scenario).
-- [ ] 1.4 Regenerate `requirements.lock` via `uv pip compile requirements.txt -o requirements.lock` (uv 0.12.2 present). Verify litellm/asyncpg/aiosqlite/sqlalchemy/tenacity/pyjwt/python-jose present. — Test: lock contains all 7 pins (spec "complete compile" scenario).
-- [ ] 1.5 `agency/backend/db/session.py`: add `poolclass=StaticPool` on sqlite-in-memory URL branch. — Test: `FORCE_SQLITE` init + `select()` returns shared schema.
-- [ ] 1.6 `agency/backend/main.py`: add `asynccontextmanager` lifespan calling `await init_db()`; pass `lifespan=` to `FastAPI(...)`. — Test: app startup calls `init_db`; running twice is idempotent.
-- [ ] 1.7 `agency/tests/conftest.py`: top-level `os.environ["FORCE_SQLITE"]="true"`; `init_test_db` session/autouse fixture → `init_db()`; export `db_session` (AsyncSessionLocal). — Test: e2e uses SQLite not postgres.
+- [x] 1.1 Create repo-root `.dockerignore` excluding `.venv`, `venv`, `node_modules`, `__pycache__`, `.git`, `frontend/.next`, `.coverage`, test caches. — Test: `docker build` context send is empty for those paths.
+- [x] 1.2 `agency/docker-compose.yml`: `backend` + `celery_worker` `build:` → `{context: .., dockerfile: agency/Dockerfile}`. — Test: `docker compose config` resolves context; `docker build .` from repo root succeeds.
+- [x] 1.3 `agency/docker-compose.yml`: `postgres` mounts `./migrations:/docker-entrypoint-initdb.d:ro`. — Test: fresh volume `\dt` lists all migration-001/002 tables (spec scenario).
+- [x] 1.4 Regenerate `requirements.lock` via `uv pip compile requirements.txt -o requirements.lock` (uv 0.12.2 present). Verify litellm/asyncpg/aiosqlite/sqlalchemy/tenacity/pyjwt/python-jose present. — Test: lock contains all 7 pins (spec "complete compile" scenario).
+- [x] 1.5 `agency/backend/db/session.py`: add `poolclass=StaticPool` on sqlite-in-memory URL branch. — Test: `FORCE_SQLITE` init + `select()` returns shared schema.
+- [x] 1.6 `agency/backend/main.py`: add `asynccontextmanager` lifespan calling `await init_db()`; pass `lifespan=` to `FastAPI(...)`. — Test: app startup calls `init_db`; running twice is idempotent.
+- [x] 1.7 `agency/tests/conftest.py`: top-level `os.environ["FORCE_SQLITE"]="true"`; `init_test_db` session/autouse fixture → `init_db()`; export `db_session` (AsyncSessionLocal). — Test: e2e uses SQLite not postgres.
 
 ## Phase 2: Pytest Green
 
-- [ ] 2.1 `agency/agents/nodes/dm_response.py`: move `from typing import ... List, Optional, Tuple`; keep `tenacity` imports to retry/stop_after_attempt/wait_exponential. — Test: pytest collection import succeeds (spec scenario).
-- [ ] 2.2 `agency/tests/unit/test_deps_prune.py`: set `PRUNED` = the 6 dead pkgs; `KEPT` gains litellm/sqlalchemy/asyncpg/aiosqlite/tenacity/pyjwt/python-jose; `LOCK_TRANSITIVE_EXEMPT=set()`; drop sqlalchemy-lock-exemption test. — Test: prune param-loop passes for KEPT/PRUNED (spec scenarios).
-- [ ] 2.3 `agency/tests/e2e/test_full_pipeline.py`: after tenant create, seed `Lead(id="lead-001", ...)` via `db_session` before takeover. — Test: takeover POST returns 200 `handled_by_human` (spec scenario).
-- [ ] 2.4 Full-suite gate: run `uv run pytest -q` from repo root. — Test: 0 failures, 0 errors, all collect (spec green scenario).
+- [x] 2.1 `agency/agents/nodes/dm_response.py`: move `from typing import ... List, Optional, Tuple`; keep `tenacity` imports to retry/stop_after_attempt/wait_exponential. — Test: pytest collection import succeeds (spec scenario).
+- [x] 2.2 `agency/tests/unit/test_deps_prune.py`: set `PRUNED` = the 6 dead pkgs; `KEPT` gains litellm/sqlalchemy/asyncpg/aiosqlite/tenacity/pyjwt/python-jose; `LOCK_TRANSITIVE_EXEMPT=set()`; drop sqlalchemy-lock-exemption test. — Test: prune param-loop passes for KEPT/PRUNED (spec scenarios).
+- [x] 2.3 `agency/tests/e2e/test_full_pipeline.py`: after tenant create, seed `Lead(id="lead-001", ...)` via `db_session` before takeover. — Test: takeover POST returns 200 `handled_by_human` (spec scenario).
+- [x] 2.4 Full-suite gate: run `uv run pytest -q` from repo root. — Test: 0 failures, 0 errors, all collect (spec green scenario).
 
 ## Phase 3: Bring Up Stack
 
-- [ ] 3.1 `docker compose up --build`; verify all healthcheck services healthy (postgres, backend, celery_worker). — Test: `docker compose ps` healthy; backend reachable; DB schema present.
+- [x] 3.1 `docker compose up --build`; verify all healthcheck services healthy (postgres, backend, celery_worker). — Test: `docker compose ps` healthy; backend reachable; DB schema present.
