@@ -1,7 +1,7 @@
 # 🗺️ Mapa Completo de Arquitectura y Código Fuente — ViralSync
 
 > **Documentación Generada Automáticamente para Agentes de IA y Desarrolladores.**
-> **Métricas del Proyecto:** 163 Archivos | 13,329 Líneas de Código Totales
+> **Métricas del Proyecto:** 165 Archivos | 13,418 Líneas de Código Totales
 
 ---
 
@@ -29,7 +29,7 @@ ViralSync/
 - **Ruta Completa:** `.github/workflows/ci.yml`
 - **Líneas de Código:** 52
 
-### 📂 `Doc/` (12 archivos, 2,922 líneas)
+### 📂 `Doc/` (13 archivos, 2,933 líneas)
 
 #### 📄 [001_init_schema.sql](file:///home/ivan/Desktop/AgentMarketingIA/Doc/001_init_schema.sql)
 - **Ruta Completa:** `Doc/001_init_schema.sql`
@@ -53,7 +53,11 @@ ViralSync/
 
 #### 📄 [FULL_PROJECT_ARCHITECTURE_MAP.md](file:///home/ivan/Desktop/AgentMarketingIA/Doc/FULL_PROJECT_ARCHITECTURE_MAP.md)
 - **Ruta Completa:** `Doc/FULL_PROJECT_ARCHITECTURE_MAP.md`
-- **Líneas de Código:** 948
+- **Líneas de Código:** 908
+
+#### 📄 [PROMPT_AUDITORIA_LLM.md](file:///home/ivan/Desktop/AgentMarketingIA/Doc/PROMPT_AUDITORIA_LLM.md)
+- **Ruta Completa:** `Doc/PROMPT_AUDITORIA_LLM.md`
+- **Líneas de Código:** 51
 
 #### 📄 [ROADMAP_ENTERPRISE.md](file:///home/ivan/Desktop/AgentMarketingIA/Doc/ROADMAP_ENTERPRISE.md)
 - **Ruta Completa:** `Doc/ROADMAP_ENTERPRISE.md`
@@ -276,7 +280,7 @@ ViralSync/
 - **Descripción:** _rum_calculator.py_
 - **Funciones Principales:** `calculate_rum_score, evaluate_rum_threshold`
 
-### 📂 `agency/backend/` (19 archivos, 1,230 líneas)
+### 📂 `agency/backend/` (18 archivos, 1,182 líneas)
 
 #### 📄 [main.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/backend/main.py)
 - **Ruta Completa:** `agency/backend/main.py`
@@ -286,17 +290,10 @@ ViralSync/
 
 #### 📄 [sse_manager.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/backend/sse_manager.py)
 - **Ruta Completa:** `agency/backend/sse_manager.py`
-- **Líneas de Código:** 61
+- **Líneas de Código:** 128
 - **Descripción:** _sse_manager.py_
 - **Clases / Entidades:** `SSEManager`
-- **Funciones Principales:** `__init__, subscribe, unsubscribe, broadcast`
-
-#### 📄 [sse_manager.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/backend/realtime/sse_manager.py)
-- **Ruta Completa:** `agency/backend/realtime/sse_manager.py`
-- **Líneas de Código:** 127
-- **Descripción:** _backend/realtime/sse_manager.py_
-- **Clases / Entidades:** `SSEManager`
-- **Funciones Principales:** `_format_sse, _event_generator, stream_tenant_events, emit_node_progress, __init__, subscribe, unsubscribe, publish, _publish`
+- **Funciones Principales:** `_format_sse, _event_generator, stream_tenant_events, emit_node_progress, __init__, subscribe, unsubscribe, broadcast, publish, _publish`
 
 #### 📄 [graph_execution.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/backend/routers/graph_execution.py)
 - **Ruta Completa:** `agency/backend/routers/graph_execution.py`
@@ -353,7 +350,7 @@ ViralSync/
 
 #### 📄 [llm_budget_service.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/backend/services/llm_budget_service.py)
 - **Ruta Completa:** `agency/backend/services/llm_budget_service.py`
-- **Líneas de Código:** 61
+- **Líneas de Código:** 73
 - **Descripción:** _llm_budget_service.py_
 - **Funciones Principales:** `calculate_llm_cost, track_llm_token_usage, check_tenant_llm_budget`
 
@@ -660,7 +657,7 @@ ViralSync/
 - **Ruta Completa:** `agency/knowledge/script_4_blocks.md`
 - **Líneas de Código:** 14
 
-### 📂 `agency/microservices/` (6 archivos, 409 líneas)
+### 📂 `agency/microservices/` (7 archivos, 471 líneas)
 
 #### 📄 [Dockerfile](file:///home/ivan/Desktop/AgentMarketingIA/agency/microservices/renderer/Dockerfile)
 - **Ruta Completa:** `agency/microservices/renderer/Dockerfile`
@@ -668,7 +665,7 @@ ViralSync/
 
 #### 📄 [app.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/microservices/renderer/app.py)
 - **Ruta Completa:** `agency/microservices/renderer/app.py`
-- **Líneas de Código:** 248
+- **Líneas de Código:** 242
 - **Descripción:** _app.py_
 - **Clases / Entidades:** `RenderRequest, RenderResponse`
 - **Funciones Principales:** `generate_speech_audio, download_pexels_videos, compose_video_moviepy, upload_to_minio, report_render_progress, render_video_endpoint, health_check`
@@ -681,9 +678,16 @@ ViralSync/
 - **Ruta Completa:** `agency/microservices/publisher/Dockerfile`
 - **Líneas de Código:** 12
 
+#### 📄 [adapters.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/microservices/publisher/adapters.py)
+- **Ruta Completa:** `agency/microservices/publisher/adapters.py`
+- **Líneas de Código:** 116
+- **Descripción:** _adapters.py_
+- **Clases / Entidades:** `BaseSocialPublisher, InstagramGraphPublisher, TikTokPublisher, YouTubeShortsPublisher, PublisherFactory`
+- **Funciones Principales:** `publish_reel, get_publisher`
+
 #### 📄 [app.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/microservices/publisher/app.py)
 - **Ruta Completa:** `agency/microservices/publisher/app.py`
-- **Líneas de Código:** 118
+- **Líneas de Código:** 70
 - **Descripción:** _app.py_
 - **Clases / Entidades:** `PublishRequest, PublishResponse`
 - **Funciones Principales:** `publish_video_endpoint, health_check`
@@ -698,7 +702,7 @@ ViralSync/
 - **Ruta Completa:** `agency/migrations/001_init_schema.sql`
 - **Líneas de Código:** 202
 
-### 📂 `agency/tests/` (30 archivos, 1,411 líneas)
+### 📂 `agency/tests/` (31 archivos, 1,475 líneas)
 
 #### 📄 [__init__.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/tests/__init__.py)
 - **Ruta Completa:** `agency/tests/__init__.py`
@@ -709,6 +713,12 @@ ViralSync/
 - **Líneas de Código:** 17
 - **Descripción:** _conftest.py_
 - **Funciones Principales:** `set_testing_env`
+
+#### 📄 [test_audit_findings_resolutions.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/tests/unit/test_audit_findings_resolutions.py)
+- **Ruta Completa:** `agency/tests/unit/test_audit_findings_resolutions.py`
+- **Líneas de Código:** 64
+- **Descripción:** _test_audit_findings_resolutions.py_
+- **Funciones Principales:** `test_duplicated_sse_manager_removed, test_publisher_adapter_factory, test_publisher_adapter_execution, test_llm_budget_atomic_tracking`
 
 #### 📄 [test_brechas_consolidation.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/tests/unit/test_brechas_consolidation.py)
 - **Ruta Completa:** `agency/tests/unit/test_brechas_consolidation.py`
