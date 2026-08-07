@@ -72,7 +72,7 @@ INSTAGRAM_VERIFY_TOKEN = os.getenv("INSTAGRAM_WEBHOOK_VERIFY_TOKEN", "token_veri
 # --------------------------------------------------------------------- #
 # Realtime SSE Endpoint (/realtime/sse/{tenant_id})
 # --------------------------------------------------------------------- #
-@app.get("/realtime/sse/{tenant_id}")
+@app.get("/realtime/sse/{tenant_id}", dependencies=[Depends(verify_tenant_access)])
 async def sse_endpoint(tenant_id: str, request: Request):
     queue = sse_manager.subscribe(tenant_id)
 

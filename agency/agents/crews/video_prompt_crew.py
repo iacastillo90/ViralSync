@@ -8,7 +8,11 @@ Text-to-Video (Fal.ai Wan2.1, Google Veo, CogVideoX, LTX-Video) en formato verti
 """
 
 import logging
+import os
+import json
+import litellm
 from typing import Dict, Any, List
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +42,6 @@ def run_video_prompt_crew(
 
     # Generación dinámica de prompts cinematográficos vía LiteLLM
     try:
-        import os
-        import json
-        import litellm
         model = os.getenv("LITELLM_DEFAULT_MODEL", "gemini/gemini-1.5-flash")
 
         system_prompt = (
@@ -72,15 +73,23 @@ def run_video_prompt_crew(
             "]"
         )
 
-        res = litellm.completion(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.7,
-            max_tokens=1000,
+        @retry(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            reraise=True
         )
+        def _call_litellm():
+            return litellm.completion(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.7,
+                max_tokens=1500,
+            )
+
+        res = _call_litellm()
 
         content = res.choices[0].message.content.strip()
         if content.startswith("```"):
