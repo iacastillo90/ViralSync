@@ -112,7 +112,17 @@ async def receive_instagram_webhook(
 ):
     body_bytes = await request.body()
 
-    if x_hub_signature_256:
+    env = os.getenv("AGENCY_ENV", "dev")
+
+    # Validación HMAC obligatoria — el bypass de omitir el header es una vulnerabilidad crítica.
+    # En producción rechazamos inmediatamente si el header no está presente.
+    if not x_hub_signature_256:
+        if env != "dev":
+            raise HTTPException(
+                status_code=401,
+                detail="Firma HMAC requerida: header X-Hub-Signature-256 ausente",
+            )
+    else:
         is_valid = verify_meta_hmac_signature(
             payload_bytes=body_bytes,
             signature_header=x_hub_signature_256,

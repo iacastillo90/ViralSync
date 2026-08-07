@@ -49,8 +49,13 @@ def track_llm_token_usage(
         redis_key = f"llm_spend:{tenant_id}"
         new_total = r.incrbyfloat(redis_key, cost_usd)
         logger.info(f"[{tenant_id}] Consumo acumulado atómico en Redis: ${new_total:.6f} USD")
-    except Exception:
-        pass
+    except Exception as redis_err:
+        # Pass-open por diseño: Redis es de resiliencia, no crítico para el flujo.
+        # PERO debe ser visible para que los operadores sepan que el guard de presupuesto está inactivo.
+        logger.warning(
+            f"[{tenant_id}] ADVERTENCIA: No se pudo registrar consumo LLM en Redis ({redis_err}). "
+            "El guard de presupuesto está INACTIVO para esta llamada. Verificar conectividad de Redis."
+        )
 
     logger.info(f"[{tenant_id}] Consumo LLM: {model_name} | Tokens: {prompt_tokens}+{completion_tokens} | Costo: ${cost_usd:.6f} USD")
 

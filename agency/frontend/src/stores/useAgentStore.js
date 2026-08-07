@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export const useAgentStore = create((set) => ({
-  tenantId: "tenant-demo-001",
+  tenantId: null,  // Inicializado vacío — se setea desde el TenantStore tras login.
   nodes: {
     ideation: "idle",
     human_approval_idea: "idle",

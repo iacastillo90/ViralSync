@@ -12,3 +12,11 @@ httpx~=0.28.1
 pytest~=9.1.1
 pytest-cov~=7.1.0
 alembic~=1.13.0
+# Dependencias faltantes detectadas en Fase 6 — necesarias para importación y arranque
+litellm~=1.40.0
+asyncpg~=0.29.0
+aiosqlite~=0.20.0
+sqlalchemy[asyncio]~=2.0.36
+tenacity~=8.2.0
+pyjwt~=2.8.0
+python-jose[cryptography]~=3.3.0

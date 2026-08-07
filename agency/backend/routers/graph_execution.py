@@ -24,6 +24,13 @@ graph_app = build_agency_graph(checkpointer=global_memory)
 class GraphRunRequest(BaseModel):
     niche: Optional[str] = "B2B Software"
     niche_ppp: Optional[str] = "Escalar conversiones SaaS en 90 días"
+    target_platform: Optional[str] = "instagram"
+    # Credenciales OAuth del tenant para publicación. El frontend las pasa desde
+    # la sesión del usuario. No se persisten en memoria del servidor.
+    ig_user_id: Optional[str] = None
+    ig_access_token: Optional[str] = None
+    tiktok_access_token: Optional[str] = None
+    youtube_access_token: Optional[str] = None
 
 
 class ProgressReportRequest(BaseModel):
@@ -135,6 +142,13 @@ async def run_graph(tenant_id: str, req: GraphRunRequest, background_tasks: Back
         "tenant_id": tenant_id,
         "niche": req.niche,
         "niche_ppp": req.niche_ppp,
+        "target_platform": req.target_platform,
+        # Credenciales OAuth necesarias para que node_publish no falle en producción.
+        # Provienen directamente del request, nunca se almacenan en el servidor.
+        "ig_user_id": req.ig_user_id,
+        "ig_access_token": req.ig_access_token,
+        "tiktok_access_token": req.tiktok_access_token,
+        "youtube_access_token": req.youtube_access_token,
     }
     
     config = {"configurable": {"thread_id": tenant_id}}

@@ -39,12 +39,17 @@ def test_publisher_adapter_factory():
 
 
 def test_publisher_adapter_execution():
-    """Verifica la ejecución de publicación a través del adaptador TikTok."""
+    """Verifica la ejecución de publicación a través del adaptador TikTok.
+    
+    El adaptador TikTok requiere un token explícito (Fase 2 implementó fail-fast).
+    En entorno dev, cualquier token con prefijo 'token_' activa la simulación.
+    """
     publisher = PublisherFactory.get_publisher("tiktok")
     result = publisher.publish_reel(
         tenant_id="tenant-adapter-test",
         video_url="http://localhost:9000/viralsync-media/video.mp4",
         caption="Test caption #viral",
+        token="token_tiktok_dev_test",  # token dev requerido tras Fase 2 fail-fast
     )
 
     assert result["status"] == "published"

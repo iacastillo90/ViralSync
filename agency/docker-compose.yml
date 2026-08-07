@@ -69,7 +69,11 @@ services:
     volumes:
       - ./gateway:/app/config
     command: ["--config", "/app/config/litellm_config.${AGENCY_ENV:-dev}.yaml"]
-    env_file: ../.env
+    # env_file apunta al .env en la raíz del workspace (un nivel arriba de agency/).
+    # Si no existe, copiar: cp .env.example ../.env && editar valores.
+    env_file:
+      - path: ../.env
+        required: false
     restart: unless-stopped
     depends_on:
       - ollama
@@ -83,6 +87,10 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - POSTGRES_HOST=postgres
       - QDRANT_HOST=qdrant
+      - AGENCY_ENV=${AGENCY_ENV:-dev}
+    env_file:
+      - path: ../.env
+        required: false
     depends_on:
       - postgres
       - redis
@@ -95,6 +103,10 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - POSTGRES_HOST=postgres
+      - AGENCY_ENV=${AGENCY_ENV:-dev}
+    env_file:
+      - path: ../.env
+        required: false
     depends_on:
       - redis
       - postgres
@@ -133,8 +145,10 @@ services:
     ports:
       - "8002:8002"
     environment:
-      - INSTAGRAM_GRAPH_ACCESS_TOKEN=${INSTAGRAM_GRAPH_ACCESS_TOKEN:-dev_token}
-      - INSTAGRAM_DEFAULT_USER_ID=${INSTAGRAM_DEFAULT_USER_ID:-17841400000000000}
+      - AGENCY_ENV=${AGENCY_ENV:-dev}
+    env_file:
+      - path: ../.env
+        required: false
     restart: unless-stopped
 
   pg_backup:

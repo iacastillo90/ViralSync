@@ -10,7 +10,6 @@ Text-to-Video (Fal.ai Wan2.1, Google Veo, CogVideoX, LTX-Video) en formato verti
 import logging
 import os
 import json
-import litellm
 from typing import Dict, Any, List
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -42,6 +41,7 @@ def run_video_prompt_crew(
 
     # Generación dinámica de prompts cinematográficos vía LiteLLM
     try:
+        import litellm
         model = os.getenv("LITELLM_DEFAULT_MODEL", "gemini/gemini-1.5-flash")
 
         system_prompt = (
