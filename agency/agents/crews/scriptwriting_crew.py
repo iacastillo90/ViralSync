@@ -6,8 +6,11 @@ Crew de Guionismo de ViralSync (CrewAI):
 2. Guionista Viral: Redacta guiones estructurados en 4 bloques con palabra clave única de CTA.
 """
 
+import os
+import json
 import logging
 from typing import Dict, Any
+from tenacity import retry, stop_after_attempt, wait_exponential
 from agents.mcp_servers.rag_mcp_server import query_rag_knowledge
 from agents.criterion.ppp_validator import validate_ppp_structure
 
@@ -40,8 +43,6 @@ def run_scriptwriting_crew(
 
     # 3. Generación asistida por LLM (LiteLLM)
     try:
-        import os
-        import json
         import litellm
         model = os.getenv("LITELLM_DEFAULT_MODEL", "gemini/gemini-1.5-flash")
 
@@ -66,15 +67,23 @@ def run_scriptwriting_crew(
             "}"
         )
 
-        res = litellm.completion(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.7,
-            max_tokens=800,
+        @retry(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            reraise=True
         )
+        def _call_litellm():
+            return litellm.completion(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.7,
+                max_tokens=1500,
+            )
+
+        res = _call_litellm()
 
         content = res.choices[0].message.content.strip()
         if content.startswith("```"):

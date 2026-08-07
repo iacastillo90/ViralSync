@@ -9,7 +9,8 @@ genera respuestas dinámicas asistidas por LLM Gateway y realiza el handoff auto
 import os
 import json
 import logging
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any
+from tenacity import retry, stop_after_attempt, wait_exponential, List, Optional, Tuple
 from typing_extensions import TypedDict
 from agents.mcp_servers.rag_mcp_server import query_rag_knowledge
 from backend.sse_manager import emit_node_progress
@@ -72,17 +73,26 @@ def generate_grounded_reply(message: str, rag_context: str, tenant_id: str = "de
             logger.warning(f"[{tenant_id}] Redis no disponible para verificar presupuesto ({_re}). Continuando sin guard.")
 
         model = os.getenv("LITELLM_DEFAULT_MODEL", "gemini/gemini-1.5-flash")
-        prompt = (
-            f"Eres un Asistente de Ventas de Instagram. Contexto RAG de marca:\n{rag_context}\n\n"
-            f"Mensaje del Cliente: '{message}'\n"
-            f"Responde de forma concisa (máximo 2 oraciones) y amigable en español."
+        system_prompt = "Eres un Asistente de Ventas de Instagram. Responde de forma concisa (máximo 2 oraciones) y amigable en español."
+        user_prompt = f"Contexto RAG de marca:\n{rag_context}\n\nMensaje del Cliente: '{message}'"
+
+        @retry(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            reraise=True
         )
-        res = litellm.completion(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=150,
-        )
+        def _call_litellm():
+            return litellm.completion(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.6,
+                max_tokens=300,
+            )
+
+        res = _call_litellm()
         generated_reply = res.choices[0].message.content.strip()
 
         # Registrar consumo de presupuesto LLM si LiteLLM devuelve tokens
