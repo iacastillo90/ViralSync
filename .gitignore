@@ -5,6 +5,9 @@ node_modules/
 .next/
 out/
 build/
-.env
+.env*
+!.env.example
 *.log
 Doc/agency_pending_files.zip
+.venv/
+venv/
