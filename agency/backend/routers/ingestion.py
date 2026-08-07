@@ -9,7 +9,7 @@ from fastapi import APIRouter, File, UploadFile, Form, status
 from pydantic import BaseModel
 from backend.storage.minio_client import save_product_photo_to_minio
 from agents.criterion.niche_classifier import classify_business_type
-from backend.realtime.sse_manager import sse_manager
+from backend.sse_manager import sse_manager
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["Tenant & Ingestion"])
 

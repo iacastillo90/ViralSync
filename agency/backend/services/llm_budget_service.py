@@ -2,15 +2,17 @@
 llm_budget_service.py
 
 Servicio Enterprise para el seguimiento de consumo de tokens LLM, cálculo de costos en USD
-y control de presupuestos mensuales por tenant.
+y control de presupuestos mensuales por tenant con reserva atómica basada en Redis.
 """
 
+import os
 import logging
 from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
-# Precios promedio de referencia por millón de tokens (Gemini 1.5 Flash / Groq / OpenAI)
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
 MODEL_COST_PER_1M_PROMPT = {
     "gemini-1.5-flash": 0.075,
     "groq-llama-3-70b": 0.590,
@@ -38,8 +40,18 @@ def calculate_llm_cost(model_name: str, prompt_tokens: int, completion_tokens: i
 def track_llm_token_usage(
     tenant_id: str, model_name: str, prompt_tokens: int, completion_tokens: int
 ) -> Dict[str, Any]:
-    """Registra una llamada LLM con su costo asociado."""
+    """Registra una llamada LLM con su costo asociado e incrementa atómicamente el contador en Redis si está disponible."""
     cost_usd = calculate_llm_cost(model_name, prompt_tokens, completion_tokens)
+    
+    try:
+        import redis
+        r = redis.Redis.from_url(REDIS_URL, socket_timeout=1.0)
+        redis_key = f"llm_spend:{tenant_id}"
+        new_total = r.incrbyfloat(redis_key, cost_usd)
+        logger.info(f"[{tenant_id}] Consumo acumulado atómico en Redis: ${new_total:.6f} USD")
+    except Exception:
+        pass
+
     logger.info(f"[{tenant_id}] Consumo LLM: {model_name} | Tokens: {prompt_tokens}+{completion_tokens} | Costo: ${cost_usd:.6f} USD")
 
     return {

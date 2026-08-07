@@ -7,7 +7,7 @@ Router para la Ejecución Asíncrona del Grafo LangGraph y Reportes SSE en Vivo.
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, status
 from pydantic import BaseModel
-from backend.realtime.sse_manager import sse_manager
+from backend.sse_manager import sse_manager
 from agents.graph import build_agency_graph
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["Graph Execution"])

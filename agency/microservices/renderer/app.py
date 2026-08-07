@@ -32,7 +32,6 @@ app = FastAPI(
     description="Motor de renderizado autónomo de video a costo cero con Edge-TTS, Pexels y MoviePy",
 )
 
-# Variables de Entorno
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://minio:9000").replace("http://", "").replace("https://", "")
 MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER", "minioadmin")
 MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
@@ -83,7 +82,6 @@ def download_pexels_videos(keywords: List[str], temp_dir: str) -> List[str]:
             videos = data.get("videos", [])
             for idx, video in enumerate(videos[:4]):
                 video_files = video.get("video_files", [])
-                # Filtro de Hardware: Buscar clip ligero (720p o max 1080p)
                 light_file = next((vf for vf in video_files if 720 <= vf.get("height", 0) <= 1080), None) or video_files[0] if video_files else None
                 if light_file and light_file.get("link"):
                     video_url = light_file["link"]
@@ -107,7 +105,6 @@ def compose_video_moviepy(audio_path: str, video_paths: List[str], output_path: 
 
     logger.info("Componiendo video final con MoviePy...")
     audio_clip = AudioFileClip(audio_path)
-    # Filtro de Hardware: Limitar duración máxima a 45 segundos para cuidar CPU y disco
     audio_duration = min(audio_clip.duration, 45.0)
 
     clip_objects = []
@@ -116,9 +113,7 @@ def compose_video_moviepy(audio_path: str, video_paths: List[str], output_path: 
         for path in video_paths:
             try:
                 v_clip = VideoFileClip(path)
-                # Recortar duración del clip
                 sub_clip = v_clip.subclip(0, min(v_clip.duration, duration_per_clip))
-                # Redimensionar / Recortar a 9:16 (1080x1920)
                 sub_clip = sub_clip.resize(height=1920)
                 if sub_clip.w > 1080:
                     x_center = sub_clip.w / 2
@@ -127,7 +122,6 @@ def compose_video_moviepy(audio_path: str, video_paths: List[str], output_path: 
             except Exception as exc:
                 logger.warning(f"Error procesando clip {path}: {exc}")
 
-    # Fallback si no se pudieron cargar clips de Pexels
     if not clip_objects:
         logger.info("Usando fondo dinámico de fallback para el renderizado...")
         fallback_clip = ColorClip(size=(1080, 1920), color=(15, 23, 42), duration=audio_duration)
@@ -147,7 +141,6 @@ def compose_video_moviepy(audio_path: str, video_paths: List[str], output_path: 
         logger=None,
     )
 
-    # Cerrar clips de MoviePy para liberar memoria RAM y handles
     audio_clip.close()
     final_video.close()
     for c in clip_objects:
@@ -196,13 +189,14 @@ def report_render_progress(tenant_id: str, stage: str, message: str, percent: in
 async def render_video_endpoint(req: RenderRequest):
     """
     Endpoint principal para renderizar videos faceless a costo cero.
+    Despacha las operaciones CPU-bound a hilos secundarios para no congelar el bucle de eventos de FastAPI.
     Garantiza la eliminación de todos los archivos temporales post-renderizado (Zero Waste).
     """
     temp_dir = tempfile.mkdtemp(prefix="viralsync_render_")
     audio_path = os.path.join(temp_dir, "speech.mp3")
     output_mp4_path = os.path.join(temp_dir, "final_output.mp4")
 
-    logger.info(f"[{req.tenant_id}] Iniciando renderizado faceless: '{req.title}'")
+    logger.info(f"[{req.tenant_id}] Iniciando renderizado faceless no-bloqueante: '{req.title}'")
     report_render_progress(req.tenant_id, "start", "Iniciando renderizado faceless...", 5)
 
     try:
@@ -210,17 +204,17 @@ async def render_video_endpoint(req: RenderRequest):
         report_render_progress(req.tenant_id, "audio", "Sintetizando voz en español con Edge-TTS...", 25)
         await generate_speech_audio(req.script_text, audio_path)
 
-        # 2. Descargar clips de Pexels API
+        # 2. Descargar clips de Pexels API en hilo secundario (Non-blocking I/O)
         report_render_progress(req.tenant_id, "broll", "Buscando y descargando clips B-roll 720p desde Pexels...", 50)
-        downloaded_clips = download_pexels_videos(req.keywords, temp_dir)
+        downloaded_clips = await asyncio.to_thread(download_pexels_videos, req.keywords, temp_dir)
 
-        # 3. Componer video con MoviePy
+        # 3. Componer video con MoviePy en hilo secundario (Non-blocking CPU-bound)
         report_render_progress(req.tenant_id, "moviepy", "Componiendo y ajustando formato 9:16 con MoviePy...", 75)
-        duration = compose_video_moviepy(audio_path, downloaded_clips, output_mp4_path)
+        duration = await asyncio.to_thread(compose_video_moviepy, audio_path, downloaded_clips, output_mp4_path)
 
         # 4. Subir a MinIO
         report_render_progress(req.tenant_id, "minio", "Subiendo video MP4 producido a MinIO Storage...", 90)
-        video_url = upload_to_minio(output_mp4_path, req.tenant_id)
+        video_url = await asyncio.to_thread(upload_to_minio, output_mp4_path, req.tenant_id)
 
         report_render_progress(req.tenant_id, "completed", "Renderizado completado con éxito.", 100)
 
@@ -236,8 +230,8 @@ async def render_video_endpoint(req: RenderRequest):
         raise HTTPException(status_code=500, detail=f"Error en renderizado de video: {str(exc)}")
 
     finally:
-        # CRÍTICO PARA EL DISCO: Limpieza absoluta de la carpeta y archivos temporales
-        logger.info(f"Ejecutando limpieza estricta de disco (Zero Waste) en {temp_dir}...")
+        # CRÍTICO PARA EL DISCO: Limpieza absoluta de la carpeta y archivos temporales ante cualquier resultado
+        logger.info(f"Ejecutando recolección de basura Zero Waste en {temp_dir}...")
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
             logger.info("Carpeta y archivos temporales eliminados del disco satisfactoriamente.")
