@@ -1,7 +1,7 @@
 # 🗺️ Mapa Completo de Arquitectura y Código Fuente — ViralSync
 
 > **Documentación Generada Automáticamente para Agentes de IA y Desarrolladores.**
-> **Métricas del Proyecto:** 168 Archivos | 13,726 Líneas de Código Totales
+> **Métricas del Proyecto:** 168 Archivos | 13,745 Líneas de Código Totales
 
 ---
 
@@ -29,7 +29,7 @@ ViralSync/
 - **Ruta Completa:** `.github/workflows/ci.yml`
 - **Líneas de Código:** 52
 
-### 📂 `Doc/` (13 archivos, 2,932 líneas)
+### 📂 `Doc/` (13 archivos, 2,951 líneas)
 
 #### 📄 [001_init_schema.sql](file:///home/ivan/Desktop/AgentMarketingIA/Doc/001_init_schema.sql)
 - **Ruta Completa:** `Doc/001_init_schema.sql`
@@ -53,7 +53,7 @@ ViralSync/
 
 #### 📄 [FULL_PROJECT_ARCHITECTURE_MAP.md](file:///home/ivan/Desktop/AgentMarketingIA/Doc/FULL_PROJECT_ARCHITECTURE_MAP.md)
 - **Ruta Completa:** `Doc/FULL_PROJECT_ARCHITECTURE_MAP.md`
-- **Líneas de Código:** 918
+- **Líneas de Código:** 937
 
 #### 📄 [PROMPT_AUDITORIA_LLM.md](file:///home/ivan/Desktop/AgentMarketingIA/Doc/PROMPT_AUDITORIA_LLM.md)
 - **Ruta Completa:** `Doc/PROMPT_AUDITORIA_LLM.md`
