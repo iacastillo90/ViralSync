@@ -1,7 +1,7 @@
 # 🗺️ CÓDIGO FUENTE REAL 100% COMPLETO Y SUITE PYTEST — ViralSync
 
 > **Documentación Exhaustiva con Código Fuente Fuente 100% Completo sin Recortes.**
-> **Métricas del Proyecto:** 164 Archivos Analizados | 12,764 Líneas de Código Totales
+> **Métricas del Proyecto:** 163 Archivos Analizados | 12,614 Líneas de Código Totales
 
 ---
 
@@ -124,13 +124,13 @@ venv/lib/python3.14/site-packages/fastapi/testclient.py:1
   /home/ivan/Desktop/AgentMarketingIA/venv/lib/python3.14/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
     from starlette.testclient import TestClient as TestClient  # noqa
 
-agency/tests/unit/test_audit_second_pass_resolutions.py::test_dm_graph_compilation_and_execution[asyncio]
-agency/tests/unit/test_scriptwriting_crew.py::test_run_scriptwriting_crew_4_blocks
+agency/tests/unit/test_audit_second_pass_resolutions.py::test_rum_ema_recalibration_and_clamp
+agency/tests/unit/test_rum_calculator.py::test_calculate_rum_score_valid
   /home/ivan/Desktop/AgentMarketingIA/venv/lib/python3.14/site-packages/qdrant_client/qdrant_remote.py:282: UserWarning: Qdrant client version 1.19.0 is incompatible with server version 1.7.4. Major versions should match and minor version difference must not exceed 1. Set check_compatibility=False to skip version check.
     show_warning(
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-======================= 103 passed, 3 warnings in 9.85s ========================
+======================= 103 passed, 3 warnings in 13.00s =======================
 ````
 
 ---
@@ -216,7 +216,7 @@ jobs:
 
 ---
 
-### 📂 `Doc/` (10 archivos, 1,968 líneas)
+### 📂 `Doc/` (9 archivos, 1,818 líneas)
 
 #### 📄 [001_init_schema.sql](file:///home/ivan/Desktop/AgentMarketingIA/Doc/001_init_schema.sql)
 - **Ruta Completa:** `Doc/001_init_schema.sql`
@@ -779,7 +779,7 @@ agency/
 │   │   ├── scriptwriting.py    # Nodo de guionismo (4 bloques + PPP)
 │   │   ├── video_edit.py       # Nodo de encolamiento de trabajo de edición en Celery
 │   │   ├── publish.py          # Nodo de publicación oficial vía Instagram Graph API
-│   │   ├── market_rum.py       # Helper de consulta de umbrales RUM dinámicos en DB
+│   │   ├── rum_calculator.py       # Helper de consulta de umbrales RUM dinámicos en DB
 │   │   └── __init__.py
 │   ├── crews/                  # Crews de CrewAI por dominio
 │   │   ├── ideation_crew.py    # Crew de investigación 4 cuadrantes + SearXNG
@@ -920,7 +920,7 @@ A medida que el sistema pase del MVP a fase de producción masiva (GA), se deben
 
 ## 🧪 Estrategia de Testing Backend
 
-- **Pruebas Unitarias (`pytest`):** Cobertura de helpers RUM (`market_rum.py`), lógica de scoring 5/50 y formateadores de guiones.
+- **Pruebas Unitarias (`pytest`):** Cobertura de helpers RUM (`rum_calculator.py`), lógica de scoring 5/50 y formateadores de guiones.
 - **Pruebas de Integración:** Verificación de endpoints FastAPI, generación de firma HMAC en webhooks y respuestas del proxy LiteLLM.
 - **Prueba End-to-End (E2E):** Ejecución del flujo completo en `AGENCY_ENV=dev` contra modelos locales Ollama para validar el StateGraph sin costo.
 ````
@@ -1982,167 +1982,6 @@ def build_agency_graph(checkpointer: PostgresSaver) -> StateGraph:
 def get_thread_config(tenant_id: str) -> dict:
     """thread_id = tenant_id -> persistencia de estado aislada por cliente."""
     return {"configurable": {"thread_id": tenant_id}}
-````
-
----
-
-#### 📄 [instagram_inbound.py](file:///home/ivan/Desktop/AgentMarketingIA/Doc/instagram_inbound.py)
-- **Ruta Completa:** `Doc/instagram_inbound.py`
-- **Líneas de Código:** 150
-- **Descripción:** _backend/webhooks/instagram_inbound.py_
-- **Funciones:** `verify_webhook, _valid_signature, _extract_keyword_and_text, receive_webhook`
-
-````python
-"""
-backend/webhooks/instagram_inbound.py
-
-Captura DMs y comentarios con palabra clave en tiempo real (AGENTS.md 7.9)
-— el motor de conversión del sistema. El Reel no vende, esto es lo que
-convierte atención en un lead calificado con atribución al video de origen.
-
-Seguridad (AGENTS.md sección 8, regla explícita):
-  "todo endpoint bajo /backend/webhooks/ debe validar la firma
-   X-Hub-Signature-256 de Meta antes de procesar el payload, y el
-   hub.verify_token del handshake inicial se guarda como variable de
-   entorno, nunca en código."
-
-Flujo:
-  1. GET  /webhooks/instagram  -> handshake de verificación de Meta.
-  2. POST /webhooks/instagram  -> validar firma -> extraer keyword ->
-     agente calificador ligero (segundos, no un Crew completo) -> guardar
-     lead con atribución completa -> notificar dashboard vía SSE.
-"""
-
-from __future__ import annotations
-
-import hashlib
-import hmac
-import os
-from datetime import datetime, timezone
-
-from fastapi import APIRouter, Header, HTTPException, Request, Response
-from sqlalchemy.orm import Session
-
-from backend.db import get_db_session
-from backend.models import Campaign, Lead
-from backend.realtime.sse_manager import sse_manager
-from agents.qualifier.lead_qualifier import qualify_lead  # agente ligero, NO un Crew completo
-
-router = APIRouter(prefix="/webhooks/instagram", tags=["webhooks"])
-
-APP_SECRET = os.environ["INSTAGRAM_APP_SECRET"]
-VERIFY_TOKEN = os.environ["INSTAGRAM_WEBHOOK_VERIFY_TOKEN"]  # nunca hardcodeado, ver AGENTS.md sección 8
-
-
-@router.get("")
-def verify_webhook(
-    hub_mode: str | None = None,
-    hub_challenge: str | None = None,
-    hub_verify_token: str | None = None,
-):
-    """Handshake de verificación inicial que exige Meta al registrar el webhook."""
-    if hub_mode == "subscribe" and hub_verify_token == VERIFY_TOKEN:
-        return Response(content=hub_challenge, media_type="text/plain")
-    raise HTTPException(status_code=403, detail="Verify token inválido")
-
-
-def _valid_signature(raw_body: bytes, signature_header: str | None) -> bool:
-    """
-    Valida X-Hub-Signature-256: sha256=<hmac_hex> calculado con APP_SECRET
-    sobre el body crudo. Comparación en tiempo constante (hmac.compare_digest)
-    para evitar timing attacks.
-    """
-    if not signature_header or not signature_header.startswith("sha256="):
-        return False
-
-    expected = hmac.new(APP_SECRET.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
-    received = signature_header.removeprefix("sha256=")
-    return hmac.compare_digest(expected, received)
-
-
-def _extract_keyword_and_text(entry: dict) -> tuple[str | None, str | None, str | None]:
-    """
-    Devuelve (texto_mensaje, ig_user_id, campo) desde un evento de comment
-    o messaging (DM). Instagram Graph API envía estructuras distintas para
-    cada uno — se normalizan aquí para que el resto del pipeline no le
-    importe el origen.
-    """
-    changes = entry.get("changes", [])
-    if changes:
-        value = changes[0].get("value", {})
-        texto = value.get("text") or value.get("comment", {}).get("text")
-        ig_user_id = value.get("from", {}).get("id")
-        return texto, ig_user_id, "comment"
-
-    messaging = entry.get("messaging", [])
-    if messaging:
-        msg = messaging[0]
-        texto = msg.get("message", {}).get("text")
-        ig_user_id = msg.get("sender", {}).get("id")
-        return texto, ig_user_id, "dm"
-
-    return None, None, None
-
-
-@router.post("")
-async def receive_webhook(request: Request, x_hub_signature_256: str | None = Header(default=None)):
-    raw_body = await request.body()
-
-    if not _valid_signature(raw_body, x_hub_signature_256):
-        # Nunca se procesa un payload sin firma válida — trátese como
-        # endpoint de autenticación (AGENTS.md sección 8).
-        raise HTTPException(status_code=403, detail="Firma inválida")
-
-    payload = await request.json()
-    db: Session = get_db_session()
-
-    for entry in payload.get("entry", []):
-        texto, ig_user_id, origen = _extract_keyword_and_text(entry)
-        if not texto or not ig_user_id:
-            continue
-
-        # El agente calificador responde en segundos: solo hace matching
-        # de keyword contra campañas activas del tenant + arma el contexto
-        # de atribución. NUNCA cierra la venta (AGENTS.md 7.9, paso 4).
-        result = qualify_lead(texto=texto, entry=entry)
-        if result is None:
-            continue  # ninguna keyword de campaña activa coincidió — ruido, se descarta
-
-        campaign: Campaign | None = (
-            db.query(Campaign)
-            .filter(Campaign.keyword == result.keyword, Campaign.status == "active")
-            .first()
-        )
-        if campaign is None:
-            continue
-
-        lead = Lead(
-            tenant_id=campaign.tenant_id,
-            video_id=campaign.video_id,
-            keyword=result.keyword,
-            ig_user_id=ig_user_id,
-            mensaje_original=texto,
-            origen=origen,
-            calificado_at=datetime.now(timezone.utc),
-        )
-        db.add(lead)
-        db.commit()
-        db.refresh(lead)
-
-        # Notifica al dashboard en tiempo real — el humano toma la
-        # conversación real desde aquí (AGENTS.md 7.9, paso 4).
-        await sse_manager.publish(
-            tenant_id=str(campaign.tenant_id),
-            event="new_lead",
-            data={
-                "lead_id": str(lead.id),
-                "video_id": str(lead.video_id),
-                "keyword": lead.keyword,
-                "mensaje_original": lead.mensaje_original,
-            },
-        )
-
-    return {"status": "ok"}
 ````
 
 ---
