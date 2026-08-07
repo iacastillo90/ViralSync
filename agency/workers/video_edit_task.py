@@ -10,6 +10,7 @@ import os
 import logging
 import httpx
 from typing import Dict, Any, List, Optional
+from tenacity import retry, stop_after_attempt, wait_exponential
 from workers.celery_app import celery_app
 from agents.crews.video_director_crew import run_video_director_crew
 from agents.mcp_servers.video_gen_client import (
@@ -58,22 +59,30 @@ def trigger_video_render(
     logger.info(f"[{tenant_id}] Filtro de Valor APROBADO (Score: {director_result.get('quality_score')}). Enviando HTTP POST a {target_url} (Timeout: 300s)...")
 
     video_url = ""
-    try:
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        reraise=True
+    )
+    def _call_renderer(url):
         with httpx.Client(timeout=300.0) as client:
-            response = client.post(target_url, json=render_payload)
-            if response.status_code == 201:
-                data = response.json()
-                video_url = data.get("video_url", "")
-                logger.info(f"[{tenant_id}] Renderizado completado exitosamente: {video_url}")
-            else:
-                logger.warning(f"Respuesta no esperada del microservicio ({response.status_code}): {response.text}")
+            return client.post(url, json=render_payload)
+
+    try:
+        response = _call_renderer(target_url)
+        if response.status_code == 201:
+            data = response.json()
+            video_url = data.get("video_url", "")
+            logger.info(f"[{tenant_id}] Renderizado completado exitosamente: {video_url}")
+        else:
+            logger.warning(f"Respuesta no esperada del microservicio ({response.status_code}): {response.text}")
     except Exception as exc:
         logger.warning(f"No se pudo conectar a {target_url} ({exc}). Intentando fallback local...")
         try:
-            with httpx.Client(timeout=300.0) as client:
-                response = client.post(FALLBACK_RENDERER_URL, json=render_payload)
-                if response.status_code == 201:
-                    video_url = response.json().get("video_url", "")
+            response = _call_renderer(FALLBACK_RENDERER_URL)
+            if response.status_code == 201:
+                video_url = response.json().get("video_url", "")
         except Exception as fallback_exc:
             logger.error(f"Fallo definitivo conectando al microservicio de renderizado: {fallback_exc}")
 

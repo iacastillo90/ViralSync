@@ -10,6 +10,7 @@ import os
 import json
 import logging
 from typing import List, Dict, Any
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from agents.mcp_servers.searxng_mcp_server import searxng_search_sanitized
 from agents.criterion.rum_calculator import calculate_rum_score
 from agents.criterion.filter_5_50 import passes_5_50_filter
@@ -63,15 +64,23 @@ def run_ideation_crew(niche: str, market_map: Dict[str, Any]) -> List[Dict[str, 
             "]"
         )
 
-        res = litellm.completion(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.7,
-            max_tokens=1000,
+        @retry(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=1, min=2, max=10),
+            reraise=True
         )
+        def _call_litellm():
+            return litellm.completion(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.7,
+                max_tokens=1000,
+            )
+
+        res = _call_litellm()
 
         content = res.choices[0].message.content.strip()
         if content.startswith("```"):
