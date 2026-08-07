@@ -13,6 +13,15 @@ def node_publish(state: Dict[str, Any]) -> Dict[str, Any]:
     caption = f"{script.get('gancho_0_5s', '')}\n\n{script.get('cta_50_60s', '')}"
     platform = state.get("target_platform", "instagram")
 
+    # Extraer credenciales OAuth desde el estado del grafo.
+    # El estado las recibe del endpoint /graph/run → vienen del frontend (sesión del usuario).
+    user_id = state.get("ig_user_id")
+    token = state.get("ig_access_token")
+    if platform == "tiktok":
+        token = state.get("tiktok_access_token")
+    elif platform == "youtube_shorts":
+        token = state.get("youtube_access_token")
+
     logger.info(f"[{tenant_id}] Ejecutando nodo 'publish' en plataforma '{platform}' para video '{edited_uri}'")
 
     publisher = PublisherFactory.get_publisher(platform=platform)
@@ -20,6 +29,8 @@ def node_publish(state: Dict[str, Any]) -> Dict[str, Any]:
         tenant_id=tenant_id,
         video_url=edited_uri,
         caption=caption,
+        user_id=user_id,
+        token=token,
     )
 
     post_id = publish_result.get("published_post_id", f"post_{tenant_id[:8]}")
