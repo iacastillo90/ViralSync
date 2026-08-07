@@ -1,7 +1,7 @@
 # litellm_config.dev.yaml
 # AGENCY_ENV=dev — Pool de free tiers reales sin Ollama local requerido.
-# Estrategia: Gemini 2.5 Flash primario (1M tokens/día gratis).
-# Fallback automático en 429/503 → Groq → GitHub Models → OpenRouter → Ollama.
+# Estrategia: Gemini 3.5 Flash primario (1M tokens/día gratis).
+# Fallback automático en 429/503 → Groq → OpenRouter → Ollama.
 #
 # Setup: Copiar .env.example a .env y llenar al menos una API key.
 
@@ -9,7 +9,7 @@ model_list:
   # ── Primario ─────────────────────────────────────────────────────── #
   - model_name: motor-agencia
     litellm_params:
-      model: gemini/gemini-2.5-flash
+      model: gemini/gemini-3.5-flash
       api_key: "os.environ/GEMINI_API_KEY"
 
   # ── Fallbacks Free Tier ──────────────────────────────────────────── #
@@ -18,15 +18,9 @@ model_list:
       model: groq/llama-3.3-70b-versatile
       api_key: "os.environ/GROQ_API_KEY"
 
-  - model_name: motor-agencia-github
-    litellm_params:
-      model: github/gpt-4o-mini
-      api_key: "os.environ/GITHUB_MODELS_TOKEN"
-      api_base: "https://models.inference.ai.azure.com"
-
   - model_name: motor-agencia-openrouter
     litellm_params:
-      model: openrouter/google/gemini-flash-1.5-8b
+      model: openrouter/openrouter/free
       api_key: "os.environ/OPENROUTER_API_KEY"
 
   # ── Fallback Local (OPCIONAL — requiere Ollama corriendo) ────────── #
@@ -43,7 +37,6 @@ router_settings:
   fallbacks:
     - motor-agencia:
         - motor-agencia-groq
-        - motor-agencia-github
         - motor-agencia-openrouter
         - motor-agencia-ollama
 

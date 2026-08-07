@@ -12,6 +12,7 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agency}"]
@@ -79,7 +80,9 @@ services:
       - ollama
 
   backend:
-    build: .
+    build:
+      context: ..
+      dockerfile: agency/Dockerfile
     container_name: viralsync_backend
     ports:
       - "8000:8000"
@@ -97,7 +100,9 @@ services:
       - qdrant
 
   celery_worker:
-    build: .
+    build:
+      context: ..
+      dockerfile: agency/Dockerfile
     container_name: viralsync_celery_worker
     command: celery -A workers.celery_app worker --loglevel=info --concurrency=1 -Q rendering,webhooks,default
     environment:

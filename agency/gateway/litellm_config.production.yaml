@@ -4,18 +4,13 @@
 model_list:
   - model_name: gemini-flash
     litellm_params:
-      model: gemini/gemini-2.5-flash
+      model: gemini/gemini-3.5-flash
       api_key: "os.environ/GEMINI_API_KEY"
 
   - model_name: groq-llama
     litellm_params:
       model: groq/llama-3.3-70b-versatile
       api_key: "os.environ/GROQ_API_KEY"
-
-  - model_name: github-gpt4o
-    litellm_params:
-      model: github/gpt-4o
-      api_key: "os.environ/GITHUB_MODELS_TOKEN"
 
   - model_name: motor-agencia
     litellm_params:
@@ -25,7 +20,7 @@ model_list:
   # --- único fallback pagado ---
   - model_name: fallback-pagado
     litellm_params:
-      model: claude-haiku-4-5-20251001
+      model: claude-3-haiku-20240307
       api_key: "os.environ/PAID_API_KEY"
 
 router_settings:
@@ -34,8 +29,8 @@ router_settings:
   cooldown_time: 60
   allowed_fails: 1
   fallbacks:
-    - gemini-flash: ["groq-llama", "github-gpt4o", "fallback-pagado"]
-    - groq-llama: ["gemini-flash", "github-gpt4o", "fallback-pagado"]
+    - gemini-flash: ["groq-llama", "fallback-pagado"]
+    - groq-llama: ["gemini-flash", "fallback-pagado"]
     - motor-agencia: ["fallback-pagado"]
 
 general_settings:

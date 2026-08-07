@@ -9,6 +9,7 @@ import os
 import logging
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.pool import StaticPool
 from backend.db.models import Base
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,11 @@ if "sqlite" not in TARGET_DB_URL:
         "pool_size": 10,
         "max_overflow": 20,
     })
+else:
+    # SQLite en memoria (:memory:) crea UNA DB nueva por conexión. StaticPool
+    # mantiene una única conexión compartida para que init_db() (create_all) y
+    # los SELECT posteriores operen sobre el mismo esquema.
+    engine_kwargs.update({"poolclass": StaticPool})
 
 async_engine = create_async_engine(TARGET_DB_URL, **engine_kwargs)
 AsyncSessionLocal = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)

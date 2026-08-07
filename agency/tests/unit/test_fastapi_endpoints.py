@@ -69,8 +69,8 @@ async def test_takeover_lead_endpoint():
             json={"operator_id": "admin_uuid_443", "action": "pause_bot"},
             headers=_auth_header("tenant-demo-001"),
         )
-    # 503 = sin DB disponible (correcto); 200 = DB conectada (en staging/prod)
-    assert response.status_code in (200, 503)
+    # 503 = sin DB disponible; 404 = DB conectada pero lead inexistente (correcto); 200 = DB conectada y lead existente
+    assert response.status_code in (200, 404, 503)
     if response.status_code == 200:
         data = response.json()
         assert data["status"] == "handled_by_human"

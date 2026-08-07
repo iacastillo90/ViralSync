@@ -9,6 +9,7 @@ Webhooks Meta HMAC y Streaming SSE en Tiempo Real.
 import os
 import asyncio
 from typing import AsyncGenerator, Optional
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException, Header, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -19,6 +20,7 @@ from backend.sse_manager import sse_manager
 from backend.webhooks.instagram_inbound import process_instagram_webhook_payload
 
 from backend.logging_config import setup_logging
+from backend.db.session import init_db
 
 # Importación de Routers Modularizados
 from backend.routers.health import router as health_router
@@ -29,10 +31,19 @@ from backend.routers.metrics import router as metrics_router
 
 setup_logging()
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Crea el esquema de base de datos en el arranque (idempotente via create_all)."""
+    await init_db()
+    yield
+
+
 app = FastAPI(
     title="ViralSync Platform API Enterprise",
     version="1.0.0",
     description="SaaS B2B Multi-Tenant para Agencias de Marketing de Contenido IA",
+    lifespan=lifespan,
 )
 
 
