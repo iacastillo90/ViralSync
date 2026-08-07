@@ -21,7 +21,16 @@ SQLITE_FALLBACK_URL = "sqlite+aiosqlite:///:memory:"
 # Determinar si se usa PostgreSQL o SQLite fallback para desarrollo/pruebas
 TARGET_DB_URL = DATABASE_URL if os.getenv("USE_POSTGRES", "False").lower() in ["true", "1"] else SQLITE_FALLBACK_URL
 
-async_engine = create_async_engine(TARGET_DB_URL, echo=False)
+engine_kwargs = {"echo": False}
+if "sqlite" not in TARGET_DB_URL:
+    engine_kwargs.update({
+        "pool_pre_ping": True,
+        "pool_recycle": 3600,
+        "pool_size": 10,
+        "max_overflow": 20,
+    })
+
+async_engine = create_async_engine(TARGET_DB_URL, **engine_kwargs)
 AsyncSessionLocal = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
 
 
