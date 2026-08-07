@@ -5,15 +5,17 @@ Nodo de Edición de Video de LangGraph.
 Solicita o dispara la tarea asíncrona de post-producción en Celery.
 """
 
+import os
 import logging
 from typing import Dict, Any
 from agents.crews.video_prompt_crew import run_video_prompt_crew
+from workers.video_edit_task import trigger_video_render
 
 logger = logging.getLogger(__name__)
 
 
 def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Nodo que genera el storyboard de prompts visuales y prepara la salida del video."""
+    """Nodo que genera el storyboard de prompts visuales y efectúa el renderizado real del video."""
     tenant_id = state.get("tenant_id", "default_tenant")
     script = state.get("script", {})
     selected_idea = state.get("selected_idea", {})
@@ -26,8 +28,21 @@ def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
         script=script, idea=selected_idea, product_image_url=product_image_url
     )
 
+    # 2. Invocar renderizado real vía microservicio / Celery worker
+    render_res = trigger_video_render(tenant_id=tenant_id, script=script, idea=selected_idea)
+    render_status = render_res.get("status")
+
+    if render_status == "rejected_quality":
+        err_msg = render_res.get("message", "El guion no superó la calidad RUM requerida.")
+        logger.error(f"[{tenant_id}] Fallo explícito en node_video_edit: {err_msg}")
+        raise ValueError(f"Edición de video rechazada por calidad: {err_msg}")
+
+    edited_uri = render_res.get("video_url")
+    if not edited_uri:
+        logger.error(f"[{tenant_id}] No se obtuvo video_url del microservicio de renderizado.")
+        raise RuntimeError(f"Fallo en renderizado de video para tenant '{tenant_id}'. No se generó URI de salida.")
+
     raw_uri = state.get("raw_video_uri", f"s3://viralsync-media-dev/{tenant_id}/raw_input.mp4")
-    edited_uri = f"s3://viralsync-media-dev/{tenant_id}/edited_output.mp4"
 
     logs = state.get("logs", [])
     logs.append(f"[video_edit] Storyboard generado con {len(storyboard)} escenas cinematográficas.")
@@ -39,3 +54,4 @@ def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
         "edited_video_uri": edited_uri,
         "logs": logs,
     }
+

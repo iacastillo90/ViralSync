@@ -18,6 +18,8 @@ from backend.security.auth import TenantContextMiddleware, verify_tenant_access
 from backend.sse_manager import sse_manager
 from backend.webhooks.instagram_inbound import process_instagram_webhook_payload
 
+from backend.logging_config import setup_logging
+
 # Importación de Routers Modularizados
 from backend.routers.health import router as health_router
 from backend.routers.ingestion import tenant_admin_router, ingestion_router
@@ -25,11 +27,15 @@ from backend.routers.graph_execution import router as graph_router
 from backend.routers.leads import router as leads_router
 from backend.routers.metrics import router as metrics_router
 
+setup_logging()
+
 app = FastAPI(
     title="ViralSync Platform API Enterprise",
     version="1.0.0",
     description="SaaS B2B Multi-Tenant para Agencias de Marketing de Contenido IA",
 )
+
+
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
 is_dev = os.getenv("AGENCY_ENV", "dev") == "dev"

@@ -17,7 +17,6 @@ from agents.nodes.scriptwriting import node_scriptwriting
 from agents.nodes.video_edit import node_video_edit
 from agents.nodes.publish import node_publish
 
-
 class AgencyState(TypedDict, total=False):
     """Estado global del flujo de trabajo de la agencia para un tenant."""
     tenant_id: str
@@ -37,8 +36,7 @@ class AgencyState(TypedDict, total=False):
     published_post_id: str
     logs: List[str]
 
-
-def build_agency_graph():
+def build_agency_graph(checkpointer=None):
     """
     Construye y retorna el StateGraph compilado de la agencia con checkpoints humanos.
     """
@@ -61,8 +59,9 @@ def build_agency_graph():
     builder.add_edge("human_approval_publish", "publish")
     builder.add_edge("publish", END)
 
-    # 3. Compilar grafo registrando pausas en checkpoints humanos (AGENTS.md sección 5)
+    # 3. Compilar grafo registrando pausas en checkpoints humanos
     app = builder.compile(
+        checkpointer=checkpointer,
         interrupt_before=["human_approval_idea", "human_approval_publish"]
     )
     return app
