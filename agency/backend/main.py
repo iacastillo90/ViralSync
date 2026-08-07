@@ -9,12 +9,12 @@ Webhooks Meta HMAC y Streaming SSE en Tiempo Real.
 import os
 import asyncio
 from typing import AsyncGenerator, Optional
-from fastapi import FastAPI, Request, HTTPException, Header, status
+from fastapi import FastAPI, Request, HTTPException, Header, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from backend.security.hmac_validator import verify_meta_hmac_signature
-from backend.security.auth import TenantContextMiddleware
+from backend.security.auth import TenantContextMiddleware, verify_tenant_access
 from backend.sse_manager import sse_manager
 from backend.webhooks.instagram_inbound import process_instagram_webhook_payload
 
@@ -47,11 +47,16 @@ app.add_middleware(
 app.add_middleware(TenantContextMiddleware)
 
 # 3. Registrar Routers Modularizados
+# verify_tenant_access se aplica como dependencia sistémica a todos los routers bajo
+# /tenants/{tenant_id}/* para garantizar aislamiento Anti-IDOR por diseño —
+# cualquier endpoint nuevo queda protegido sin necesidad de llamadas manuales.
+_TENANT_GUARD = [Depends(verify_tenant_access)]
+
 app.include_router(health_router)
-app.include_router(ingestion_router)
-app.include_router(graph_router)
-app.include_router(leads_router)
-app.include_router(metrics_router)
+app.include_router(ingestion_router, dependencies=_TENANT_GUARD)
+app.include_router(graph_router, dependencies=_TENANT_GUARD)
+app.include_router(leads_router, dependencies=_TENANT_GUARD)
+app.include_router(metrics_router, dependencies=_TENANT_GUARD)
 
 INSTAGRAM_APP_SECRET = os.getenv("INSTAGRAM_APP_SECRET", "secreto_meta_app_dev")
 INSTAGRAM_VERIFY_TOKEN = os.getenv("INSTAGRAM_WEBHOOK_VERIFY_TOKEN", "token_verificacion_meta_dev")

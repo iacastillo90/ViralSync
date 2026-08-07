@@ -111,6 +111,31 @@ def require_roles(allowed_roles: List[str]):
     return role_checker
 
 
+async def verify_tenant_access(
+    tenant_id: str,
+    request: Request,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """
+    Dependencia FastAPI compartida para el aislamiento Anti-IDOR en todos los endpoints
+    bajo /api/v1/tenants/{tenant_id}/...
+
+    Aplícala a nivel de APIRouter o include_router para que cubra automáticamente
+    cualquier endpoint presente o futuro, sin depender de llamadas manuales por función.
+
+    Verifica que:
+    1. Existe un usuario autenticado con JWT válido (viene de get_current_user).
+    2. El tenant_id del JWT coincide con el tenant_id de la URL.
+    """
+    jwt_tenant = current_user.get("tenant_id")
+    if not jwt_tenant or jwt_tenant != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Acceso denegado: Aislamiento Anti-IDOR — token de '{jwt_tenant}' no puede acceder al tenant '{tenant_id}'.",
+        )
+    return current_user
+
+
 class TenantContextMiddleware(BaseHTTPMiddleware):
     """
     Middleware para forzar el aislamiento estricto de contexto de Tenant.
