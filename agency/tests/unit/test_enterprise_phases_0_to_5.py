@@ -43,16 +43,19 @@ def test_fase_1_jwt_auth_and_rbac():
 
 
 def test_fase_2_modular_routers_leads_and_metrics():
-    """Fase 2: Probar los routers modularizados. En entorno sin DB, /leads devuelve lista vacía o 503."""
-    # Test router /leads — en entorno de test sin SQLAlchemy configurado, esperar lista vacía (devmode)
-    leads_res = client.get("/api/v1/tenants/tenant-test/leads")
+    """Fase 2: Probar los routers modularizados con JWT válido del mismo tenant."""
+    token = create_access_token(user_id="usr-test", tenant_id="tenant-test", role="admin")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Test router /leads — en entorno de test sin SQLAlchemy, esperar lista vacía (devmode) o 503
+    leads_res = client.get("/api/v1/tenants/tenant-test/leads", headers=headers)
     # 200 con lista vacía (sin DB) o 503 (error de DB) son ambos comportamientos correctos
     assert leads_res.status_code in (200, 503)
     if leads_res.status_code == 200:
         assert isinstance(leads_res.json(), list)
 
     # Test router /metrics/72h — datos estáticos mientras se migra ORM
-    metrics_res = client.get("/api/v1/tenants/tenant-test/metrics/72h")
+    metrics_res = client.get("/api/v1/tenants/tenant-test/metrics/72h", headers=headers)
     assert metrics_res.status_code == 200
     metrics_data = metrics_res.json()
     assert metrics_data["status"] == "success"

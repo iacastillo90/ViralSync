@@ -51,26 +51,56 @@ def test_anti_idor_e2e_no_jwt_rejected():
     X-Tenant-ID: tenant-B devuelva 401 o 403 (nunca 200 con datos de otro tenant).
     """
     import os
-    # Importar la app real de FastAPI
     from backend.main import app
     from fastapi.testclient import TestClient
 
-    # Ejecutar en AGENCY_ENV=dev para evitar que el middleware corte antes
-    # (en staging/prod el 401 viene del middleware, en dev viene del guard de leads.py)
     os.environ["AGENCY_ENV"] = "dev"
 
     client = TestClient(app, raise_server_exceptions=False)
 
-    # Petición sin JWT, con X-Tenant-ID falsificado
     response = client.get(
         "/api/v1/tenants/tenant-A/leads",
         headers={"X-Tenant-ID": "tenant-B"},
     )
 
-    # En dev, el middleware asigna tenant_id = "tenant-B" desde el header
-    # pero la URL pide tenant-A → el guard debe devolver 403
     assert response.status_code in (401, 403), (
         f"Se esperaba 401 o 403, pero se recibió {response.status_code} — posible IDOR activo."
+    )
+
+
+def test_anti_idor_e2e_real_jwt_cross_tenant():
+    """
+    Test e2e con JWT real firmado (recomendación fuerte pre-producción):
+    Crea un token JWT auténtico con create_access_token para tenant-B,
+    lo envía via Authorization: Bearer contra /tenants/tenant-A/leads,
+    y verifica que verify_tenant_access (dependencia sistémica) lo rechace con 403.
+
+    Este test ejerce el flujo completo en AGENCY_ENV=dev:
+    middleware (extrae tenant-B del JWT) → verify_tenant_access (tenant-B != tenant-A) → 403.
+    """
+    import os
+    from backend.main import app
+    from backend.security.auth import create_access_token
+    from fastapi.testclient import TestClient
+
+    os.environ["AGENCY_ENV"] = "dev"
+
+    # JWT real firmado con HMAC-SHA256 para tenant-B
+    token_tenant_b = create_access_token(
+        user_id="user-B-real", tenant_id="tenant-B", role="editor"
+    )
+
+    client = TestClient(app, raise_server_exceptions=False)
+
+    # Intento de acceder a datos de tenant-A usando JWT de tenant-B
+    response = client.get(
+        "/api/v1/tenants/tenant-A/leads",
+        headers={"Authorization": f"Bearer {token_tenant_b}"},
+    )
+
+    assert response.status_code == 403, (
+        f"JWT de tenant-B debería recibir 403 al pedir datos de tenant-A, "
+        f"pero se recibió {response.status_code}."
     )
 
 
