@@ -1,7 +1,7 @@
 # 🗺️ Mapa Completo de Arquitectura y Código Fuente — ViralSync
 
 > **Documentación Generada Automáticamente para Agentes de IA y Desarrolladores.**
-> **Métricas del Proyecto:** 165 Archivos | 13,418 Líneas de Código Totales
+> **Métricas del Proyecto:** 168 Archivos | 13,726 Líneas de Código Totales
 
 ---
 
@@ -29,7 +29,7 @@ ViralSync/
 - **Ruta Completa:** `.github/workflows/ci.yml`
 - **Líneas de Código:** 52
 
-### 📂 `Doc/` (13 archivos, 2,933 líneas)
+### 📂 `Doc/` (13 archivos, 2,932 líneas)
 
 #### 📄 [001_init_schema.sql](file:///home/ivan/Desktop/AgentMarketingIA/Doc/001_init_schema.sql)
 - **Ruta Completa:** `Doc/001_init_schema.sql`
@@ -53,11 +53,11 @@ ViralSync/
 
 #### 📄 [FULL_PROJECT_ARCHITECTURE_MAP.md](file:///home/ivan/Desktop/AgentMarketingIA/Doc/FULL_PROJECT_ARCHITECTURE_MAP.md)
 - **Ruta Completa:** `Doc/FULL_PROJECT_ARCHITECTURE_MAP.md`
-- **Líneas de Código:** 908
+- **Líneas de Código:** 918
 
 #### 📄 [PROMPT_AUDITORIA_LLM.md](file:///home/ivan/Desktop/AgentMarketingIA/Doc/PROMPT_AUDITORIA_LLM.md)
 - **Ruta Completa:** `Doc/PROMPT_AUDITORIA_LLM.md`
-- **Líneas de Código:** 51
+- **Líneas de Código:** 40
 
 #### 📄 [ROADMAP_ENTERPRISE.md](file:///home/ivan/Desktop/AgentMarketingIA/Doc/ROADMAP_ENTERPRISE.md)
 - **Ruta Completa:** `Doc/ROADMAP_ENTERPRISE.md`
@@ -142,7 +142,13 @@ ViralSync/
 - **Ruta Completa:** `agency/ruff.toml`
 - **Líneas de Código:** 11
 
-### 📂 `agency/agents/` (23 archivos, 1,270 líneas)
+### 📂 `agency/agents/` (25 archivos, 1,453 líneas)
+
+#### 📄 [dm_graph.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/agents/dm_graph.py)
+- **Ruta Completa:** `agency/agents/dm_graph.py`
+- **Líneas de Código:** 60
+- **Descripción:** _dm_graph.py_
+- **Funciones Principales:** `node_send_dm_reply, node_human_takeover, route_after_dm_response, build_dm_graph`
 
 #### 📄 [graph.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/agents/graph.py)
 - **Ruta Completa:** `agency/agents/graph.py`
@@ -185,6 +191,13 @@ ViralSync/
 #### 📄 [__init__.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/agents/nodes/__init__.py)
 - **Ruta Completa:** `agency/agents/nodes/__init__.py`
 - **Líneas de Código:** 2
+
+#### 📄 [dm_response.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/agents/nodes/dm_response.py)
+- **Ruta Completa:** `agency/agents/nodes/dm_response.py`
+- **Líneas de Código:** 100
+- **Descripción:** _dm_response.py_
+- **Clases / Entidades:** `DMState`
+- **Funciones Principales:** `classify_intent, generate_grounded_reply, node_dm_response`
 
 #### 📄 [human_approval.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/agents/nodes/human_approval.py)
 - **Ruta Completa:** `agency/agents/nodes/human_approval.py`
@@ -276,11 +289,11 @@ ViralSync/
 
 #### 📄 [rum_calculator.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/agents/criterion/rum_calculator.py)
 - **Ruta Completa:** `agency/agents/criterion/rum_calculator.py`
-- **Líneas de Código:** 61
+- **Líneas de Código:** 84
 - **Descripción:** _rum_calculator.py_
-- **Funciones Principales:** `calculate_rum_score, evaluate_rum_threshold`
+- **Funciones Principales:** `calculate_rum_score, evaluate_rum_threshold, get_dynamic_threshold`
 
-### 📂 `agency/backend/` (18 archivos, 1,182 líneas)
+### 📂 `agency/backend/` (18 archivos, 1,199 líneas)
 
 #### 📄 [main.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/backend/main.py)
 - **Ruta Completa:** `agency/backend/main.py`
@@ -318,7 +331,7 @@ ViralSync/
 
 #### 📄 [leads.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/backend/routers/leads.py)
 - **Ruta Completa:** `agency/backend/routers/leads.py`
-- **Líneas de Código:** 46
+- **Líneas de Código:** 54
 - **Descripción:** _leads.py_
 - **Clases / Entidades:** `TakeoverRequest`
 - **Funciones Principales:** `get_tenant_leads, takeover_lead`
@@ -344,7 +357,7 @@ ViralSync/
 
 #### 📄 [session.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/backend/db/session.py)
 - **Ruta Completa:** `agency/backend/db/session.py`
-- **Líneas de Código:** 37
+- **Líneas de Código:** 46
 - **Descripción:** _session.py_
 - **Funciones Principales:** `init_db, get_async_db`
 
@@ -702,7 +715,7 @@ ViralSync/
 - **Ruta Completa:** `agency/migrations/001_init_schema.sql`
 - **Líneas de Código:** 202
 
-### 📂 `agency/tests/` (31 archivos, 1,475 líneas)
+### 📂 `agency/tests/` (32 archivos, 1,557 líneas)
 
 #### 📄 [__init__.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/tests/__init__.py)
 - **Ruta Completa:** `agency/tests/__init__.py`
@@ -719,6 +732,12 @@ ViralSync/
 - **Líneas de Código:** 64
 - **Descripción:** _test_audit_findings_resolutions.py_
 - **Funciones Principales:** `test_duplicated_sse_manager_removed, test_publisher_adapter_factory, test_publisher_adapter_execution, test_llm_budget_atomic_tracking`
+
+#### 📄 [test_audit_second_pass_resolutions.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/tests/unit/test_audit_second_pass_resolutions.py)
+- **Ruta Completa:** `agency/tests/unit/test_audit_second_pass_resolutions.py`
+- **Líneas de Código:** 82
+- **Descripción:** _test_audit_second_pass_resolutions.py_
+- **Funciones Principales:** `test_celery_acks_late_configuration, test_dm_intent_classification, test_dm_grounded_reply_confidence, test_dm_graph_routing, test_dm_graph_compilation_and_execution, test_rum_ema_recalibration_and_clamp`
 
 #### 📄 [test_brechas_consolidation.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/tests/unit/test_brechas_consolidation.py)
 - **Ruta Completa:** `agency/tests/unit/test_brechas_consolidation.py`
@@ -886,18 +905,18 @@ ViralSync/
 - **Descripción:** _test_full_pipeline.py_
 - **Funciones Principales:** `test_complete_viral_sync_lifecycle`
 
-### 📂 `agency/workers/` (5 archivos, 309 líneas)
+### 📂 `agency/workers/` (5 archivos, 336 líneas)
 
 #### 📄 [celery_app.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/workers/celery_app.py)
 - **Ruta Completa:** `agency/workers/celery_app.py`
-- **Líneas de Código:** 42
+- **Líneas de Código:** 44
 - **Descripción:** _celery_app.py_
 
 #### 📄 [metrics_loop_task.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/workers/metrics_loop_task.py)
 - **Ruta Completa:** `agency/workers/metrics_loop_task.py`
-- **Líneas de Código:** 51
+- **Líneas de Código:** 76
 - **Descripción:** _metrics_loop_task.py_
-- **Funciones Principales:** `audit_72h_metrics`
+- **Funciones Principales:** `update_niche_rum_threshold_ema, audit_72h_metrics`
 
 #### 📄 [trend_scraper_task.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/workers/trend_scraper_task.py)
 - **Ruta Completa:** `agency/workers/trend_scraper_task.py`
