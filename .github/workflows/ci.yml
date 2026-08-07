@@ -1,0 +1,52 @@
+name: ViralSync Enterprise CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, feature/* ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    env:
+      AGENCY_ENV=dev: dev
+      AGENCY_ENV: dev
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies and run tests
+        env:
+          AGENCY_ENV=dev: dev
+        run: |
+          uv pip install -r requirements.lock
+          uvx ruff check backend agents workers knowledge gateway
+          uvx pip-audit -r requirements.lock
+          pytest --cov=backend --cov-fail-under=50
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build frontend
+        run: |
+          npm ci
+          npm run build
+          npm audit
+
+  docker-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hadolint check
+        run: |
+          hadolint Dockerfile
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks check
+        run: |
+          gitleaks detect

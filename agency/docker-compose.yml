@@ -74,30 +74,30 @@ services:
     depends_on:
       - ollama
 
-  # ===================================================================== #
-  # SERVICIOS DE APLICACIÓN (Comentados hasta completar código FastAPI)
-  # ===================================================================== #
-  # backend:
-  #   build: ./backend
-  #   container_name: viralsync_backend
-  #   ports:
-  #     - "8000:8000"
-  #   env_file: ../.env
-  #   depends_on:
-  #     - postgres
-  #     - redis
-  #     - litellm
-  #     - qdrant
-  #
-  # celery_worker:
-  #   build: ./backend
-  #   container_name: viralsync_celery_worker
-  #   # concurrency=1 es obligatorio en dev — ver regla de concurrencia en AGENTS.md sección 8
-  #   command: celery -A agency.workers.celery_app worker --loglevel=info --concurrency=1
-  #   env_file: ../.env
-  #   depends_on:
-  #     - redis
-  #     - postgres
+  backend:
+    build: .
+    container_name: viralsync_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - POSTGRES_HOST=postgres
+      - QDRANT_HOST=qdrant
+    depends_on:
+      - postgres
+      - redis
+      - qdrant
+
+  celery_worker:
+    build: .
+    container_name: viralsync_celery_worker
+    command: celery -A workers.celery_app worker --loglevel=info --concurrency=1 -Q rendering,webhooks,default
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - POSTGRES_HOST=postgres
+    depends_on:
+      - redis
+      - postgres
 
   minio:
     image: minio/minio
