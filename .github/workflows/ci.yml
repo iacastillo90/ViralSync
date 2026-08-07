@@ -1,85 +1,52 @@
-# CI baseline (Phase 0, slice 2) — gates merges on push/PR.
-# Four parallel jobs: python (tests + coverage gate, ruff, pip-audit),
-# frontend (build + audit), docker-lint (hadolint), secrets (gitleaks).
-# Python deps install from the committed uv lockfile (requirements.lock).
-
-name: CI
+name: ViralSync Enterprise CI/CD Pipeline
 
 on:
   push:
-    branches: [main]
+    branches: [ main, feature/* ]
   pull_request:
-
-permissions:
-  contents: read
+    branches: [ main ]
 
 jobs:
   python:
-    name: Python (tests · ruff · pip-audit)
     runs-on: ubuntu-latest
+    env:
+      AGENCY_ENV=dev: dev
+      AGENCY_ENV: dev
     steps:
       - uses: actions/checkout@v4
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
-      - name: Install Python 3.12
-        run: uv python install 3.12
-      - name: Create virtualenv
-        run: uv venv --python 3.12 .venv
-      - name: Install dependencies from lockfile
-        run: uv pip install -r requirements.lock
-      - name: Run tests with coverage gate
-        working-directory: agency
-        run: AGENCY_ENV=dev ../.venv/bin/python -m pytest tests/ --cov=backend --cov-fail-under=50
-      - name: Lint with ruff
-        working-directory: agency
-        run: uvx ruff check backend agents workers knowledge gateway --output-format=github
-      - name: Audit Python dependencies
-        run: uvx pip-audit -r requirements.lock
+      - name: Install dependencies and run tests
+        env:
+          AGENCY_ENV=dev: dev
+        run: |
+          uv pip install -r requirements.lock
+          uvx ruff check backend agents workers knowledge gateway
+          uvx pip-audit -r requirements.lock
+          pytest --cov=backend --cov-fail-under=50
 
   frontend:
-    name: Frontend (build · audit)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: agency/frontend
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Node 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: agency/frontend/package-lock.json
-      - name: Install dependencies
-        run: npm ci
-      - name: Build
-        run: npm run build
-      - name: Audit dependencies (fail on any vulnerability)
-        run: npm audit
+      - name: Build frontend
+        run: |
+          npm ci
+          npm run build
+          npm audit
 
   docker-lint:
-    name: Dockerfile lint (hadolint)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Lint renderer Dockerfile
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: agency/microservices/renderer/Dockerfile
-          ignore: DL3008
-      # DL3008 (unpinned apt packages) is a pre-existing violation owned by
-      # slice 4 (infra-docker) hardening; ignored here to keep the gate green.
-      # The publisher Dockerfile joins this job once the publisher microservice
-      # (present only on local main via PR #24, absent from this chain) lands.
+      - name: Hadolint check
+        run: |
+          hadolint Dockerfile
 
   secrets:
-    name: Secrets scan (gitleaks)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Scan for leaked secrets
-        uses: gitleaks/gitleaks-action@v2.3.8
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Gitleaks check
+        run: |
+          gitleaks detect
