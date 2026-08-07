@@ -46,10 +46,10 @@ def classify_intent(message: str) -> str:
     return "unclear"
 
 
-def generate_grounded_reply(message: str, rag_context: str) -> Tuple[str, float]:
+def generate_grounded_reply(message: str, rag_context: str, tenant_id: str = "default_tenant") -> Tuple[str, float]:
     """
     Genera una respuesta basada en RAG utilizando el Gateway LLM si está disponible,
-    con estimación dinámica del score de confianza del grounding.
+    con registro de consumo de presupuesto en USD y estimación del score de confianza.
     """
     if not rag_context or "no se encontro" in rag_context.lower():
         reply = "Gracias por escribirnos. Un especialista humano se pondrá en contacto contigo en breve para darte respuesta exacta."
@@ -58,6 +58,8 @@ def generate_grounded_reply(message: str, rag_context: str) -> Tuple[str, float]
     # Intento de generación con LiteLLM / Gemini Gateway en entorno conectado
     try:
         import litellm
+        from backend.services.llm_budget_service import track_llm_token_usage
+
         model = os.getenv("LITELLM_DEFAULT_MODEL", "gemini/gemini-1.5-flash")
         prompt = (
             f"Eres un Asistente de Ventas de Instagram. Contexto RAG de marca:\n{rag_context}\n\n"
@@ -71,6 +73,14 @@ def generate_grounded_reply(message: str, rag_context: str) -> Tuple[str, float]
             max_tokens=150,
         )
         generated_reply = res.choices[0].message.content.strip()
+
+        # Registrar consumo de presupuesto LLM si LiteLLM devuelve tokens
+        usage = getattr(res, "usage", None)
+        if usage:
+            prompt_tokens = getattr(usage, "prompt_tokens", 50)
+            completion_tokens = getattr(usage, "completion_tokens", 50)
+            track_llm_token_usage(tenant_id, model, prompt_tokens, completion_tokens)
+
         confidence = 0.92
         return generated_reply, confidence
     except Exception as exc:
@@ -100,8 +110,8 @@ async def node_dm_response(state: DMState) -> DMState:
     rag_docs = query_rag_knowledge(query=incoming_msg)
     rag_context = "\n".join([doc.get("content", "") for doc in rag_docs if isinstance(doc, dict)])
 
-    # 3. Generación de Respuesta asistida por LLM / Grounding RAG
-    reply_text, confidence = generate_grounded_reply(incoming_msg, rag_context)
+    # 3. Generación de Respuesta asistida por LLM / Grounding RAG y Tracking de Presupuesto
+    reply_text, confidence = generate_grounded_reply(incoming_msg, rag_context, tenant_id=tenant_id)
 
     # 4. Evaluación de Handoff a Humano
     requires_human = (
