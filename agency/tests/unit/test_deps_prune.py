@@ -1,15 +1,11 @@
 """Slice 1 (python-deps) — prune verification tests.
 
-Task 1.1 (RED): the 8 dead direct dependencies are still declared in the
-root ``requirements.txt`` today, so these tests fail until the file is
-rewritten with ``~=`` floors (task 1.2) and the uv lockfile is committed
-(task 1.3).
-
 The pruned packages have zero imports across
 ``backend/``, ``agents/``, ``workers/``, ``knowledge/``, ``gateway/`` and
-``migrations/`` (design D3). ``sqlalchemy`` is exempted in the LOCKFILE only,
-because ``alembic`` (kept, design D4) hard-requires SQLAlchemy as a transitive
-dependency; it must still be absent from ``requirements.txt`` as a direct dep.
+``migrations/`` (design D3). ``litellm``, ``sqlalchemy``, ``asyncpg``,
+``aiosqlite``, ``tenacity``, ``pyjwt`` and ``python-jose`` are DIRECT
+dependencies (code imports them) and MUST be declared/pinned and present in
+both ``requirements.txt`` and the lockfile (design D5).
 """
 
 from pathlib import Path
@@ -21,19 +17,17 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 REQUIREMENTS_TXT = REPO_ROOT / "requirements.txt"
 REQUIREMENTS_LOCK = REPO_ROOT / "requirements.lock"
 
-# 8 dead direct dependencies pruned in Phase 0 (design D3).
+# The 6 truly-dead direct dependencies pruned in Phase 0 (design D3).
 PRUNED = {
     "crewai",
     "crewai-tools",
-    "litellm",
     "llama-index",
     "llama-index-vector-stores-qdrant",
-    "sqlalchemy",
     "openai-whisper",
     "langgraph-checkpoint-postgres",
 }
 
-# The 13 kept dependencies with ~= floors (design Interface 1 / task 1.2).
+# The kept dependencies with ~= floors (design D5 / Interface).
 KEPT = {
     "fastapi",
     "uvicorn",
@@ -48,11 +42,18 @@ KEPT = {
     "pytest",
     "pytest-cov",
     "alembic",
+    "litellm",
+    "asyncpg",
+    "aiosqlite",
+    "sqlalchemy",
+    "tenacity",
+    "pyjwt",
+    "python-jose",
 }
 
-# sqlalchemy is allowed in requirements.lock ONLY as alembic's transitive
-# dependency (see module docstring).
-LOCK_TRANSITIVE_EXEMPT = {"sqlalchemy"}
+# No lockfile-only transitive exemptions anymore: every KEPT direct dep must be
+# pinned in requirements.txt AND present in the lockfile (design D5).
+LOCK_TRANSITIVE_EXEMPT = set()
 
 
 def _declared_name(line):
@@ -91,16 +92,6 @@ def test_pruned_packages_absent_from_lockfile():
     assert must_be_absent.isdisjoint(names), (
         f"pruned deps still in {REQUIREMENTS_LOCK.name}: "
         f"{sorted(must_be_absent & names)}"
-    )
-
-
-def test_sqlalchemy_only_reintroduced_as_alembic_transitive_dep():
-    """The single lockfile exception must be real, never vacuous."""
-    names = _parse_names(_requirements_lock())
-    assert "alembic" in names, "alembic is missing from the lockfile"
-    assert "sqlalchemy" in names, "alembic's SQLAlchemy dep is missing from the lockfile"
-    assert "sqlalchemy" not in _parse_names(_requirements_txt()), (
-        "sqlalchemy must not be a direct dependency anymore"
     )
 
 

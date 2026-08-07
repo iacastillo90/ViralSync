@@ -4,7 +4,7 @@
 model_list:
   - model_name: gemini-flash
     litellm_params:
-      model: gemini/gemini-2.5-flash
+      model: gemini/gemini-3.5-flash
       api_key: "os.environ/GEMINI_API_KEY"
 
   - model_name: groq-llama
@@ -12,14 +12,9 @@ model_list:
       model: groq/llama-3.3-70b-versatile
       api_key: "os.environ/GROQ_API_KEY"
 
-  - model_name: github-gpt4o
-    litellm_params:
-      model: github/gpt-4o
-      api_key: "os.environ/GITHUB_MODELS_TOKEN"
-
   - model_name: openrouter-free
     litellm_params:
-      model: openrouter/auto
+      model: openrouter/openrouter/free
       api_key: "os.environ/OPENROUTER_API_KEY"
 
   - model_name: ollama-local
@@ -29,7 +24,7 @@ model_list:
 
   - model_name: motor-agencia
     litellm_params:
-      model: gemini/gemini-2.5-flash
+      model: gemini/gemini-3.5-flash
       api_key: "os.environ/GEMINI_API_KEY"
 
 router_settings:
@@ -38,9 +33,9 @@ router_settings:
   cooldown_time: 60
   allowed_fails: 1
   fallbacks:
-    - gemini-flash: ["groq-llama", "github-gpt4o", "openrouter-free", "ollama-local"]
-    - groq-llama: ["gemini-flash", "github-gpt4o", "openrouter-free"]
-    - motor-agencia: ["groq-llama", "gemini-flash", "github-gpt4o", "openrouter-free"]
+    - gemini-flash: ["groq-llama", "openrouter-free", "ollama-local"]
+    - groq-llama: ["gemini-flash", "openrouter-free"]
+    - motor-agencia: ["groq-llama", "gemini-flash", "openrouter-free"]
 
 general_settings:
   master_key: "os.environ/LITELLM_MASTER_KEY"

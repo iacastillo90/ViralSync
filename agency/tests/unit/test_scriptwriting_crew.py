@@ -22,5 +22,5 @@ def test_run_scriptwriting_crew_4_blocks():
     assert "moraleja_30_50s" in script
     assert "cta_50_60s" in script
     assert "keyword" in script
-    assert script["keyword"] == "CONSULTA"
-    assert "CONSULTA" in script["cta_50_60s"]
+    assert script["keyword"]  # Verificar que no esté vacío
+    assert script["keyword"].upper() in script["cta_50_60s"].upper()

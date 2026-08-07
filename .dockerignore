@@ -1,0 +1,23 @@
+# ViralSync — repo-root .dockerignore
+# docker-compose builds backend/celery with context: .. (repo root) so the
+# Dockerfile COPYs (requirements.txt, agency/) resolve. Keep the build context
+# lean: never ship venvs, caches, node build output, or VCS.
+**/.venv/
+**/venv/
+**/node_modules/
+**/__pycache__/
+**/*.py[cod]
+.git/
+.gitignore
+**/.next/
+**/.pytest_cache/
+**/.coverage
+**/dist/
+**/*.egg-info/
+.env
+.env.*
+!.env.example
+openspec/
+Doc/
+test_llm_connections.py
+agency_git.py
