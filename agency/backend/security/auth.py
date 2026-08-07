@@ -113,8 +113,12 @@ def require_roles(allowed_roles: List[str]):
 
 class TenantContextMiddleware(BaseHTTPMiddleware):
     """
-    Middleware para forzar el aislamiento de contexto de Tenant.
-    Inspecciona y valida prioritariamente el token JWT o el encabezado X-Tenant-ID.
+    Middleware para forzar el aislamiento estricto de contexto de Tenant.
+
+    En staging/prod: exige token JWT válido. Si falta o es inválido, rechaza 401.
+    En dev: acepta X-Tenant-ID header o extrae de la URL como fallback para facilitar el testing local.
+    Siempre marca request.state.jwt_verified=True/False para que los guards puedan distinguir
+    si el tenant_id proviene de una fuente firmada o de un header sin autenticar.
     """
 
     async def dispatch(self, request: Request, call_next):
@@ -123,6 +127,9 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         tenant_id = None
+        jwt_verified = False
+
+        # 1. Fuente de verdad primaria: JWT firmado
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header.split(" ")[1]
@@ -130,18 +137,34 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                 payload = decode_access_token(token)
                 tenant_id = payload.get("tenant_id")
                 request.state.authenticated_user = payload
-            except Exception:
-                pass
+                jwt_verified = True
+            except HTTPException:
+                # Token presente pero inválido (firma incorrecta, expirado, malformado)
+                # En staging/prod rechazar inmediatamente
+                if AGENCY_ENV not in ("dev", "development"):
+                    from fastapi.responses import JSONResponse
+                    return JSONResponse(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        content={"detail": "Token JWT inválido o expirado."},
+                    )
 
-        if not tenant_id:
+        # 2. Fallback: solo permitido en modo dev
+        if not tenant_id and AGENCY_ENV in ("dev", "development"):
             tenant_id = request.headers.get("X-Tenant-ID") or request.headers.get("x-tenant-id")
 
-        if not tenant_id and AGENCY_ENV == "dev" and request.url.path.startswith("/api/v1/tenants/"):
+        if not tenant_id and AGENCY_ENV in ("dev", "development") and request.url.path.startswith("/api/v1/tenants/"):
             path_parts = request.url.path.split("/")
             if len(path_parts) >= 5:
                 tenant_id = path_parts[4]
 
+        # 3. En staging/prod, sin JWT válido → rechazar 401
         if not tenant_id:
+            if AGENCY_ENV not in ("dev", "development"):
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content={"detail": "Autenticación requerida: token JWT ausente."},
+                )
             tenant_id = "default_tenant"
 
         request.state.tenant_id = tenant_id
