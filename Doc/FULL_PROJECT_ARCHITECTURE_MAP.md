@@ -1,7 +1,7 @@
 # 🗺️ Mapa Completo de Arquitectura y Código Fuente — ViralSync
 
 > **Documentación Generada Automáticamente para Agentes de IA y Desarrolladores.**
-> **Métricas del Proyecto:** 168 Archivos | 13,745 Líneas de Código Totales
+> **Métricas del Proyecto:** 167 Archivos | 13,718 Líneas de Código Totales
 
 ---
 
@@ -29,7 +29,7 @@ ViralSync/
 - **Ruta Completa:** `.github/workflows/ci.yml`
 - **Líneas de Código:** 52
 
-### 📂 `Doc/` (13 archivos, 2,951 líneas)
+### 📂 `Doc/` (13 archivos, 2,964 líneas)
 
 #### 📄 [001_init_schema.sql](file:///home/ivan/Desktop/AgentMarketingIA/Doc/001_init_schema.sql)
 - **Ruta Completa:** `Doc/001_init_schema.sql`
@@ -57,7 +57,7 @@ ViralSync/
 
 #### 📄 [PROMPT_AUDITORIA_LLM.md](file:///home/ivan/Desktop/AgentMarketingIA/Doc/PROMPT_AUDITORIA_LLM.md)
 - **Ruta Completa:** `Doc/PROMPT_AUDITORIA_LLM.md`
-- **Líneas de Código:** 40
+- **Líneas de Código:** 53
 
 #### 📄 [ROADMAP_ENTERPRISE.md](file:///home/ivan/Desktop/AgentMarketingIA/Doc/ROADMAP_ENTERPRISE.md)
 - **Ruta Completa:** `Doc/ROADMAP_ENTERPRISE.md`
@@ -142,7 +142,7 @@ ViralSync/
 - **Ruta Completa:** `agency/ruff.toml`
 - **Líneas de Código:** 11
 
-### 📂 `agency/agents/` (25 archivos, 1,453 líneas)
+### 📂 `agency/agents/` (24 archivos, 1,413 líneas)
 
 #### 📄 [dm_graph.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/agents/dm_graph.py)
 - **Ruta Completa:** `agency/agents/dm_graph.py`
@@ -210,12 +210,6 @@ ViralSync/
 - **Líneas de Código:** 33
 - **Descripción:** _ideation.py_
 - **Funciones Principales:** `node_ideation`
-
-#### 📄 [market_rum.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/agents/nodes/market_rum.py)
-- **Ruta Completa:** `agency/agents/nodes/market_rum.py`
-- **Líneas de Código:** 40
-- **Descripción:** _agents/nodes/market_rum.py_
-- **Funciones Principales:** `get_dynamic_threshold`
 
 #### 📄 [publish.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/agents/nodes/publish.py)
 - **Ruta Completa:** `agency/agents/nodes/publish.py`
