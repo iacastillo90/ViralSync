@@ -155,6 +155,7 @@ def scan_codebase() -> List[Dict[str, Any]]:
             line_count = 0
             try:
                 content = file_path.read_text(encoding="utf-8", errors="ignore")
+                content = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', content)
                 line_count = len(content.splitlines())
             except Exception:
                 pass

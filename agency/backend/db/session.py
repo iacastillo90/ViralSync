@@ -2,18 +2,27 @@
 session.py
 
 Configuración del motor asíncrono SQLAlchemy y la gestión de sesiones PostgreSQL con asyncpg.
+Incluye validación fail-fast de credenciales en entornos de producción/staging.
 """
 
 import os
+import logging
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from backend.db.models import Base
 
+logger = logging.getLogger(__name__)
+
+AGENCY_ENV = os.getenv("AGENCY_ENV", "dev").lower()
 POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "viralsync_db")
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
 POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+
+# Validación de seguridad: Fail-fast ante contraseña por defecto en producción
+if AGENCY_ENV in ["prod", "production", "staging"] and POSTGRES_PASSWORD == "postgres":
+    raise ValueError("SEGURIDAD: La contraseña de PostgreSQL 'postgres' por defecto está prohibida en entornos staging/prod.")
 
 DATABASE_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 SQLITE_FALLBACK_URL = "sqlite+aiosqlite:///:memory:"
