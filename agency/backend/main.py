@@ -15,7 +15,7 @@ from fastapi.responses import StreamingResponse
 
 from backend.security.hmac_validator import verify_meta_hmac_signature
 from backend.security.auth import TenantContextMiddleware
-from backend.realtime.sse_manager import sse_manager
+from backend.sse_manager import sse_manager
 from backend.webhooks.instagram_inbound import process_instagram_webhook_payload
 
 # Importación de Routers Modularizados
