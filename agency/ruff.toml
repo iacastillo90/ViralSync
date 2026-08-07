@@ -1,0 +1,11 @@
+# Ruff configuration for the agency Python codebase (Phase 0, slice 2).
+# Targets Python 3.12 (see .python-version). Scope: backend agents workers
+# knowledge gateway. Deliberately a conservative rule subset (E4, E7, E9, F)
+# so the CI gate is real without drowning day-one work in style noise;
+# the full ruleset is deferred to Phase 1 (design D6).
+
+line-length = 120
+target-version = "py312"
+
+[lint]
+select = ["E4", "E7", "E9", "F"]
