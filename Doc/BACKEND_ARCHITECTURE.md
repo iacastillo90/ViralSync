@@ -36,7 +36,7 @@ agency/
 │   │   ├── scriptwriting.py    # Nodo de guionismo (4 bloques + PPP)
 │   │   ├── video_edit.py       # Nodo de encolamiento de trabajo de edición en Celery
 │   │   ├── publish.py          # Nodo de publicación oficial vía Instagram Graph API
-│   │   ├── market_rum.py       # Helper de consulta de umbrales RUM dinámicos en DB
+│   │   ├── rum_calculator.py       # Helper de consulta de umbrales RUM dinámicos en DB
 │   │   └── __init__.py
 │   ├── crews/                  # Crews de CrewAI por dominio
 │   │   ├── ideation_crew.py    # Crew de investigación 4 cuadrantes + SearXNG
@@ -177,6 +177,6 @@ A medida que el sistema pase del MVP a fase de producción masiva (GA), se deben
 
 ## 🧪 Estrategia de Testing Backend
 
-- **Pruebas Unitarias (`pytest`):** Cobertura de helpers RUM (`market_rum.py`), lógica de scoring 5/50 y formateadores de guiones.
+- **Pruebas Unitarias (`pytest`):** Cobertura de helpers RUM (`rum_calculator.py`), lógica de scoring 5/50 y formateadores de guiones.
 - **Pruebas de Integración:** Verificación de endpoints FastAPI, generación de firma HMAC en webhooks y respuestas del proxy LiteLLM.
 - **Prueba End-to-End (E2E):** Ejecución del flujo completo en `AGENCY_ENV=dev` contra modelos locales Ollama para validar el StateGraph sin costo.
