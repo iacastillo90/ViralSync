@@ -1,7 +1,7 @@
 # 🗺️ CÓDIGO FUENTE REAL 100% COMPLETO Y SUITE PYTEST — ViralSync
 
 > **Documentación Exhaustiva con Código Fuente Fuente 100% Completo sin Recortes.**
-> **Métricas del Proyecto:** 163 Archivos Analizados | 12,701 Líneas de Código Totales
+> **Métricas del Proyecto:** 163 Archivos Analizados | 12,711 Líneas de Código Totales
 
 ---
 
@@ -125,13 +125,13 @@ venv/lib/python3.14/site-packages/fastapi/testclient.py:1
   /home/ivan/Desktop/AgentMarketingIA/venv/lib/python3.14/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
     from starlette.testclient import TestClient as TestClient  # noqa
 
-agency/tests/unit/test_audit_second_pass_resolutions.py::test_rum_ema_recalibration_and_clamp
+agency/tests/unit/test_brechas_consolidation.py::test_webhook_dlq_retry_processing
 agency/tests/unit/test_searxng_mcp.py::test_searxng_search_sanitized_fallback_when_offline
   /home/ivan/Desktop/AgentMarketingIA/venv/lib/python3.14/site-packages/qdrant_client/qdrant_remote.py:282: UserWarning: Qdrant client version 1.19.0 is incompatible with server version 1.7.4. Major versions should match and minor version difference must not exceed 1. Set check_compatibility=False to skip version check.
     show_warning(
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-======================= 104 passed, 3 warnings in 3.95s ========================
+======================= 104 passed, 3 warnings in 2.31s ========================
 ````
 
 ---
@@ -142,7 +142,7 @@ agency/tests/unit/test_searxng_mcp.py::test_searxng_search_sanitized_fallback_wh
 - **`agency/backend/db/session.py`** (55 líneas) -> Se incluye completo en este documento.
 - **`agency/backend/routers/leads.py`** (118 líneas) -> Se incluye completo en este documento.
 - **`agency/workers/celery_app.py`** (44 líneas) -> Se incluye completo en este documento.
-- **`agency/agents/nodes/dm_response.py`** (126 líneas) -> Se incluye completo en este documento.
+- **`agency/agents/nodes/dm_response.py`** (136 líneas) -> Se incluye completo en este documento.
 - **`agency/agents/dm_graph.py`** (60 líneas) -> Se incluye completo en este documento.
 - **`agency/backend/sse_manager.py`** (128 líneas) -> Se incluye completo en este documento.
 - **`agency/backend/services/llm_budget_service.py`** (73 líneas) -> Se incluye completo en este documento.
@@ -3346,7 +3346,7 @@ select = ["E4", "E7", "E9", "F"]
 
 ---
 
-### 📂 `agency/agents/` (24 archivos, 1,439 líneas)
+### 📂 `agency/agents/` (24 archivos, 1,449 líneas)
 
 #### 📄 [dm_graph.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/agents/dm_graph.py)
 - **Ruta Completa:** `agency/agents/dm_graph.py`
@@ -3942,7 +3942,7 @@ def qualify_lead(texto: str, entry: dict) -> QualifiedMatch | None:
 
 #### 📄 [dm_response.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/agents/nodes/dm_response.py)
 - **Ruta Completa:** `agency/agents/nodes/dm_response.py`
-- **Líneas de Código:** 126
+- **Líneas de Código:** 136
 - **Descripción:** _dm_response.py_
 - **Clases:** `DMState`
 - **Funciones:** `classify_intent, generate_grounded_reply, node_dm_response`
@@ -3996,10 +3996,10 @@ def classify_intent(message: str) -> str:
     return "unclear"
 
 
-def generate_grounded_reply(message: str, rag_context: str) -> Tuple[str, float]:
+def generate_grounded_reply(message: str, rag_context: str, tenant_id: str = "default_tenant") -> Tuple[str, float]:
     """
     Genera una respuesta basada en RAG utilizando el Gateway LLM si está disponible,
-    con estimación dinámica del score de confianza del grounding.
+    con registro de consumo de presupuesto en USD y estimación del score de confianza.
     """
     if not rag_context or "no se encontro" in rag_context.lower():
         reply = "Gracias por escribirnos. Un especialista humano se pondrá en contacto contigo en breve para darte respuesta exacta."
@@ -4008,6 +4008,8 @@ def generate_grounded_reply(message: str, rag_context: str) -> Tuple[str, float]
     # Intento de generación con LiteLLM / Gemini Gateway en entorno conectado
     try:
         import litellm
+        from backend.services.llm_budget_service import track_llm_token_usage
+
         model = os.getenv("LITELLM_DEFAULT_MODEL", "gemini/gemini-1.5-flash")
         prompt = (
             f"Eres un Asistente de Ventas de Instagram. Contexto RAG de marca:\n{rag_context}\n\n"
@@ -4021,6 +4023,14 @@ def generate_grounded_reply(message: str, rag_context: str) -> Tuple[str, float]
             max_tokens=150,
         )
         generated_reply = res.choices[0].message.content.strip()
+
+        # Registrar consumo de presupuesto LLM si LiteLLM devuelve tokens
+        usage = getattr(res, "usage", None)
+        if usage:
+            prompt_tokens = getattr(usage, "prompt_tokens", 50)
+            completion_tokens = getattr(usage, "completion_tokens", 50)
+            track_llm_token_usage(tenant_id, model, prompt_tokens, completion_tokens)
+
         confidence = 0.92
         return generated_reply, confidence
     except Exception as exc:
@@ -4050,8 +4060,8 @@ async def node_dm_response(state: DMState) -> DMState:
     rag_docs = query_rag_knowledge(query=incoming_msg)
     rag_context = "\n".join([doc.get("content", "") for doc in rag_docs if isinstance(doc, dict)])
 
-    # 3. Generación de Respuesta asistida por LLM / Grounding RAG
-    reply_text, confidence = generate_grounded_reply(incoming_msg, rag_context)
+    # 3. Generación de Respuesta asistida por LLM / Grounding RAG y Tracking de Presupuesto
+    reply_text, confidence = generate_grounded_reply(incoming_msg, rag_context, tenant_id=tenant_id)
 
     # 4. Evaluación de Handoff a Humano
     requires_human = (
