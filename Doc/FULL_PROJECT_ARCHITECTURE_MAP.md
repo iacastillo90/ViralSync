@@ -1,7 +1,7 @@
 # 🗺️ CÓDIGO FUENTE REAL 100% COMPLETO Y SUITE PYTEST — ViralSync
 
 > **Documentación Exhaustiva con Código Fuente Fuente 100% Completo sin Recortes.**
-> **Métricas del Proyecto:** 163 Archivos Analizados | 12,916 Líneas de Código Totales
+> **Métricas del Proyecto:** 163 Archivos Analizados | 13,048 Líneas de Código Totales
 
 ---
 
@@ -13,7 +13,7 @@ platform linux -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0 -- /home/ivan/Deskto
 cachedir: .pytest_cache
 rootdir: /home/ivan/Desktop/AgentMarketingIA
 plugins: anyio-4.14.2, cov-7.1.0, langsmith-0.10.16
-collecting ... collected 107 items
+collecting ... collected 108 items
 
 agency/tests/unit/test_audit_findings_resolutions.py::test_duplicated_sse_manager_removed PASSED [  0%]
 agency/tests/unit/test_audit_findings_resolutions.py::test_publisher_adapter_factory PASSED [  1%]
@@ -28,8 +28,8 @@ agency/tests/unit/test_audit_second_pass_resolutions.py::test_dm_grounded_reply_
 agency/tests/unit/test_audit_second_pass_resolutions.py::test_dm_graph_routing PASSED [ 10%]
 agency/tests/unit/test_audit_second_pass_resolutions.py::test_dm_graph_compilation_and_execution[asyncio] PASSED [ 11%]
 agency/tests/unit/test_audit_second_pass_resolutions.py::test_rum_ema_recalibration_and_clamp PASSED [ 12%]
-agency/tests/unit/test_brechas_consolidation.py::test_shotstack_client_template_creation PASSED [ 13%]
-agency/tests/unit/test_brechas_consolidation.py::test_rag_semantic_cache_hit PASSED [ 14%]
+agency/tests/unit/test_brechas_consolidation.py::test_shotstack_client_template_creation PASSED [ 12%]
+agency/tests/unit/test_brechas_consolidation.py::test_rag_semantic_cache_hit PASSED [ 13%]
 agency/tests/unit/test_brechas_consolidation.py::test_webhook_dlq_retry_processing PASSED [ 14%]
 agency/tests/unit/test_celery_tasks.py::test_video_edit_task_eager_execution PASSED [ 15%]
 agency/tests/unit/test_celery_tasks.py::test_metrics_loop_task_verde PASSED [ 16%]
@@ -42,9 +42,9 @@ agency/tests/unit/test_ci_config.py::test_ci_workflow_defines_four_gating_jobs P
 agency/tests/unit/test_ci_config.py::test_ci_python_job_installs_lock_and_runs_coverage_gate PASSED [ 23%]
 agency/tests/unit/test_ci_config.py::test_ci_python_job_lints_and_audits PASSED [ 24%]
 agency/tests/unit/test_ci_config.py::test_ci_frontend_job_builds_and_audits PASSED [ 25%]
-agency/tests/unit/test_ci_config.py::test_ci_has_docker_lint_and_secrets_jobs PASSED [ 26%]
-agency/tests/unit/test_ci_config.py::test_gitignore_ignores_env_files_but_keeps_example PASSED [ 27%]
-agency/tests/unit/test_ci_config.py::test_gitignore_ignores_both_venv_directories PASSED [ 28%]
+agency/tests/unit/test_ci_config.py::test_ci_has_docker_lint_and_secrets_jobs PASSED [ 25%]
+agency/tests/unit/test_ci_config.py::test_gitignore_ignores_env_files_but_keeps_example PASSED [ 26%]
+agency/tests/unit/test_ci_config.py::test_gitignore_ignores_both_venv_directories PASSED [ 27%]
 agency/tests/unit/test_deps_prune.py::test_pruned_packages_absent_from_requirements_txt PASSED [ 28%]
 agency/tests/unit/test_deps_prune.py::test_pruned_packages_absent_from_lockfile PASSED [ 29%]
 agency/tests/unit/test_deps_prune.py::test_sqlalchemy_only_reintroduced_as_alembic_transitive_dep PASSED [ 30%]
@@ -55,11 +55,11 @@ agency/tests/unit/test_deps_prune.py::test_kept_dependency_declared_with_pin[htt
 agency/tests/unit/test_deps_prune.py::test_kept_dependency_declared_with_pin[langgraph] PASSED [ 35%]
 agency/tests/unit/test_deps_prune.py::test_kept_dependency_declared_with_pin[moviepy] PASSED [ 36%]
 agency/tests/unit/test_deps_prune.py::test_kept_dependency_declared_with_pin[psycopg2-binary] PASSED [ 37%]
-agency/tests/unit/test_deps_prune.py::test_kept_dependency_declared_with_pin[pytest] PASSED [ 38%]
-agency/tests/unit/test_deps_prune.py::test_kept_dependency_declared_with_pin[pytest-cov] PASSED [ 39%]
-agency/tests/unit/test_deps_prune.py::test_kept_dependency_declared_with_pin[python-multipart] PASSED [ 40%]
-agency/tests/unit/test_deps_prune.py::test_kept_dependency_declared_with_pin[qdrant-client] PASSED [ 41%]
-agency/tests/unit/test_deps_prune.py::test_kept_dependency_declared_with_pin[redis] PASSED [ 42%]
+agency/tests/unit/test_deps_prune.py::test_kept_dependency_declared_with_pin[pytest] PASSED [ 37%]
+agency/tests/unit/test_deps_prune.py::test_kept_dependency_declared_with_pin[pytest-cov] PASSED [ 38%]
+agency/tests/unit/test_deps_prune.py::test_kept_dependency_declared_with_pin[python-multipart] PASSED [ 39%]
+agency/tests/unit/test_deps_prune.py::test_kept_dependency_declared_with_pin[qdrant-client] PASSED [ 40%]
+agency/tests/unit/test_deps_prune.py::test_kept_dependency_declared_with_pin[redis] PASSED [ 41%]
 agency/tests/unit/test_deps_prune.py::test_kept_dependency_declared_with_pin[uvicorn] PASSED [ 42%]
 agency/tests/unit/test_e2e_full_pipeline_and_garbage_collection.py::test_celery_task_routing_configuration PASSED [ 43%]
 agency/tests/unit/test_e2e_full_pipeline_and_garbage_collection.py::test_trend_scraper_task_execution PASSED [ 44%]
@@ -69,18 +69,19 @@ agency/tests/unit/test_enterprise_phases_0_to_5.py::test_fase_0_unified_health_c
 agency/tests/unit/test_enterprise_phases_0_to_5.py::test_fase_1_jwt_auth_and_rbac PASSED [ 48%]
 agency/tests/unit/test_enterprise_phases_0_to_5.py::test_fase_2_modular_routers_leads_and_metrics PASSED [ 49%]
 agency/tests/unit/test_enterprise_phases_0_to_5.py::test_fase_4_llm_cost_calculation_and_budget PASSED [ 50%]
-agency/tests/unit/test_enterprise_phases_0_to_5.py::test_fase_5_audit_logging PASSED [ 51%]
-agency/tests/unit/test_fastapi_endpoints.py::test_create_tenant_endpoint[asyncio] XFAIL [ 52%]
-agency/tests/unit/test_fastapi_endpoints.py::test_get_metrics_endpoint[asyncio] PASSED [ 53%]
-agency/tests/unit/test_fastapi_endpoints.py::test_takeover_lead_endpoint[asyncio] PASSED [ 54%]
-agency/tests/unit/test_fastapi_endpoints.py::test_cross_tenant_metrics_rejected[asyncio] PASSED [ 55%]
+agency/tests/unit/test_enterprise_phases_0_to_5.py::test_fase_5_audit_logging PASSED [ 50%]
+agency/tests/unit/test_fastapi_endpoints.py::test_create_tenant_endpoint[asyncio] PASSED [ 51%]
+agency/tests/unit/test_fastapi_endpoints.py::test_get_metrics_endpoint[asyncio] PASSED [ 52%]
+agency/tests/unit/test_fastapi_endpoints.py::test_takeover_lead_endpoint[asyncio] PASSED [ 53%]
+agency/tests/unit/test_fastapi_endpoints.py::test_cross_tenant_metrics_rejected[asyncio] PASSED [ 54%]
+agency/tests/unit/test_fastapi_endpoints.py::test_create_tenant_no_jwt_required[asyncio] PASSED [ 55%]
 agency/tests/unit/test_filter_5_50.py::test_passes_5_50_filter_both_true PASSED [ 56%]
 agency/tests/unit/test_filter_5_50.py::test_passes_5_50_filter_one_false PASSED [ 57%]
-agency/tests/unit/test_filter_5_50.py::test_passes_5_50_filter_missing_keys PASSED [ 57%]
-agency/tests/unit/test_frontend_features_phase10.py::test_phase10_feature_files_exist PASSED [ 58%]
-agency/tests/unit/test_frontend_features_phase11.py::test_phase11_and_frontend_completion_files_exist PASSED [ 59%]
-agency/tests/unit/test_frontend_features_phase9.py::test_phase9_feature_files_exist PASSED [ 60%]
-agency/tests/unit/test_frontend_infra.py::test_frontend_infra_files_exist PASSED [ 61%]
+agency/tests/unit/test_filter_5_50.py::test_passes_5_50_filter_missing_keys PASSED [ 58%]
+agency/tests/unit/test_frontend_features_phase10.py::test_phase10_feature_files_exist PASSED [ 59%]
+agency/tests/unit/test_frontend_features_phase11.py::test_phase11_and_frontend_completion_files_exist PASSED [ 60%]
+agency/tests/unit/test_frontend_features_phase9.py::test_phase9_feature_files_exist PASSED [ 61%]
+agency/tests/unit/test_frontend_infra.py::test_frontend_infra_files_exist PASSED [ 62%]
 agency/tests/unit/test_frontend_infra.py::test_frontend_boundary_files_exist PASSED [ 62%]
 agency/tests/unit/test_frontend_infra.py::test_package_json_pins PASSED  [ 63%]
 agency/tests/unit/test_frontend_infra.py::test_jsconfig_alias_resolves PASSED [ 64%]
@@ -91,10 +92,10 @@ agency/tests/unit/test_hmac_validator.py::test_verify_meta_hmac_signature_valid 
 agency/tests/unit/test_hmac_validator.py::test_verify_meta_hmac_signature_invalid_secret PASSED [ 69%]
 agency/tests/unit/test_hmac_validator.py::test_verify_meta_hmac_signature_tampered_payload PASSED [ 70%]
 agency/tests/unit/test_hmac_validator.py::test_verify_meta_hmac_signature_malformed_header PASSED [ 71%]
-agency/tests/unit/test_ideation_crew.py::test_run_ideation_crew_structure PASSED [ 71%]
-agency/tests/unit/test_ingest_knowledge.py::test_knowledge_markdown_files_exist PASSED [ 72%]
-agency/tests/unit/test_ingest_knowledge.py::test_simple_embedding_consistency PASSED [ 73%]
-agency/tests/unit/test_minio_and_classifier.py::test_classify_business_type_product PASSED [ 74%]
+agency/tests/unit/test_ideation_crew.py::test_run_ideation_crew_structure PASSED [ 72%]
+agency/tests/unit/test_ingest_knowledge.py::test_knowledge_markdown_files_exist PASSED [ 73%]
+agency/tests/unit/test_ingest_knowledge.py::test_simple_embedding_consistency PASSED [ 74%]
+agency/tests/unit/test_minio_and_classifier.py::test_classify_business_type_product PASSED [ 75%]
 agency/tests/unit/test_minio_and_classifier.py::test_classify_business_type_service PASSED [ 75%]
 agency/tests/unit/test_minio_and_classifier.py::test_minio_storage_client_upload PASSED [ 76%]
 agency/tests/unit/test_ppp_validator.py::test_validate_ppp_valid PASSED  [ 77%]
@@ -106,8 +107,8 @@ agency/tests/unit/test_rag_mcp.py::test_query_rag_knowledge_fallback_when_offlin
 agency/tests/unit/test_rum_calculator.py::test_calculate_rum_score_valid PASSED [ 83%]
 agency/tests/unit/test_rum_calculator.py::test_calculate_rum_score_out_of_bounds PASSED [ 84%]
 agency/tests/unit/test_rum_calculator.py::test_calculate_rum_score_missing_key PASSED [ 85%]
-agency/tests/unit/test_rum_calculator.py::test_evaluate_rum_threshold_pass PASSED [ 85%]
-agency/tests/unit/test_rum_calculator.py::test_evaluate_rum_threshold_fail PASSED [ 86%]
+agency/tests/unit/test_rum_calculator.py::test_evaluate_rum_threshold_pass PASSED [ 86%]
+agency/tests/unit/test_rum_calculator.py::test_evaluate_rum_threshold_fail PASSED [ 87%]
 agency/tests/unit/test_scriptwriting_crew.py::test_run_scriptwriting_crew_4_blocks PASSED [ 87%]
 agency/tests/unit/test_searxng_mcp.py::test_sanitize_html_content_strips_tags PASSED [ 88%]
 agency/tests/unit/test_searxng_mcp.py::test_searxng_search_sanitized_fallback_when_offline PASSED [ 89%]
@@ -128,13 +129,13 @@ venv/lib/python3.14/site-packages/fastapi/testclient.py:1
   /home/ivan/Desktop/AgentMarketingIA/venv/lib/python3.14/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
     from starlette.testclient import TestClient as TestClient  # noqa
 
-agency/tests/unit/test_celery_tasks.py::test_metrics_loop_task_rojo
+agency/tests/unit/test_celery_tasks.py::test_video_edit_task_eager_execution
 agency/tests/unit/test_searxng_mcp.py::test_searxng_search_sanitized_fallback_when_offline
   /home/ivan/Desktop/AgentMarketingIA/venv/lib/python3.14/site-packages/qdrant_client/qdrant_remote.py:282: UserWarning: Qdrant client version 1.19.0 is incompatible with server version 1.7.4. Major versions should match and minor version difference must not exceed 1. Set check_compatibility=False to skip version check.
     show_warning(
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-================== 106 passed, 1 xfailed, 3 warnings in 3.90s ==================
+======================= 108 passed, 3 warnings in 2.75s ========================
 ````
 
 ---
@@ -5074,11 +5075,11 @@ def get_dynamic_threshold(niche: str) -> float:
 
 ---
 
-### 📂 `agency/backend/` (18 archivos, 1,372 líneas)
+### 📂 `agency/backend/` (18 archivos, 1,491 líneas)
 
 #### 📄 [main.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/backend/main.py)
 - **Ruta Completa:** `agency/backend/main.py`
-- **Líneas de Código:** 132
+- **Líneas de Código:** 133
 - **Descripción:** _main.py_
 - **Funciones:** `sse_endpoint, verify_instagram_webhook, receive_instagram_webhook, event_generator`
 
@@ -5105,7 +5106,7 @@ from backend.webhooks.instagram_inbound import process_instagram_webhook_payload
 
 # Importación de Routers Modularizados
 from backend.routers.health import router as health_router
-from backend.routers.ingestion import router as ingestion_router
+from backend.routers.ingestion import tenant_admin_router, ingestion_router
 from backend.routers.graph_execution import router as graph_router
 from backend.routers.leads import router as leads_router
 from backend.routers.metrics import router as metrics_router
@@ -5138,6 +5139,7 @@ app.add_middleware(TenantContextMiddleware)
 _TENANT_GUARD = [Depends(verify_tenant_access)]
 
 app.include_router(health_router)
+app.include_router(tenant_admin_router)            # Sin guard: POST /tenants (registro público)
 app.include_router(ingestion_router, dependencies=_TENANT_GUARD)
 app.include_router(graph_router, dependencies=_TENANT_GUARD)
 app.include_router(leads_router, dependencies=_TENANT_GUARD)
@@ -5425,7 +5427,7 @@ async def run_graph(tenant_id: str, req: GraphRunRequest):
         "niche_ppp": req.niche_ppp,
     }
 
-    final_state = graph_app.invoke(initial_state)
+    final_state = await graph_app.ainvoke(initial_state)
 
     await sse_manager.broadcast(
         tenant_id,
@@ -5523,7 +5525,7 @@ async def unified_health_check():
 
 #### 📄 [ingestion.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/backend/routers/ingestion.py)
 - **Ruta Completa:** `agency/backend/routers/ingestion.py`
-- **Líneas de Código:** 71
+- **Líneas de Código:** 94
 - **Descripción:** _ingestion.py_
 - **Clases:** `TenantCreateRequest`
 - **Funciones:** `create_tenant, ingest_product_data`
@@ -5532,9 +5534,14 @@ async def unified_health_check():
 """
 ingestion.py
 
-Router para la Creación de Tenants y la Ingesta de Productos/Servicios.
+Router de Ingesta dividido en dos APIRouter:
+  - tenant_admin_router: endpoints de gestión administrativa de tenants (sin guard de tenant_id).
+    Incluye: POST /api/v1/tenants (creación de tenant — endpoint público de registro).
+  - ingestion_router: endpoints de ingesta de contenido por tenant (con verify_tenant_access).
+    Incluye: POST /api/v1/tenants/{tenant_id}/product-ingest.
 """
 
+import logging
 from typing import Optional
 from fastapi import APIRouter, File, UploadFile, Form, status
 from pydantic import BaseModel
@@ -5542,7 +5549,7 @@ from backend.storage.minio_client import save_product_photo_to_minio
 from agents.criterion.niche_classifier import classify_business_type
 from backend.sse_manager import sse_manager
 
-router = APIRouter(prefix="/api/v1/tenants", tags=["Tenant & Ingestion"])
+logger = logging.getLogger(__name__)
 
 
 class TenantCreateRequest(BaseModel):
@@ -5551,10 +5558,20 @@ class TenantCreateRequest(BaseModel):
     monthly_llm_budget_usd: float = 20.00
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+# ─── Router 1: Administración de Tenants (sin guard de tenant_id) ─────────────
+# Estos endpoints no requieren un tenant_id existente en el path — son el punto
+# de entrada para crear nuevos tenants. No deben tener verify_tenant_access.
+tenant_admin_router = APIRouter(prefix="/api/v1/tenants", tags=["Tenant Admin"])
+
+
+@tenant_admin_router.post("", status_code=status.HTTP_201_CREATED)
 async def create_tenant(req: TenantCreateRequest):
-    """Crea un nuevo tenant registrando sus claves virtuales y presupuesto."""
+    """
+    Crea un nuevo tenant registrando sus claves virtuales y presupuesto LLM.
+    Endpoint público de registro — no requiere JWT previo (es el paso de onboarding).
+    """
     tenant_id = f"tenant-{req.name.lower().replace(' ', '-')}-001"
+    logger.info(f"Creando nuevo tenant: {tenant_id} (niche={req.niche})")
     return {
         "id": tenant_id,
         "name": req.name,
@@ -5565,7 +5582,13 @@ async def create_tenant(req: TenantCreateRequest):
     }
 
 
-@router.post("/{tenant_id}/product-ingest")
+# ─── Router 2: Ingesta de Contenido por Tenant (con verify_tenant_access) ─────
+# Todos los endpoints aquí operan sobre un tenant_id existente y deben pasar
+# el guard sistémico de aislamiento Anti-IDOR registrado en main.py.
+ingestion_router = APIRouter(prefix="/api/v1/tenants", tags=["Tenant Ingestion"])
+
+
+@ingestion_router.post("/{tenant_id}/product-ingest")
 async def ingest_product_data(
     tenant_id: str,
     product_name: str = Form(...),
@@ -5579,7 +5602,9 @@ async def ingest_product_data(
         content = await file.read()
         product_image_url = save_product_photo_to_minio(content, file.filename, tenant_id)
     else:
-        product_image_url = f"http://localhost:9000/viralsync-media/{tenant_id}/products/default_product.jpg"
+        product_image_url = (
+            f"http://localhost:9000/viralsync-media/{tenant_id}/products/default_product.jpg"
+        )
 
     classification = classify_business_type(description, user_choice=business_type)
 
@@ -5763,7 +5788,7 @@ async def takeover_lead(
 
 #### 📄 [metrics.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/backend/routers/metrics.py)
 - **Ruta Completa:** `agency/backend/routers/metrics.py`
-- **Líneas de Código:** 59
+- **Líneas de Código:** 132
 - **Descripción:** _metrics.py_
 - **Funciones:** `get_metrics, get_metrics_72h`
 
@@ -5772,61 +5797,134 @@ async def takeover_lead(
 metrics.py
 
 Router para las Métricas de Rendimiento 72h y Clasificación RUM.
+Conectado a SQLAlchemy Async ORM — devuelve datos reales del tenant autenticado.
+Ante error de DB devuelve 503 explícito. Sin datos devuelve lista vacía.
 """
 
+import logging
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status, Depends
+
+logger = logging.getLogger(__name__)
+
+try:
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy import select
+    from backend.db.session import get_async_db
+    from backend.db.models import VideoMetric
+    HAS_SQLALCHEMY = True
+except ImportError:
+    HAS_SQLALCHEMY = False
+    get_async_db = lambda: None
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["Metrics 72h"])
 
 
 @router.get("/{tenant_id}/metrics")
-async def get_metrics(tenant_id: str) -> List[Dict[str, Any]]:
-    """Retorna la lista de métricas por video a 72 horas para clasificación RUM."""
-    return [
-        {
-            "video_id": "video-55",
-            "published_at": "2026-08-03T10:00:00Z",
-            "metrics_72h": {
-                "views": 150000,
-                "followers_at_posting": 10000,
-                "ratio": 15.0,
-                "leads_generated": 142,
-            },
-            "classification": "VERDE",
-            "action_taken": "Encolado para 3 variaciones en próximo batch.",
-        },
-        {
-            "video_id": "video-56",
-            "published_at": "2026-08-03T14:00:00Z",
-            "metrics_72h": {
-                "views": 4500,
-                "followers_at_posting": 10000,
-                "ratio": 0.45,
-                "leads_generated": 2,
-            },
-            "classification": "ROJO",
-            "action_taken": "Idea descartada.",
-        },
-    ]
+async def get_metrics(
+    tenant_id: str, db=Depends(get_async_db)
+) -> List[Dict[str, Any]]:
+    """
+    Retorna la lista de métricas por video para el tenant autenticado.
+    Consulta VideoMetric desde el ORM async. Sin DB → lista vacía. Error → 503.
+    """
+    if not HAS_SQLALCHEMY or db is None:
+        return []
+
+    try:
+        stmt = select(VideoMetric).where(VideoMetric.tenant_id == tenant_id)
+        result = await db.execute(stmt)
+        metrics_orm = result.scalars().all()
+        return [
+            {
+                "video_id": m.video_id,
+                "published_at": m.published_at.isoformat() if m.published_at else None,
+                "metrics_72h": {
+                    "views": m.views,
+                    "followers_at_posting": m.followers_at_posting,
+                    "ratio": round(m.views / m.followers_at_posting, 2)
+                    if m.followers_at_posting
+                    else 0.0,
+                    "leads_generated": m.leads_generated,
+                },
+                "classification": m.classification,
+                "action_taken": m.action_taken,
+            }
+            for m in metrics_orm
+        ]
+    except Exception as exc:
+        logger.error(f"[{tenant_id}] Error al consultar métricas en DB: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Error temporal de base de datos al obtener métricas.",
+        )
 
 
 @router.get("/{tenant_id}/metrics/72h")
-async def get_metrics_72h(tenant_id: str) -> Dict[str, Any]:
-    """Retorna el resumen consolidado a 72 horas."""
-    return {
-        "status": "success",
-        "tenant_id": tenant_id,
-        "window_hours": 72,
-        "metrics": {
-            "total_views": 14500,
-            "avg_watch_time": 38.5,
-            "completion_rate": 0.68,
-            "engagement_rate": 0.084,
-            "classification": "VIRAL_WINNER",
-            "rum_adjustment_delta": +0.05,
-        },
-    }
+async def get_metrics_72h(
+    tenant_id: str, db=Depends(get_async_db)
+) -> Dict[str, Any]:
+    """
+    Retorna el resumen consolidado de métricas en la ventana de 72 horas.
+    Agrega desde el ORM los videos publicados en las últimas 72h.
+    Sin datos → {"status": "no_data"}. Error → 503.
+    """
+    if not HAS_SQLALCHEMY or db is None:
+        return {"status": "no_data", "tenant_id": tenant_id, "window_hours": 72, "metrics": {}}
+
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=72)
+        stmt = (
+            select(VideoMetric)
+            .where(VideoMetric.tenant_id == tenant_id)
+            .where(VideoMetric.published_at >= cutoff)
+        )
+        result = await db.execute(stmt)
+        metrics_orm = result.scalars().all()
+
+        if not metrics_orm:
+            return {
+                "status": "no_data",
+                "tenant_id": tenant_id,
+                "window_hours": 72,
+                "metrics": {},
+            }
+
+        total_views = sum(m.views for m in metrics_orm)
+        total_leads = sum(m.leads_generated for m in metrics_orm)
+        avg_completion = (
+            sum(m.completion_rate for m in metrics_orm if m.completion_rate) / len(metrics_orm)
+            if metrics_orm
+            else 0.0
+        )
+        avg_engagement = (
+            sum(m.engagement_rate for m in metrics_orm if m.engagement_rate) / len(metrics_orm)
+            if metrics_orm
+            else 0.0
+        )
+        # Clasificación simple basada en ratio de views/leads: VIRAL si >10x
+        classification = "VIRAL_WINNER" if total_views > 0 and total_leads / max(total_views, 1) > 0.001 else "VERDE"
+
+        return {
+            "status": "success",
+            "tenant_id": tenant_id,
+            "window_hours": 72,
+            "metrics": {
+                "total_views": total_views,
+                "total_leads": total_leads,
+                "avg_completion_rate": round(avg_completion, 3),
+                "avg_engagement_rate": round(avg_engagement, 4),
+                "classification": classification,
+                "videos_analyzed": len(metrics_orm),
+            },
+        }
+    except Exception as exc:
+        logger.error(f"[{tenant_id}] Error al consolidar métricas 72h en DB: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Error temporal de base de datos al consolidar métricas 72h.",
+        )
 ````
 
 ---
@@ -5893,9 +5991,9 @@ def save_product_photo_to_minio(file_bytes: bytes, filename: str, tenant_id: str
 
 #### 📄 [models.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/backend/db/models.py)
 - **Ruta Completa:** `agency/backend/db/models.py`
-- **Líneas de Código:** 108
+- **Líneas de Código:** 130
 - **Descripción:** _models.py_
-- **Clases:** `Base, Tenant, Product, Idea, Script, Post, Lead, LLMUsageLog, AuditLog`
+- **Clases:** `Base, Tenant, Product, Idea, Script, Post, Lead, VideoMetric, LLMUsageLog, AuditLog`
 
 ````python
 """
@@ -5978,10 +6076,32 @@ class Lead(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
-    lead_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    instagram_handle: Mapped[str] = mapped_column(String(128), nullable=False)
-    score: Mapped[float] = mapped_column(Float, default=0.0)
+    video_id: Mapped[Optional[str]] = mapped_column(String(64))
+    keyword: Mapped[Optional[str]] = mapped_column(String(128))
+    ig_user_id: Mapped[Optional[str]] = mapped_column(String(128))
+    mensaje_original: Mapped[Optional[str]] = mapped_column(Text)
+    origen: Mapped[str] = mapped_column(String(64), default="comment")
     status: Mapped[str] = mapped_column(String(32), default="new")
+    calificado_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    handled_by_human_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class VideoMetric(Base):
+    """Métricas de rendimiento de video por tenant en ventana de 72 horas."""
+    __tablename__ = "video_metrics"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    video_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    views: Mapped[int] = mapped_column(Integer, default=0)
+    followers_at_posting: Mapped[int] = mapped_column(Integer, default=0)
+    leads_generated: Mapped[int] = mapped_column(Integer, default=0)
+    completion_rate: Mapped[Optional[float]] = mapped_column(Float)
+    engagement_rate: Mapped[Optional[float]] = mapped_column(Float)
+    classification: Mapped[str] = mapped_column(String(32), default="VERDE")
+    action_taken: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -12310,7 +12430,7 @@ CREATE INDEX idx_llm_usage_tenant_month ON llm_usage_log (tenant_id, created_at)
 
 ---
 
-### 📂 `agency/tests/` (32 archivos, 1,683 líneas)
+### 📂 `agency/tests/` (32 archivos, 1,696 líneas)
 
 #### 📄 [__init__.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/tests/__init__.py)
 - **Ruta Completa:** `agency/tests/__init__.py`
@@ -13039,7 +13159,7 @@ def test_e2e_full_state_graph_pipeline():
 
 #### 📄 [test_enterprise_phases_0_to_5.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/tests/unit/test_enterprise_phases_0_to_5.py)
 - **Ruta Completa:** `agency/tests/unit/test_enterprise_phases_0_to_5.py`
-- **Líneas de Código:** 95
+- **Líneas de Código:** 101
 - **Descripción:** _test_enterprise_phases_0_to_5.py_
 - **Funciones:** `test_fase_0_unified_health_check_endpoint, test_fase_1_jwt_auth_and_rbac, test_fase_2_modular_routers_leads_and_metrics, test_fase_4_llm_cost_calculation_and_budget, test_fase_5_audit_logging`
 
@@ -13089,22 +13209,28 @@ def test_fase_1_jwt_auth_and_rbac():
 
 
 def test_fase_2_modular_routers_leads_and_metrics():
-    """Fase 2: Probar los routers modularizados con JWT válido del mismo tenant."""
+    """Fase 2: Routers modularizados con JWT válido. Sin DB: respuestas explícitas vacías."""
     token = create_access_token(user_id="usr-test", tenant_id="tenant-test", role="admin")
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Test router /leads — en entorno de test sin SQLAlchemy, esperar lista vacía (devmode) o 503
+    # Test router /leads — sin DB en test: lista vacía o 503 (nunca datos ficticios)
     leads_res = client.get("/api/v1/tenants/tenant-test/leads", headers=headers)
-    # 200 con lista vacía (sin DB) o 503 (error de DB) son ambos comportamientos correctos
     assert leads_res.status_code in (200, 503)
     if leads_res.status_code == 200:
         assert isinstance(leads_res.json(), list)
 
-    # Test router /metrics/72h — datos estáticos mientras se migra ORM
-    metrics_res = client.get("/api/v1/tenants/tenant-test/metrics/72h", headers=headers)
-    assert metrics_res.status_code == 200
-    metrics_data = metrics_res.json()
-    assert metrics_data["status"] == "success"
+    # Test router /metrics — sin DB: lista vacía o 503 (ya no hardcodeado)
+    metrics_res = client.get("/api/v1/tenants/tenant-test/metrics", headers=headers)
+    assert metrics_res.status_code in (200, 503)
+    if metrics_res.status_code == 200:
+        assert isinstance(metrics_res.json(), list)
+
+    # Test router /metrics/72h — sin DB: no_data o 503 (ya no VIRAL_WINNER hardcodeado)
+    metrics_72h_res = client.get("/api/v1/tenants/tenant-test/metrics/72h", headers=headers)
+    assert metrics_72h_res.status_code in (200, 503)
+    if metrics_72h_res.status_code == 200:
+        data = metrics_72h_res.json()
+        assert data.get("status") in ("success", "no_data")
 
 
 def test_fase_4_llm_cost_calculation_and_budget():
@@ -13145,9 +13271,9 @@ def test_fase_5_audit_logging():
 
 #### 📄 [test_fastapi_endpoints.py](file:///home/ivan/Desktop/AgentMarketingIA/agency/tests/unit/test_fastapi_endpoints.py)
 - **Ruta Completa:** `agency/tests/unit/test_fastapi_endpoints.py`
-- **Líneas de Código:** 102
+- **Líneas de Código:** 109
 - **Descripción:** _test_fastapi_endpoints.py_
-- **Funciones:** `_auth_header, test_create_tenant_endpoint, test_get_metrics_endpoint, test_takeover_lead_endpoint, test_cross_tenant_metrics_rejected`
+- **Funciones:** `_auth_header, test_create_tenant_endpoint, test_get_metrics_endpoint, test_takeover_lead_endpoint, test_cross_tenant_metrics_rejected, test_create_tenant_no_jwt_required`
 
 ````python
 """
@@ -13156,6 +13282,7 @@ test_fastapi_endpoints.py
 Pruebas de integración con httpx para el servidor FastAPI main.py.
 Todos los endpoints bajo /tenants/{tenant_id} requieren JWT válido
 (verify_tenant_access aplicado sistémicamente en include_router).
+POST /api/v1/tenants es endpoint público de registro (sin guard).
 """
 
 import pytest
@@ -13171,15 +13298,8 @@ def _auth_header(tenant_id: str, role: str = "admin") -> dict:
 
 
 @pytest.mark.anyio
-@pytest.mark.xfail(
-    reason=(
-        "Bug preexistente (ajeno al scope IDOR): POST /api/v1/tenants devuelve 422 "
-        "porque el endpoint espera tenant_id como query param en lugar de extraerlo del body. "
-        "Fix pendiente en el router de ingestion — tracked en ROADMAP_ENTERPRISE.md Fase 2."
-    ),
-    strict=False,
-)
 async def test_create_tenant_endpoint():
+    """POST /api/v1/tenants es público (registro de nuevo tenant) — no requiere JWT."""
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
@@ -13199,7 +13319,7 @@ async def test_create_tenant_endpoint():
 
 @pytest.mark.anyio
 async def test_get_metrics_endpoint():
-    """Accede a /metrics con JWT válido del mismo tenant."""
+    """Accede a /metrics con JWT válido del mismo tenant. Sin DB → lista vacía."""
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
@@ -13207,11 +13327,10 @@ async def test_get_metrics_endpoint():
             "/api/v1/tenants/tenant-demo-001/metrics",
             headers=_auth_header("tenant-demo-001"),
         )
-    assert response.status_code == 200
-    data = response.json()
-    assert isinstance(data, list)
-    assert len(data) >= 1
-    assert "classification" in data[0]
+    # Sin DB en entorno de test: lista vacía (correcto); con DB: lista de métricas reales
+    assert response.status_code in (200, 503)
+    if response.status_code == 200:
+        assert isinstance(response.json(), list)
 
 
 @pytest.mark.anyio
@@ -13238,20 +13357,34 @@ async def test_takeover_lead_endpoint():
 @pytest.mark.anyio
 async def test_cross_tenant_metrics_rejected():
     """
-    Verifica que JWT de tenant-X NO puede leer métricas de tenant-Y.
-    Este es el test IDOR definitivo para metrics.py (antes sin guard).
+    Verifica que JWT de tenant-intruso NO puede leer métricas de tenant-demo-001.
+    Guard sistémico verify_tenant_access debe devolver 403.
     """
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         response = await ac.get(
             "/api/v1/tenants/tenant-demo-001/metrics",
-            headers=_auth_header("tenant-intruso"),  # JWT de otro tenant
+            headers=_auth_header("tenant-intruso"),
         )
     assert response.status_code == 403, (
         f"JWT de tenant-intruso debería recibir 403 al pedir datos de tenant-demo-001, "
         f"pero se recibió {response.status_code}."
     )
+
+
+@pytest.mark.anyio
+async def test_create_tenant_no_jwt_required():
+    """POST /api/v1/tenants no exige JWT — cualquier request sin Authorization debe pasar."""
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.post(
+            "/api/v1/tenants",
+            json={"name": "Nuevo Cliente", "niche": "Fitness", "monthly_llm_budget_usd": 15.0},
+            # Sin header de Authorization
+        )
+    assert response.status_code == 201
 ````
 
 ---

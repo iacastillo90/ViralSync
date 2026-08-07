@@ -43,22 +43,28 @@ def test_fase_1_jwt_auth_and_rbac():
 
 
 def test_fase_2_modular_routers_leads_and_metrics():
-    """Fase 2: Probar los routers modularizados con JWT válido del mismo tenant."""
+    """Fase 2: Routers modularizados con JWT válido. Sin DB: respuestas explícitas vacías."""
     token = create_access_token(user_id="usr-test", tenant_id="tenant-test", role="admin")
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Test router /leads — en entorno de test sin SQLAlchemy, esperar lista vacía (devmode) o 503
+    # Test router /leads — sin DB en test: lista vacía o 503 (nunca datos ficticios)
     leads_res = client.get("/api/v1/tenants/tenant-test/leads", headers=headers)
-    # 200 con lista vacía (sin DB) o 503 (error de DB) son ambos comportamientos correctos
     assert leads_res.status_code in (200, 503)
     if leads_res.status_code == 200:
         assert isinstance(leads_res.json(), list)
 
-    # Test router /metrics/72h — datos estáticos mientras se migra ORM
-    metrics_res = client.get("/api/v1/tenants/tenant-test/metrics/72h", headers=headers)
-    assert metrics_res.status_code == 200
-    metrics_data = metrics_res.json()
-    assert metrics_data["status"] == "success"
+    # Test router /metrics — sin DB: lista vacía o 503 (ya no hardcodeado)
+    metrics_res = client.get("/api/v1/tenants/tenant-test/metrics", headers=headers)
+    assert metrics_res.status_code in (200, 503)
+    if metrics_res.status_code == 200:
+        assert isinstance(metrics_res.json(), list)
+
+    # Test router /metrics/72h — sin DB: no_data o 503 (ya no VIRAL_WINNER hardcodeado)
+    metrics_72h_res = client.get("/api/v1/tenants/tenant-test/metrics/72h", headers=headers)
+    assert metrics_72h_res.status_code in (200, 503)
+    if metrics_72h_res.status_code == 200:
+        data = metrics_72h_res.json()
+        assert data.get("status") in ("success", "no_data")
 
 
 def test_fase_4_llm_cost_calculation_and_budget():
