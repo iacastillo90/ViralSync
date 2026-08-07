@@ -28,6 +28,8 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
     task_routes={
         "workers.video_edit_task.*": {"queue": "rendering"},
         "workers.webhook_dlq_task.*": {"queue": "webhooks"},

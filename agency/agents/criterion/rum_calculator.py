@@ -52,10 +52,33 @@ def evaluate_rum_threshold(rum_score: float, threshold: float) -> Tuple[bool, fl
     """
     Evalúa si un RUM score supera el umbral dinámico del nicho.
     
-    :param rum_score: Score RUM calculado.
+    :param rum_score: Score RUM calculated.
     :param threshold: Umbral dinámico del nicho.
     :return: Tupla (passes: bool, margin: float).
     """
     passes = rum_score >= threshold
     margin = round(rum_score - threshold, 5)
     return passes, margin
+
+
+def get_dynamic_threshold(niche: str) -> float:
+    """
+    Obtiene el umbral dinámico del nicho desde Redis (recalibrado cada 72h con EMA).
+    Aplica una salvaguarda de clamp estricta entre [0.50, 0.90] para evitar bloqueos por outliers.
+    """
+    import os
+    REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    default_threshold = 0.70
+
+    try:
+        import redis
+        r = redis.Redis.from_url(REDIS_URL, socket_timeout=1.0)
+        val = r.get(f"rum_threshold:{niche}")
+        if val:
+            threshold = float(val)
+            # Clamp guardia [0.50, 0.90]
+            return max(0.50, min(0.90, round(threshold, 2)))
+    except Exception:
+        pass
+
+    return default_threshold
