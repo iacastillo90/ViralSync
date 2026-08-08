@@ -76,17 +76,26 @@ class Post(Base):
 class Lead(Base):
     __tablename__ = "leads"
 
+    # Alineada con migrations/001_init_schema.sql (169-182) + 002 (23-26):
+    # la migración SQL es la fuente de verdad para el esquema de producción, de
+    # modo que el ORM NO debe declarar columnas ausentes del DDL SQL (p. ej.
+    # created_at no existe en la tabla leads). create_all sólo crea las tablas que
+    # faltan, y sobre las tablas ya existentes (creadas por las migraciones) el
+    # ORM debe mapear exactamente las columnas que SELECT/UPDATE tocan.
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
-    video_id: Mapped[Optional[str]] = mapped_column(String(64))
-    keyword: Mapped[Optional[str]] = mapped_column(String(128))
-    ig_user_id: Mapped[Optional[str]] = mapped_column(String(128))
-    mensaje_original: Mapped[Optional[str]] = mapped_column(Text)
-    origen: Mapped[str] = mapped_column(String(64), default="comment")
-    status: Mapped[str] = mapped_column(String(32), default="new")
-    calificado_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    handled_by_human_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    video_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    keyword: Mapped[str] = mapped_column(String(128), nullable=False)
+    ig_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    mensaje_original: Mapped[str] = mapped_column(Text, nullable=False)
+    origen: Mapped[str] = mapped_column(String(64), nullable=False, default="comment")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="new")
+    calificado_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    handled_by_human_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    outcome: Mapped[Optional[str]] = mapped_column(String(32))
+    operator_id: Mapped[Optional[str]] = mapped_column(String(64))
+    conversacion_history: Mapped[Optional[str]] = mapped_column(Text)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class VideoMetric(Base):

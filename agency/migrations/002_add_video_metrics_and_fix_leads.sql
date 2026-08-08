@@ -20,7 +20,11 @@ CREATE INDEX IF NOT EXISTS idx_video_metrics_tenant_video ON video_metrics (tena
 CREATE INDEX IF NOT EXISTS idx_video_metrics_classification ON video_metrics (tenant_id, classification);
 
 -- 2. Extensión de la tabla leads
+-- status: el ORM (backend/db/models.py Lead) lo declara y el takeover lo actualiza
+-- (handled_by_human). Sin esta columna, cualquier SELECT/UPDATE del modelo Lead
+-- falla con UndefinedColumn sobre el esquema de migración.
 ALTER TABLE leads
+    ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'new',
     ADD COLUMN IF NOT EXISTS operator_id TEXT,
     ADD COLUMN IF NOT EXISTS conversacion_history JSONB DEFAULT '[]',
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
