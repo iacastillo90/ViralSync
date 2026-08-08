@@ -78,6 +78,15 @@ NICHE_001_COLUMNS = {
     "created_at",
 }
 
+# IDs de filas en espacio propio de este archivo (prefijo bbb…) — el motor
+# SQLite en memoria se comparte para TODA la sesión de pytest (StaticPool,
+# conftest.py), así que cualquier UUID repetido entre archivos de test rompe
+# UNIQUE constraints. test_db_session.py usa 1111…/2222…; este archivo usa el
+# suyo para no colisionar con el tenant seeds en test_db_session.py.
+DRIFT_TENANT_ID = "bbbb0001-2222-3333-4444-555555555555"
+DRIFT_METRIC_ID = "bbbb0002-8888-7777-6666-555555555555"
+DRIFT_VIDEO_ID = "bbbb0003-1234-1234-1234-123456789012"
+
 
 def test_video_metric_columns_match_migration_002_exactly():
     """REQ-VID-1 VID-01-01: column-set read-back assertion."""
@@ -110,14 +119,14 @@ def test_niche_columns_match_ddl_001_exact():
 @pytest.mark.anyio
 async def test_video_metric_insert_then_select_no_undefined_column(db_session):
     """VID-01-02: insert via ORM with aligned columns; select must not raise."""
-    tenant_id = "11111111-2222-3333-4444-555555555555"
+    tenant_id = DRIFT_TENANT_ID
     db_session.add(Tenant(id=tenant_id, name="Drift Tenant"))
     await db_session.commit()
 
     metric = VideoMetric(
-        id="99999999-8888-7777-6666-555555555555",
+        id=DRIFT_METRIC_ID,
         tenant_id=tenant_id,
-        video_id="12345678-1234-1234-1234-123456789012",
+        video_id=DRIFT_VIDEO_ID,
         views_72h=120,
         likes=45,
         comments=7,

@@ -28,6 +28,9 @@ from backend.routers.ingestion import tenant_admin_router, ingestion_router
 from backend.routers.graph_execution import router as graph_router
 from backend.routers.leads import router as leads_router
 from backend.routers.metrics import router as metrics_router
+from backend.routers.ideas import router as ideas_router
+from backend.routers.scripts import router as scripts_router
+from backend.routers.brain import router as brain_router
 
 setup_logging()
 
@@ -75,6 +78,9 @@ app.include_router(ingestion_router, dependencies=_TENANT_GUARD)
 app.include_router(graph_router, dependencies=_TENANT_GUARD)
 app.include_router(leads_router, dependencies=_TENANT_GUARD)
 app.include_router(metrics_router, dependencies=_TENANT_GUARD)
+app.include_router(ideas_router, dependencies=_TENANT_GUARD)
+app.include_router(scripts_router, dependencies=_TENANT_GUARD)
+app.include_router(brain_router, dependencies=_TENANT_GUARD)
 
 INSTAGRAM_APP_SECRET = os.getenv("INSTAGRAM_APP_SECRET", "secreto_meta_app_dev")
 INSTAGRAM_VERIFY_TOKEN = os.getenv("INSTAGRAM_WEBHOOK_VERIFY_TOKEN", "token_verificacion_meta_dev")
