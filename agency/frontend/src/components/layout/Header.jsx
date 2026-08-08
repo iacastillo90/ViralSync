@@ -1,10 +1,13 @@
 "use client";
 
 import { useTenantStore } from "@/stores/useTenantStore";
+import { useAgentStore } from "@/stores/useAgentStore";
 import { Sparkles, DollarSign, Building2 } from "lucide-react";
 
 export function Header() {
   const { activeTenant, availableTenants, setActiveTenant } = useTenantStore();
+  const { setTenantId } = useAgentStore();
+
 
   return (
     <header className="flex justify-between items-center px-6 py-4 bg-slate-900 border-b border-slate-800 text-slate-100">
@@ -38,7 +41,11 @@ export function Header() {
             disabled={availableTenants.length === 0}
             onChange={(e) => {
               const selected = availableTenants.find((t) => t.id === e.target.value);
-              if (selected) setActiveTenant({ ...activeTenant, ...selected });
+              if (selected) {
+                setActiveTenant(selected);
+                setTenantId(selected.id);
+                localStorage.setItem("tenantId", selected.id);
+              }
             }}
             className="bg-transparent text-slate-200 focus:outline-none cursor-pointer"
           >

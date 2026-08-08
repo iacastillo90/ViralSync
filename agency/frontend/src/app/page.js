@@ -1,7 +1,8 @@
 "use client";
-
+ 
 import { useState, useEffect } from "react";
 import { useAgentStore } from "@/stores/useAgentStore";
+import { useTenantStore } from "@/stores/useTenantStore";
 import { useSSEStream } from "@/hooks/useSSEStream";
 import {
   Play,
@@ -14,15 +15,20 @@ import {
   BarChart3,
   Layers,
   Sparkles,
+  Building2,
+  ArrowRight,
 } from "lucide-react";
+import Link from "next/link";
 
 import ProductIngestModal from "@/components/ProductIngestModal";
 import { fetchWithTenant } from "@/services/apiConfig";
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("monitor");
+  const { activeTenant, setActiveTenant, availableTenants, setAvailableTenants } = useTenantStore();
   const {
     tenantId,
+    setTenantId,
     nodes,
     logs,
     pausedCheckpoint,
@@ -33,11 +39,36 @@ export default function DashboardPage() {
     addLog,
   } = useAgentStore();
 
-  // Iniciar conexión SSE en tiempo real
-  useSSEStream(tenantId);
+  // 1. Cargar la lista de tenants en el arranque
+  useEffect(() => {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+    fetch(`${apiBase}/tenants`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setAvailableTenants(data);
+          
+          // Si no hay tenant seleccionado, intentar recuperar de localStorage o usar el primero
+          let savedTenantId = localStorage.getItem("tenantId");
+          let match = data.find((t) => t.id === savedTenantId) || data[0];
+          
+          if (match) {
+            setActiveTenant(match);
+            setTenantId(match.id);
+            localStorage.setItem("tenantId", match.id);
+          }
+        }
+      })
+      .catch((err) => console.error("Error cargando tenants:", err));
+  }, [setAvailableTenants, setActiveTenant, setTenantId]);
+
+  // Iniciar conexión SSE en tiempo real (sólo si hay un tenantId válido)
+  useSSEStream(tenantId && tenantId !== "null" ? tenantId : null);
 
   // Cargar datos iniciales desde el backend FastAPI
   useEffect(() => {
+    if (!tenantId || tenantId === "null") return;
+
     fetchWithTenant(`/tenants/${tenantId}/leads`, {}, tenantId)
       .then((data) => setLeads(data))
       .catch(() => {});
@@ -115,6 +146,30 @@ export default function DashboardPage() {
     );
   };
 
+
+  if (!tenantId || tenantId === "null") {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-6">
+        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center space-y-6 shadow-xl shadow-indigo-950/20">
+          <div className="bg-indigo-600/10 border border-indigo-500/30 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto text-indigo-400">
+            <Building2 className="w-8 h-8" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold tracking-tight">Bienvenido a ViralSync</h1>
+            <p className="text-sm text-slate-400">
+              Para comenzar a generar tus videos de marketing con inteligencia artificial, necesitas configurar o registrar tu primer inquilino (tenant).
+            </p>
+          </div>
+          <Link
+            href="/tenants/nuevo"
+            className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-indigo-600/30 group"
+          >
+            Configurar Primer Tenant <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+          </Link>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-6">

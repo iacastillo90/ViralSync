@@ -2,9 +2,11 @@
 
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { useAgentStore } from "@/stores/useAgentStore";
 import { ShieldCheck, Cpu, Database, Server } from "lucide-react";
 
 export default function AdminSistemaPage() {
+  const { tenantId } = useAgentStore();
   const services = [
     { name: "LiteLLM Proxy Gateway", icon: Cpu, status: "ONLINE", detail: "Pool gratuito (Groq/Gemini/SambaNova) activo" },
     { name: "Celery Workers", icon: Server, status: "ONLINE", detail: "Redis broker conectado (--concurrency=1 dev)" },
@@ -16,7 +18,7 @@ export default function AdminSistemaPage() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       <Header />
       <div className="flex flex-1">
-        <Sidebar tenantId="admin" />
+        <Sidebar tenantId={tenantId || "nuevo"} />
         <main className="flex-1 p-6 space-y-6">
           <div className="flex justify-between items-center pb-4 border-b border-slate-800">
             <div>
