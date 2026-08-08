@@ -4,6 +4,9 @@ export function MetricClassificationCard({ item }) {
   const isVerde = item.classification === "VERDE";
   const isRojo = item.classification === "ROJO";
 
+  const views72h = item.views_72h != null ? Number(item.views_72h) : null;
+  const ratio = item.ratio_relativo != null ? Number(item.ratio_relativo) : null;
+
   return (
     <div
       className={`p-5 rounded-xl border ${
@@ -32,11 +35,11 @@ export function MetricClassificationCard({ item }) {
       <div className="grid grid-cols-2 gap-3 my-3 text-sm">
         <div>
           <p className="text-xs text-slate-400">Vistas 72h</p>
-          <p className="text-lg font-bold">{item.metrics_72h.views.toLocaleString()}</p>
+          <p className="text-lg font-bold">{views72h != null ? views72h.toLocaleString() : "—"}</p>
         </div>
         <div>
           <p className="text-xs text-slate-400">Ratio Relativo</p>
-          <p className="text-lg font-bold text-indigo-400">{item.metrics_72h.ratio}x</p>
+          <p className="text-lg font-bold text-indigo-400">{ratio != null ? `${ratio}x` : "—"}</p>
         </div>
       </div>
 

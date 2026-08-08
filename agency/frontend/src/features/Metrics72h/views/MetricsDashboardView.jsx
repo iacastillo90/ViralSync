@@ -1,34 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { fetchWithTenant } from "@/services/apiConfig";
+import { useTenantResource } from "@/hooks/useTenantResource";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { MetricClassificationCard } from "../components/MetricClassificationCard";
 import { BarChart3 } from "lucide-react";
 
 export function MetricsDashboardView({ tenantId }) {
-  const [metrics, setMetrics] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    const c = new AbortController();
-    setLoading(true);
-    setError(null);
-    if (!tenantId) {
-      setError(new Error("Sin tenant activo"));
-      setLoading(false);
-      return;
-    }
-    fetchWithTenant(`/tenants/${tenantId}/metrics`, { signal: c.signal }, tenantId)
-      .then((d) => setMetrics(Array.isArray(d) ? d : []))
-      .catch((e) => {
-        if (e.name !== "AbortError") setError(e);
-      })
-      .finally(() => setLoading(false));
-    return () => c.abort();
-  }, [tenantId]);
+  const { data, loading, error } = useTenantResource("metrics", tenantId);
+  const metrics = Array.isArray(data) ? data : [];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
