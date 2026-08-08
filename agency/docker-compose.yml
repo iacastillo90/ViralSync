@@ -94,10 +94,14 @@ services:
     env_file:
       - path: ../.env
         required: false
+    restart: unless-stopped
     depends_on:
-      - postgres
-      - redis
-      - qdrant
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      qdrant:
+        condition: service_started
 
   celery_worker:
     build:
@@ -112,9 +116,12 @@ services:
     env_file:
       - path: ../.env
         required: false
+    restart: unless-stopped
     depends_on:
-      - redis
-      - postgres
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   minio:
     image: minio/minio
