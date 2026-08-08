@@ -88,11 +88,28 @@ def decode_access_token(token: str) -> Dict[str, Any]:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Error validando token JWT ({exc})")
 
 
-async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Security(security)) -> Dict[str, Any]:
-    """Dependencia FastAPI para extraer y verificar el usuario del encabezado Authorization: Bearer <token>."""
+async def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(security),
+    request: Request = None,
+) -> Dict[str, Any]:
+    """Dependencia FastAPI para extraer y verificar el usuario del encabezado Authorization: Bearer <token>.
+
+    Fallback de desarrollo (D1): en AGENCY_ENV=dev/development sin credenciales
+    Bearer, el usuario dev se vincula al tenant de la REQUEST (X-Tenant-ID header
+    o tenant de la URL, resuelto por TenantContextMiddleware en request.state.
+    tenant_id) en lugar del hardcoded "default_tenant", de modo que los UUIDs
+    reales pasen verify_tenant_access y los GETs devuelvan 200. En cualquier
+    entorno no-dev el fallback NO existe: sin JWT → 401 (fail-closed).
+    """
     if not credentials:
-        if AGENCY_ENV == "dev":
-            return {"sub": "usr_dev_001", "tenant_id": "default_tenant", "role": "admin"}
+        if AGENCY_ENV in ("dev", "development"):
+            return {
+                "sub": "usr_dev_001",
+                "tenant_id": getattr(request, "state", None)
+                and getattr(request.state, "tenant_id", None)
+                or None,
+                "role": "admin",
+            }
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Encabezado de autorización ausente")
 
     return decode_access_token(credentials.credentials)
