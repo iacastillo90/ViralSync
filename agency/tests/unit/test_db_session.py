@@ -51,9 +51,9 @@ async def test_init_db_schema_is_visible_from_a_new_session():
     # A real write via one session is visible via another (shared pool).
     from sqlalchemy import select
     async with AsyncSessionLocal() as s1:
-        s1.add(Tenant(id="t-shared-1", name="Shared Client"))
+        s1.add(Tenant(id="11111111-2222-3333-4444-555555555555", name="Shared Client"))
         await s1.commit()
     async with AsyncSessionLocal() as s2:
-        rows = (await s2.execute(select(Tenant).where(Tenant.id == "t-shared-1"))).scalars().all()
+        rows = (await s2.execute(select(Tenant).where(Tenant.id == "11111111-2222-3333-4444-555555555555"))).scalars().all()
     assert len(rows) == 1
     assert rows[0].name == "Shared Client"

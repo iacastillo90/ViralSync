@@ -10,7 +10,7 @@ from workers.video_edit_task import process_video_postproduction
 from workers.metrics_loop_task import audit_72h_metrics
 from backend.webhooks.instagram_inbound import process_instagram_webhook_payload
 from backend.security.hmac_validator import verify_meta_hmac_signature
-from backend.db.models import Tenant, Lead
+from backend.db.models import Lead
 
 
 @pytest.mark.anyio
@@ -38,13 +38,11 @@ async def test_complete_viral_sync_lifecycle(db_session):
 
         # Seed de un Lead real para el tenant, de modo que el takeover resuelva a
         # handled_by_human (200) en lugar de 404/503 (fail-closed sin datos ficticios).
-        # Se persiste también un Tenant real (FK de leads.tenant_id), y todas las
+        # El tenant ya quedó persistido por el POST /tenants (las sesiones comparten el
+        # mismo SQLite :memory: vía StaticPool), así que no se re-inserta. Todas las
         # columnas NOT NULL del DDL (video_id, keyword, ig_user_id, mensaje_original)
         # reciben valores — el lead_id es un UUID válido para ambos esquemas (SQLite
-        # ORM userId String y Postgres UUID).
-        db_session.add(Tenant(id=tenant_id, name="Cliente E2E Fitness"))
-        await db_session.commit()
-
+        # CHAR(32) y Postgres UUID).
         seeded_lead_id = str(uuid.uuid4())
         seeded_lead = Lead(
             id=seeded_lead_id,
