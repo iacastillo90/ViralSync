@@ -22,9 +22,12 @@ import Link from "next/link";
 
 import ProductIngestModal from "@/components/ProductIngestModal";
 import { fetchWithTenant } from "@/services/apiConfig";
+import { useTenantResource } from "@/hooks/useTenantResource";
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("monitor");
+  const [queuedIdeaId, setQueuedIdeaId] = useState(null);
+  const [queuedPublish, setQueuedPublish] = useState(false);
   const { activeTenant, setActiveTenant, availableTenants, setAvailableTenants } = useTenantStore();
   const {
     tenantId,
@@ -33,11 +36,20 @@ export default function DashboardPage() {
     logs,
     pausedCheckpoint,
     leads,
-    metrics,
     setLeads,
-    setMetrics,
     addLog,
   } = useAgentStore();
+
+  // Recursos compartidos: mismas GETs que las vistas de features (REQ-FEAT-4).
+  const scopedTenantId = tenantId && tenantId !== "null" ? tenantId : null;
+  const ideasResource = useTenantResource("ideas", scopedTenantId);
+  const scriptsResource = useTenantResource("scripts", scopedTenantId);
+  const metricsResource = useTenantResource("metrics", scopedTenantId);
+  const ideaItems = Array.isArray(ideasResource.data) ? ideasResource.data : [];
+  const scriptItems = Array.isArray(scriptsResource.data) ? scriptsResource.data : [];
+  const metricItems = Array.isArray(metricsResource.data) ? metricsResource.data : [];
+  const pendingIdea = ideaItems[0] || null;
+  const latestScript = scriptItems[scriptItems.length - 1] || scriptItems[0] || null;
 
   // 1. Cargar la lista de tenants en el arranque
   useEffect(() => {
@@ -72,11 +84,7 @@ export default function DashboardPage() {
     fetchWithTenant(`/tenants/${tenantId}/leads`, {}, tenantId)
       .then((data) => setLeads(data))
       .catch(() => {});
-
-    fetchWithTenant(`/tenants/${tenantId}/metrics`, {}, tenantId)
-      .then((data) => setMetrics(data))
-      .catch(() => {});
-  }, [tenantId, setLeads, setMetrics]);
+  }, [tenantId, setLeads]);
 
   const handleRunGraph = async () => {
     addLog("Solicitando inicio de StateGraph en FastAPI...");
@@ -92,7 +100,8 @@ export default function DashboardPage() {
     } catch (err) {}
   };
 
-  const handleApproveIdea = async (approved) => {
+  const handleApproveIdea = async (approved, ideaId) => {
+    if (!ideaId) return;
     addLog(`Enviando decisión de idea: ${approved ? "APROBADA" : "RECHAZADA"}`);
     try {
       await fetchWithTenant(
@@ -100,12 +109,13 @@ export default function DashboardPage() {
         {
           method: "POST",
           body: JSON.stringify({
-            idea_id: "idea-101",
+            idea_id: ideaId,
             status: approved ? "approved" : "rejected",
           }),
         },
         tenantId
       );
+      setQueuedIdeaId(ideaId);
     } catch (err) {}
   };
 
@@ -122,6 +132,7 @@ export default function DashboardPage() {
         },
         tenantId
       );
+      setQueuedPublish(true);
     } catch (err) {}
   };
 
@@ -271,44 +282,106 @@ export default function DashboardPage() {
         <div className="space-y-6">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <h2 className="text-lg font-semibold mb-2">Checkpoint: Idea Candidata RUM</h2>
-            <p className="text-sm text-slate-400 mb-4">
-              Idea: <span className="text-slate-200 font-medium">3 Errores Críticos al Escalar B2B en 2026</span> (Score RUM: 0.444 | PASS)
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => handleApproveIdea(true)}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg"
-              >
-                <CheckCircle className="w-4 h-4" /> Aprobar Idea
-              </button>
-              <button
-                onClick={() => handleApproveIdea(false)}
-                className="flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white font-medium px-4 py-2 rounded-lg"
-              >
-                <XCircle className="w-4 h-4" /> Rechazar Idea
-              </button>
-            </div>
+            {ideasResource.loading ? (
+              <p className="text-sm text-slate-400">Cargando ideas…</p>
+            ) : ideasResource.error ? (
+              <p className="text-sm text-rose-300 bg-rose-950/40 border border-rose-500/30 rounded-lg p-3">
+                Error al cargar ideas: {ideasResource.error.message}
+              </p>
+            ) : !pendingIdea ? (
+              <>
+                <p className="text-sm text-slate-400 mb-4">No hay ideas pendientes</p>
+                <div className="flex gap-3">
+                  <button disabled className="flex items-center gap-2 bg-slate-800 text-slate-500 font-medium px-4 py-2 rounded-lg cursor-not-allowed">
+                    <CheckCircle className="w-4 h-4" /> Aprobar Idea
+                  </button>
+                  <button disabled className="flex items-center gap-2 bg-slate-800 text-slate-500 font-medium px-4 py-2 rounded-lg cursor-not-allowed">
+                    <XCircle className="w-4 h-4" /> Rechazar Idea
+                  </button>
+                </div>
+              </>
+            ) : queuedIdeaId === pendingIdea.id ? (
+              <>
+                <p className="text-sm text-slate-400 mb-2">
+                  Idea: <span className="text-slate-200 font-medium">{pendingIdea.texto}</span> (Score RUM: {pendingIdea.rum_score ?? "—"})
+                </p>
+                <span className="inline-block text-xs bg-indigo-950 text-indigo-300 border border-indigo-500/40 px-2.5 py-1 rounded-full font-semibold">
+                  Idea encolada para procesamiento (202 accepted)
+                </span>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-slate-400 mb-4">
+                  Idea: <span className="text-slate-200 font-medium">{pendingIdea.texto}</span> (Score RUM: {pendingIdea.rum_score ?? "—"})
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => handleApproveIdea(true, pendingIdea.id)}
+                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg"
+                  >
+                    <CheckCircle className="w-4 h-4" /> Aprobar Idea
+                  </button>
+                  <button
+                    onClick={() => handleApproveIdea(false, pendingIdea.id)}
+                    className="flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white font-medium px-4 py-2 rounded-lg"
+                  >
+                    <XCircle className="w-4 h-4" /> Rechazar Idea
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <h2 className="text-lg font-semibold mb-2">Checkpoint: Publicación de Video Editado</h2>
-            <p className="text-sm text-slate-400 mb-4">
-              URI Video: <span className="text-slate-200 font-mono">s3://viralsync-media-dev/tenant-demo-001/edited_output.mp4</span>
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => handleApprovePublish(true)}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg"
-              >
-                <CheckCircle className="w-4 h-4" /> Aprobar Publicación en Instagram
-              </button>
-              <button
-                onClick={() => handleApprovePublish(false)}
-                className="flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white font-medium px-4 py-2 rounded-lg"
-              >
-                <XCircle className="w-4 h-4" /> Rechazar
-              </button>
-            </div>
+            {scriptsResource.loading ? (
+              <p className="text-sm text-slate-400">Cargando cola de publicación…</p>
+            ) : scriptsResource.error ? (
+              <p className="text-sm text-rose-300 bg-rose-950/40 border border-rose-500/30 rounded-lg p-3">
+                Error al cargar cola de publicación: {scriptsResource.error.message}
+              </p>
+            ) : !latestScript ? (
+              <>
+                <p className="text-sm text-slate-400 mb-4">No hay videos en cola para publicar todavía</p>
+                <div className="flex gap-3">
+                  <button disabled className="flex items-center gap-2 bg-slate-800 text-slate-500 font-medium px-4 py-2 rounded-lg cursor-not-allowed">
+                    <CheckCircle className="w-4 h-4" /> Aprobar Publicación en Instagram
+                  </button>
+                  <button disabled className="flex items-center gap-2 bg-slate-800 text-slate-500 font-medium px-4 py-2 rounded-lg cursor-not-allowed">
+                    <XCircle className="w-4 h-4" /> Rechazar
+                  </button>
+                </div>
+              </>
+            ) : queuedPublish ? (
+              <>
+                <p className="text-sm text-slate-400 mb-2">
+                  Último guion: keyword <span className="font-mono text-indigo-400">{latestScript.keyword || "—"}</span> — CTA: {latestScript.cta_50_60s || "—"}
+                </p>
+                <span className="inline-block text-xs bg-indigo-950 text-indigo-300 border border-indigo-500/40 px-2.5 py-1 rounded-full font-semibold">
+                  Publicación encolada para procesamiento (202 accepted)
+                </span>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-slate-400 mb-4">
+                  Último guion: keyword <span className="font-mono text-indigo-400">{latestScript.keyword || "—"}</span> — CTA: {latestScript.cta_50_60s || "—"}
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => handleApprovePublish(true)}
+                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg"
+                  >
+                    <CheckCircle className="w-4 h-4" /> Aprobar Publicación en Instagram
+                  </button>
+                  <button
+                    onClick={() => handleApprovePublish(false)}
+                    className="flex items-center gap-2 bg-rose-600 hover:bg-rose-500 text-white font-medium px-4 py-2 rounded-lg"
+                  >
+                    <XCircle className="w-4 h-4" /> Rechazar
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -367,48 +440,62 @@ export default function DashboardPage() {
 
       {/* Tab 4: Métricas 72h */}
       {activeTab === "metrics" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {metrics.map((item) => (
-            <div
-              key={item.video_id}
-              className={`p-5 rounded-xl border ${
-                item.classification === "VERDE"
-                  ? "bg-emerald-950/30 border-emerald-500/40"
-                  : item.classification === "ROJO"
-                  ? "bg-rose-950/30 border-rose-500/40"
-                  : "bg-amber-950/30 border-amber-500/40"
-              }`}
-            >
-              <div className="flex justify-between items-center mb-3">
-                <span className="font-mono text-xs text-slate-400">{item.video_id}</span>
-                <span
-                  className={`px-3 py-1 rounded-full text-xs font-bold ${
-                    item.classification === "VERDE"
-                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
-                      : item.classification === "ROJO"
-                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
-                      : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
-                  }`}
-                >
-                  {item.classification}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-3 my-3 text-sm">
-                <div>
-                  <p className="text-xs text-slate-400">Vistas 72h</p>
-                  <p className="text-lg font-bold">{item.metrics_72h.views.toLocaleString()}</p>
+        metricsResource.loading ? (
+          <p className="text-sm text-slate-400">Cargando métricas…</p>
+        ) : metricsResource.error ? (
+          <p className="text-sm text-rose-300 bg-rose-950/40 border border-rose-500/30 rounded-lg p-3">
+            Error al cargar métricas: {metricsResource.error.message}
+          </p>
+        ) : metricItems.length === 0 ? (
+          <p className="text-sm text-slate-400">Sin métricas todavía</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {metricItems.map((item) => (
+              <div
+                key={item.video_id}
+                className={`p-5 rounded-xl border ${
+                  item.classification === "VERDE"
+                    ? "bg-emerald-950/30 border-emerald-500/40"
+                    : item.classification === "ROJO"
+                    ? "bg-rose-950/30 border-rose-500/40"
+                    : "bg-amber-950/30 border-amber-500/40"
+                }`}
+              >
+                <div className="flex justify-between items-center mb-3">
+                  <span className="font-mono text-xs text-slate-400">{item.video_id}</span>
+                  <span
+                    className={`px-3 py-1 rounded-full text-xs font-bold ${
+                      item.classification === "VERDE"
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                        : item.classification === "ROJO"
+                        ? "bg-rose-500/20 text-rose-300 border border-rose-500/40"
+                        : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                    }`}
+                  >
+                    {item.classification}
+                  </span>
                 </div>
-                <div>
-                  <p className="text-xs text-slate-400">Ratio Relativo</p>
-                  <p className="text-lg font-bold text-indigo-400">{item.metrics_72h.ratio}x</p>
+                <div className="grid grid-cols-2 gap-3 my-3 text-sm">
+                  <div>
+                    <p className="text-xs text-slate-400">Vistas 72h</p>
+                    <p className="text-lg font-bold">
+                      {item.views_72h != null ? Number(item.views_72h).toLocaleString() : "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">Ratio Relativo</p>
+                    <p className="text-lg font-bold text-indigo-400">
+                      {item.ratio_relativo != null ? `${Number(item.ratio_relativo)}x` : "—"}
+                    </p>
+                  </div>
                 </div>
+                <p className="text-xs text-slate-300 bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
+                  <span className="font-semibold text-slate-400">Acción:</span> {item.action_taken}
+                </p>
               </div>
-              <p className="text-xs text-slate-300 bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
-                <span className="font-semibold text-slate-400">Acción:</span> {item.action_taken}
-              </p>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )
       )}
     </main>
   );
