@@ -1,18 +1,15 @@
 "use client";
 
+import { useTenantResource } from "@/hooks/useTenantResource";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Script4BlockReader } from "../components/Script4BlockReader";
 import { FileText } from "lucide-react";
 
 export function ScriptInspectorView({ tenantId }) {
-  const mockScript = {
-    gancho_0_5s: "Si trabajas en Negocios B2B, deja de cometer este error hoy mismo",
-    contexto_5_30s: "El problema principal no es la falta de herramientas, sino intentar abarcar todo sin foco. Cuando aplicas la simplificación estructural, tu tasa de conversión se triplica en cuestión de días.",
-    moraleja_30_50s: "No necesitas invertir miles de dólares en anuncios antes de validar tu oferta. Primero domina la tracción orgánica y la entrega de valor sin fricción.",
-    cta_50_60s: "Comenta la palabra CONSULTA abajo y te enviamos el desglose estratégico por DM.",
-    keyword: "CONSULTA",
-  };
+  const { data, loading, error } = useTenantResource("scripts", tenantId);
+  const scripts = Array.isArray(data) ? data : [];
+  const script = scripts[0] || null;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
@@ -31,12 +28,24 @@ export function ScriptInspectorView({ tenantId }) {
             </div>
           </div>
 
-          <div className="max-w-3xl bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
-            <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4">
-              Estructura Narrativa del Video
-            </h2>
-            <Script4BlockReader script={mockScript} />
-          </div>
+          {loading ? (
+            <p className="text-sm text-slate-400">Cargando guiones…</p>
+          ) : error ? (
+            <div className="text-sm text-rose-300 bg-rose-950/40 border border-rose-500/30 rounded-lg p-3">
+              Error al cargar guiones: {error.message}
+            </div>
+          ) : !script ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+              <p className="text-sm text-slate-400">Sin guiones todavía</p>
+            </div>
+          ) : (
+            <div className="max-w-3xl bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
+              <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4">
+                Estructura Narrativa del Video
+              </h2>
+              <Script4BlockReader script={script} />
+            </div>
+          )}
         </main>
       </div>
     </div>
