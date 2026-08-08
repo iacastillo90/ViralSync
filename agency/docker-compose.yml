@@ -87,8 +87,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://agency:agency@postgres:5432/agency
       - POSTGRES_HOST=postgres
+      - REDIS_URL=redis://redis:6379/0
       - QDRANT_HOST=qdrant
       - AGENCY_ENV=${AGENCY_ENV:-dev}
     env_file:
