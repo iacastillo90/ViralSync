@@ -64,9 +64,15 @@ async def report_progress(tenant_id: str, req: ProgressReportRequest):
     return {"status": "broadcasted", "stage": req.stage, "percent": req.percent}
 
 
-@router.post("/{tenant_id}/ideas/approve")
+@router.post("/{tenant_id}/ideas/approve", status_code=status.HTTP_202_ACCEPTED)
 async def approve_idea(tenant_id: str, req: IdeaApproveRequest, background_tasks: BackgroundTasks):
-    """Checkpoint Humano: Aprobar o Rechazar Idea candidata y reanudar grafo."""
+    """Checkpoint Humano: Aprobar o Rechazar Idea candidata y reanudar grafo.
+
+    No-op honesto (REQ-API-06): NO escribe en DB ni fabrica filas; sólo transmite
+    el checkpoint via SSE y reanuda el grafo en background. El body devuelve
+    `{"status":"accepted","kind":"idea_approval","queued":true}` con echo del
+    idea_id real del request — nunca un id inventado.
+    """
     await sse_manager.broadcast(
         tenant_id,
         "idea_checkpoint",
@@ -89,23 +95,27 @@ async def approve_idea(tenant_id: str, req: IdeaApproveRequest, background_tasks
     background_tasks.add_task(_resume_graph)
 
     return {
-        "status": "ok",
-        "tenant_id": tenant_id,
-        "idea_id": req.idea_id,
-        "idea_approval_status": req.status,
+        "status": "accepted",
+        "kind": "idea_approval",
+        "queued": True,
+        "idea_id": req.idea_id,  # eco del id real, nunca fabricado
     }
 
 
-@router.post("/{tenant_id}/publish/approve")
+@router.post("/{tenant_id}/publish/approve", status_code=status.HTTP_202_ACCEPTED)
 async def approve_publish(tenant_id: str, req: PublishApproveRequest, background_tasks: BackgroundTasks):
-    """Checkpoint Humano: Aprobar o Rechazar Publicación de Video y reanudar grafo."""
-    published_post_id = f"ig_reel_{tenant_id[:8]}_99812"
+    """Checkpoint Humano: Aprobar o Rechazar Publicación de Video y reanudar grafo.
+
+    No-op honesto (D6, REQ-API-06): se eliminó el post_id fabricado
+    `ig_reel_…_99812`. Devuelve 202 `{"status":"accepted","kind":"publish_approval",
+    "queued":true}`; la tarjeta de aprobación de publicación se alimenta de la
+    proveniencia real vía GET /scripts (no /videos existe).
+    """
     await sse_manager.broadcast(
         tenant_id,
         "publish_checkpoint",
         {
             "status": req.status,
-            "published_post_id": published_post_id,
             "tenant_id": tenant_id,
         },
     )
@@ -122,10 +132,9 @@ async def approve_publish(tenant_id: str, req: PublishApproveRequest, background
     background_tasks.add_task(_resume_publish)
 
     return {
-        "status": "ok",
-        "tenant_id": tenant_id,
-        "publish_approval_status": req.status,
-        "published_post_id": published_post_id,
+        "status": "accepted",
+        "kind": "publish_approval",
+        "queued": True,
     }
 
 

@@ -71,8 +71,13 @@ async def test_complete_viral_sync_lifecycle(db_session):
             json={"idea_id": "idea-e2e-001", "status": "approved"},
             headers=auth_headers,
         )
-        assert res_idea_app.status_code == 200
-        assert res_idea_app.json()["idea_approval_status"] == "approved"
+        assert res_idea_app.status_code == 202  # checkpoint honesto: aceptado y encolado, sin escritura
+        idea_body = res_idea_app.json()
+        assert idea_body["status"] == "accepted"
+        assert idea_body["kind"] == "idea_approval"
+        assert idea_body["queued"] is True
+        # No debe existir ningún ID de idea fabricado; el echo es el real del request
+        assert idea_body["idea_id"] == "idea-e2e-001"
 
         # Step 4: Guionismo en 4 Bloques
         script = run_scriptwriting_crew(
@@ -96,9 +101,15 @@ async def test_complete_viral_sync_lifecycle(db_session):
             json={"status": "approved"},
             headers=auth_headers,
         )
-        assert res_pub_app.status_code == 200
-        post_id = res_pub_app.json()["published_post_id"]
-        assert "ig_reel_" in post_id
+        assert res_pub_app.status_code == 202  # no-op honesto: aceptado y encolado
+        pub_body = res_pub_app.json()
+        assert pub_body["status"] == "accepted"
+        assert pub_body["kind"] == "publish_approval"
+        assert pub_body["queued"] is True
+        # Nunca fabricar un post_id (anti 'ig_reel_…_99812'); la proveniencia real
+        # via /scripts GET cubre la tarjeta de aprobación de publicación.
+        assert "published_post_id" not in pub_body
+        assert "ig_reel_" not in res_pub_app.text
 
         # Step 7: Captura de Webhook Meta Inbound & Verificación HMAC
         secret = "secreto_meta_test_secret"
@@ -132,9 +143,10 @@ async def test_complete_viral_sync_lifecycle(db_session):
         assert res_takeover.json()["status"] == "handled_by_human"
 
         # Step 9: Auditoría 72h y Clasificación 80/20
+        # video_id real (uuid4) en lugar del post_id fabricado que se eliminó
         metrics_res = audit_72h_metrics(
             tenant_id=tenant_id,
-            video_id=post_id,
+            video_id=str(uuid.uuid4()),
             views=120000,
             followers=10000,
         )

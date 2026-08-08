@@ -18,7 +18,7 @@ import uuid
 
 import pytest
 from httpx import AsyncClient, ASGITransport
-from sqlalchemy import text
+from sqlalchemy import text, select
 
 from backend.main import app
 from backend.security.auth import create_access_token
@@ -262,3 +262,45 @@ async def test_scripts_db_error_returns_503(db_session):
         await db_session.commit()
         response = await ac.get(f"/api/v1/tenants/{TENANT_A}/scripts")
     assert response.status_code == 503
+
+
+# --------------------------------------------------------------------------- #
+# Checkpoints humanos honestos — 202 no-ops (REQ-API-06, design D6)
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.anyio
+async def test_ideas_approve_returns_202_accepted_no_rows(db_session):
+    """REQ-API-06 (D6): approve → 202 {status:accepted, kind:idea_approval, queued:true} sin escrituras."""
+    before = (await db_session.execute(text("SELECT COUNT(*) FROM ideas"))).scalar_one()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.post(
+            f"/api/v1/tenants/{TENANT_A}/ideas/approve",
+            json={"idea_id": IDEA_TEST_ID, "status": "approved"},
+        )
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "accepted"
+    assert body["kind"] == "idea_approval"
+    assert body["queued"] is True
+    assert body["idea_id"] == IDEA_TEST_ID  # ecos del id real, nunca fabricado
+
+    after = (await db_session.execute(select(text("COUNT(*)")).select_from(text("ideas")))).scalar_one()
+    assert after == before, "approve NO debe escribir filas en la DB (no-op honesto)"
+
+
+@pytest.mark.anyio
+async def test_publish_approve_returns_202_no_fabricated_post_id(db_session):
+    """REQ-API-06 (D6): publish/approve → 202 sin published_post_id inventado (anti 'ig_reel_…_99812')."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.post(
+            f"/api/v1/tenants/{TENANT_A}/publish/approve",
+            json={"status": "approved"},
+        )
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "accepted"
+    assert body["kind"] == "publish_approval"
+    assert body["queued"] is True
+    assert "published_post_id" not in body
+    assert "ig_reel_" not in response.text
