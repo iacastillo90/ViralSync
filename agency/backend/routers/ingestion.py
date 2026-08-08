@@ -9,12 +9,16 @@ Router de Ingesta dividido en dos APIRouter:
 """
 
 import logging
-from typing import Optional
-from fastapi import APIRouter, File, UploadFile, Form, status
+from typing import Optional, List
+from fastapi import APIRouter, File, UploadFile, Form, status, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from backend.storage.minio_client import save_product_photo_to_minio
 from agents.criterion.niche_classifier import classify_business_type
 from backend.sse_manager import sse_manager
+from backend.db.session import get_async_db
+from backend.db.models import Tenant
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +35,48 @@ class TenantCreateRequest(BaseModel):
 tenant_admin_router = APIRouter(prefix="/api/v1/tenants", tags=["Tenant Admin"])
 
 
+@tenant_admin_router.get("", status_code=status.HTTP_200_OK)
+async def list_tenants(db: AsyncSession = Depends(get_async_db)):
+    """
+    Retorna la lista completa de tenants registrados en el sistema.
+    """
+    result = await db.execute(select(Tenant))
+    tenants = result.scalars().all()
+    return [
+        {
+            "id": t.id,
+            "name": t.name,
+            "niche": t.niche,
+            "monthly_llm_budget_usd": t.monthly_llm_budget_usd,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+        }
+        for t in tenants
+    ]
+
+
+@tenant_admin_router.get("/{tenant_id}", status_code=status.HTTP_200_OK)
+async def get_tenant(tenant_id: str, db: AsyncSession = Depends(get_async_db)):
+    """
+    Retorna los detalles de un tenant específico.
+    """
+    result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+    t = result.scalars().first()
+    if not t:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tenant con ID {tenant_id} no encontrado en la base de datos."
+        )
+    return {
+        "id": t.id,
+        "name": t.name,
+        "niche": t.niche,
+        "monthly_llm_budget_usd": t.monthly_llm_budget_usd,
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+    }
+
+
 @tenant_admin_router.post("", status_code=status.HTTP_201_CREATED)
-async def create_tenant(req: TenantCreateRequest):
+async def create_tenant(req: TenantCreateRequest, db: AsyncSession = Depends(get_async_db)):
     """
     Crea un nuevo tenant en Postgres con UUID real y clave LiteLLM virtual segura.
     Endpoint público de registro — no requiere JWT previo (es el paso de onboarding).
@@ -44,20 +88,30 @@ async def create_tenant(req: TenantCreateRequest):
     tenant_id = str(uuid.uuid4())
     # Clave virtual segura con 32 bytes aleatorios — NO fabricada a partir del tenant_id
     litellm_virtual_key = f"sk-vs-{secrets.token_urlsafe(24)}"
-    created_at = datetime.now(timezone.utc).isoformat()
+    
+    # Crear registro del tenant en PostgreSQL
+    new_tenant = Tenant(
+        id=tenant_id,
+        name=req.name,
+        niche=req.niche,
+        litellm_virtual_key=litellm_virtual_key,
+        monthly_llm_budget_usd=req.monthly_llm_budget_usd,
+    )
+    db.add(new_tenant)
+    await db.commit()
+    await db.refresh(new_tenant)
 
-    logger.info(f"Creando nuevo tenant: {tenant_id} (niche={req.niche})")
+    logger.info(f"Persistido nuevo tenant en Postgres: {tenant_id} (name={req.name}, niche={req.niche})")
 
-    # TODO: Persistir en Postgres usando get_async_db() cuando el endpoint tenga inyección de BD.
-    # Por ahora retorna los datos para que el frontend los almacene en sesión.
     return {
         "id": tenant_id,
         "name": req.name,
         "niche": req.niche,
         "litellm_virtual_key": litellm_virtual_key,
         "monthly_llm_budget_usd": req.monthly_llm_budget_usd,
-        "created_at": created_at,
+        "created_at": new_tenant.created_at.isoformat() if new_tenant.created_at else datetime.now(timezone.utc).isoformat(),
     }
+
 
 
 # ─── Router 2: Ingesta de Contenido por Tenant (con verify_tenant_access) ─────
