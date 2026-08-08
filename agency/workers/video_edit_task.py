@@ -55,10 +55,37 @@ def trigger_video_render(
     render_payload = director_result.get("render_payload", {})
     curated_metadata = director_result.get("metadata", {})
 
-    target_url = RENDERER_SERVICE_URL
-    logger.info(f"[{tenant_id}] Filtro de Valor APROBADO (Score: {director_result.get('quality_score')}). Enviando HTTP POST a {target_url} (Timeout: 300s)...")
-
     video_url = ""
+    video_renderer_provider = os.getenv("VIDEO_RENDERER_PROVIDER", "local")
+    json2video_api_key = os.getenv("JSON2VIDEO_API_KEY", "")
+
+    # 2. Si se elige json2video y hay api key, intentar renderizar en la nube
+    if video_renderer_provider == "json2video" and json2video_api_key:
+        logger.info(f"[{tenant_id}] Intentando renderizado en la nube usando JSON2Video...")
+        try:
+            from agents.mcp_servers.json2video_client import JSON2VideoClient
+            client = JSON2VideoClient(api_key=json2video_api_key)
+            video_url = client.render_video(
+                script=script,
+                keywords=render_payload.get("keywords", []),
+                tenant_id=tenant_id,
+                title=render_payload.get("title", "ViralSync Marketing Video")
+            )
+            if video_url:
+                logger.info(f"[{tenant_id}] Renderizado JSON2Video completado exitosamente: {video_url}")
+                return {
+                    "tenant_id": tenant_id,
+                    "video_url": video_url,
+                    "payload": render_payload,
+                    "status": "completed",
+                    "provider": "json2video"
+                }
+        except Exception as exc:
+            logger.error(f"[{tenant_id}] Fallo en renderizado de JSON2Video ({exc}). Ejecutando fallback al microservicio local...")
+
+    # 3. Fallback / Ejecución local (MoviePy + microservicio local)
+    target_url = RENDERER_SERVICE_URL
+    logger.info(f"[{tenant_id}] Ejecutando renderizado con microservicio local en {target_url} (Timeout: 300s)...")
 
     @retry(
         stop=stop_after_attempt(3),
@@ -74,9 +101,9 @@ def trigger_video_render(
         if response.status_code == 201:
             data = response.json()
             video_url = data.get("video_url", "")
-            logger.info(f"[{tenant_id}] Renderizado completado exitosamente: {video_url}")
+            logger.info(f"[{tenant_id}] Renderizado local completado exitosamente: {video_url}")
         else:
-            logger.warning(f"Respuesta no esperada del microservicio ({response.status_code}): {response.text}")
+            logger.warning(f"Respuesta no esperada del microservicio local ({response.status_code}): {response.text}")
     except Exception as exc:
         logger.warning(f"No se pudo conectar a {target_url} ({exc}). Intentando fallback local...")
         try:
@@ -84,7 +111,7 @@ def trigger_video_render(
             if response.status_code == 201:
                 video_url = response.json().get("video_url", "")
         except Exception as fallback_exc:
-            logger.error(f"Fallo definitivo conectando al microservicio de renderizado: {fallback_exc}")
+            logger.error(f"Fallo definitivo conectando al microservicio de renderizado local: {fallback_exc}")
 
     if not video_url:
         video_url = f"http://localhost:9000/viralsync-media/{tenant_id}/products/default_rendered_output.mp4"
@@ -94,6 +121,7 @@ def trigger_video_render(
         "video_url": video_url,
         "payload": render_payload,
         "status": "completed",
+        "provider": "local"
     }
 
 
