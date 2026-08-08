@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useAgentStore } from "@/stores/useAgentStore";
+import { fetchWithTenant } from "@/services/apiConfig";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { LeadsTable } from "../components/LeadsTable";
@@ -9,19 +10,27 @@ import { MessageSquare } from "lucide-react";
 
 export function InboundLeadsView({ tenantId }) {
   const { addLog } = useAgentStore();
-  const [leads, setLeads] = useState([
-    {
-      id: "lead-001",
-      tenant_id: tenantId,
-      video_id: "video-55",
-      keyword: "CONSULTA",
-      ig_user_id: "user_ig_9921",
-      mensaje_original: "Hola! Quiero la CONSULTA por favor",
-      origen: "comment",
-      calificado_at: "2026-08-06T01:45:00Z",
-      handled_by_human_at: null,
-    },
-  ]);
+  const [leads, setLeads] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const c = new AbortController();
+    setLoading(true);
+    setError(null);
+    if (!tenantId) {
+      setError(new Error("Sin tenant activo"));
+      setLoading(false);
+      return;
+    }
+    fetchWithTenant(`/tenants/${tenantId}/leads`, { signal: c.signal }, tenantId)
+      .then((d) => setLeads(Array.isArray(d) ? d : []))
+      .catch((e) => {
+        if (e.name !== "AbortError") setError(e);
+      })
+      .finally(() => setLoading(false));
+    return () => c.abort();
+  }, [tenantId]);
 
   const handleTakeover = async (leadId) => {
     const apiBase =
@@ -62,7 +71,17 @@ export function InboundLeadsView({ tenantId }) {
             <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
               Leads Calificados por Keyword
             </h2>
-            <LeadsTable leads={leads} onTakeover={handleTakeover} />
+            {loading ? (
+              <p className="text-sm text-slate-400">Cargando…</p>
+            ) : error ? (
+              <div className="text-sm text-rose-300 bg-rose-950/40 border border-rose-500/30 rounded-lg p-3">
+                Error al cargar leads: {error.message}
+              </div>
+            ) : leads.length === 0 ? (
+              <p className="text-sm text-slate-400">No hay leads aún</p>
+            ) : (
+              <LeadsTable leads={leads} onTakeover={handleTakeover} />
+            )}
           </div>
         </main>
       </div>

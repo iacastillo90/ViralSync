@@ -1,37 +1,34 @@
 "use client";
 
+import { useState, useEffect } from "react";
+import { fetchWithTenant } from "@/services/apiConfig";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { MetricClassificationCard } from "../components/MetricClassificationCard";
 import { BarChart3 } from "lucide-react";
 
 export function MetricsDashboardView({ tenantId }) {
-  const mockMetrics = [
-    {
-      video_id: "video-55",
-      published_at: "2026-08-03T10:00:00Z",
-      metrics_72h: {
-        views: 150000,
-        followers_at_posting: 10000,
-        ratio: 15.0,
-        leads_generated: 142,
-      },
-      classification: "VERDE",
-      action_taken: "Encolado para 3 variaciones en próximo batch.",
-    },
-    {
-      video_id: "video-56",
-      published_at: "2026-08-03T14:00:00Z",
-      metrics_72h: {
-        views: 4500,
-        followers_at_posting: 10000,
-        ratio: 0.45,
-        leads_generated: 2,
-      },
-      classification: "ROJO",
-      action_taken: "Idea descartada.",
-    },
-  ];
+  const [metrics, setMetrics] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const c = new AbortController();
+    setLoading(true);
+    setError(null);
+    if (!tenantId) {
+      setError(new Error("Sin tenant activo"));
+      setLoading(false);
+      return;
+    }
+    fetchWithTenant(`/tenants/${tenantId}/metrics`, { signal: c.signal }, tenantId)
+      .then((d) => setMetrics(Array.isArray(d) ? d : []))
+      .catch((e) => {
+        if (e.name !== "AbortError") setError(e);
+      })
+      .finally(() => setLoading(false));
+    return () => c.abort();
+  }, [tenantId]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
@@ -50,11 +47,21 @@ export function MetricsDashboardView({ tenantId }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {mockMetrics.map((item) => (
-              <MetricClassificationCard key={item.video_id} item={item} />
-            ))}
-          </div>
+          {loading ? (
+            <p className="text-sm text-slate-400">Cargando…</p>
+          ) : error ? (
+            <div className="text-sm text-rose-300 bg-rose-950/40 border border-rose-500/30 rounded-lg p-3">
+              Error al cargar métricas: {error.message}
+            </div>
+          ) : metrics.length === 0 ? (
+            <p className="text-sm text-slate-400">Sin métricas todavía</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {metrics.map((item) => (
+                <MetricClassificationCard key={item.video_id} item={item} />
+              ))}
+            </div>
+          )}
         </main>
       </div>
     </div>

@@ -26,7 +26,7 @@ export function Header() {
           <DollarSign className="w-4 h-4 text-emerald-400" />
           <span className="text-slate-400">Gasto LLM:</span>
           <span className="font-mono font-semibold text-emerald-300">
-            ${activeTenant.current_llm_spend_usd.toFixed(2)} / ${activeTenant.monthly_llm_budget_usd.toFixed(2)}
+            {activeTenant ? `$${activeTenant.current_llm_spend_usd.toFixed(2)} / $${activeTenant.monthly_llm_budget_usd.toFixed(2)}` : "—"}
           </span>
         </div>
 
@@ -34,18 +34,25 @@ export function Header() {
         <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-xs">
           <Building2 className="w-4 h-4 text-indigo-400" />
           <select
-            value={activeTenant.id}
+            value={activeTenant?.id ?? ""}
+            disabled={availableTenants.length === 0}
             onChange={(e) => {
               const selected = availableTenants.find((t) => t.id === e.target.value);
               if (selected) setActiveTenant({ ...activeTenant, ...selected });
             }}
             className="bg-transparent text-slate-200 focus:outline-none cursor-pointer"
           >
-            {availableTenants.map((tenant) => (
-              <option key={tenant.id} value={tenant.id} className="bg-slate-900 text-slate-200">
-                {tenant.name}
+            {availableTenants.length === 0 ? (
+              <option value="" className="bg-slate-900 text-slate-200">
+                Sin tenant activo
               </option>
-            ))}
+            ) : (
+              availableTenants.map((tenant) => (
+                <option key={tenant.id} value={tenant.id} className="bg-slate-900 text-slate-200">
+                  {tenant.name}
+                </option>
+              ))
+            )}
           </select>
         </div>
       </div>
