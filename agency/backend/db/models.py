@@ -12,8 +12,8 @@ migraciones.
 """
 
 from datetime import datetime
-from typing import Optional
-from sqlalchemy import String, Text, Float, Integer, DateTime, ForeignKey, Uuid, Numeric
+from typing import Optional, Any
+from sqlalchemy import String, Text, Float, Integer, DateTime, Boolean, JSON, ForeignKey, Uuid, Numeric
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -37,15 +37,37 @@ class Tenant(Base):
 
 
 class Idea(Base):
+    # Alineada con migrations/001_init_schema.sql (70-100): la migración SQL es la
+    # fuente de verdad para el esquema de producción, de modo que el ORM NO debe
+    # declarar columnas ausentes del DDL SQL (p. ej. niche/score_rum/status no
+    # existen; el DDL declara niche_id/rum_score/approval_status). create_all
+    # sólo crea las tablas que faltan, y sobre las tablas ya existentes el ORM
+    # debe mapear exactamente las columnas que SELECT/UPDATE tocan.
     __tablename__ = "ideas"
 
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    niche_id: Mapped[Optional[str]] = mapped_column(ForeignKey("niches.id"))
     texto: Mapped[str] = mapped_column(Text, nullable=False)
-    niche: Mapped[str] = mapped_column(String(128), default="General")
-    score_rum: Mapped[float] = mapped_column(Float, default=0.0)
-    status: Mapped[str] = mapped_column(String(32), default="pending")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    gancho: Mapped[Optional[str]] = mapped_column(Text)
+    # Filtro 5/50
+    entendible_nino_5_anos: Mapped[Optional[bool]] = mapped_column(Boolean)
+    interesa_50_de_100: Mapped[Optional[bool]] = mapped_column(Boolean)
+    # Componentes RUM
+    universalidad: Mapped[Optional[float]] = mapped_column(Numeric(3, 2))
+    intensidad: Mapped[Optional[float]] = mapped_column(Numeric(3, 2))
+    claridad: Mapped[Optional[float]] = mapped_column(Numeric(3, 2))
+    shareability: Mapped[Optional[float]] = mapped_column(Numeric(3, 2))
+    distribucion: Mapped[Optional[float]] = mapped_column(Numeric(3, 2))
+    alineacion: Mapped[Optional[float]] = mapped_column(Numeric(3, 2))
+    rum_score: Mapped[Optional[float]] = mapped_column(Numeric(6, 5))
+    # rum_thresholds no tiene modelo ORM propio; sin FK declarada el create_all de
+    # SQLite (tests) no exige la tabla, y en Postgres la FK real vive en la DDL.
+    rum_threshold_id: Mapped[Optional[str]] = mapped_column(Uuid(as_uuid=False))
+    passes_threshold: Mapped[Optional[bool]] = mapped_column(Boolean)
+    approval_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    origen_reintento_de: Mapped[Optional[str]] = mapped_column(ForeignKey("ideas.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
 class Script(Base):
@@ -60,6 +82,22 @@ class Script(Base):
     cta_50_60s: Mapped[str] = mapped_column(Text, nullable=False)
     keyword: Mapped[str] = mapped_column(String(64), default="SOLICITUD")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Niche(Base):
+    # Alineada con migrations/001_init_schema.sql (24-31): micronicho/ppp/
+    # personaje_marca_json. La migración SQL es la fuente de verdad — el DDL de
+    # niches NO declara una columna "niche" (sólo micronicho), por lo que el ORM
+    # mapea exactamente las columnas presentes para no reintroducir el 503 por
+    # UndefinedColumn al consultar la persona de marca del tenant.
+    __tablename__ = "niches"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    micronicho: Mapped[str] = mapped_column(Text, nullable=False)
+    ppp: Mapped[str] = mapped_column(Text, nullable=False)
+    personaje_marca_json: Mapped[Any] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
 class Lead(Base):
@@ -88,18 +126,25 @@ class Lead(Base):
 
 
 class VideoMetric(Base):
-    """Métricas de rendimiento de video por tenant en ventana de 72 horas."""
+    """Métricas de rendimiento de video por tenant en ventana de 72 horas.
+
+    Alineada con migrations/002_add_video_metrics_and_fix_leads.sql (5-18): la
+    migración SQL es la fuente de verdad para el esquema de producción, de modo
+    que el ORM NO debe declarar columnas ausentes del DDL SQL (p. ej. published_at/
+    views/followers_at_posting/leads_generated/completion_rate/engagement_rate/
+    created_at no existen en la tabla video_metrics). Cualquier SELECT que use
+    columnas fantasma produce UndefinedColumn y el endpoint responde 503.
+    """
     __tablename__ = "video_metrics"
 
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
     video_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False, index=True)
-    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    views: Mapped[int] = mapped_column(Integer, default=0)
-    followers_at_posting: Mapped[int] = mapped_column(Integer, default=0)
-    leads_generated: Mapped[int] = mapped_column(Integer, default=0)
-    completion_rate: Mapped[Optional[float]] = mapped_column(Float)
-    engagement_rate: Mapped[Optional[float]] = mapped_column(Float)
-    classification: Mapped[str] = mapped_column(String(32), default="VERDE")
+    views_72h: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    likes: Mapped[int] = mapped_column(Integer, default=0)
+    comments: Mapped[int] = mapped_column(Integer, default=0)
+    shares: Mapped[int] = mapped_column(Integer, default=0)
+    ratio_relativo: Mapped[float] = mapped_column(Numeric(6, 3), nullable=False, default=1.000)
+    classification: Mapped[str] = mapped_column(String(32), nullable=False, default="VERDE")
     action_taken: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
