@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from httpx import AsyncClient, ASGITransport
 from backend.main import app
@@ -8,7 +10,7 @@ from workers.video_edit_task import process_video_postproduction
 from workers.metrics_loop_task import audit_72h_metrics
 from backend.webhooks.instagram_inbound import process_instagram_webhook_payload
 from backend.security.hmac_validator import verify_meta_hmac_signature
-from backend.db.models import Lead
+from backend.db.models import Tenant, Lead
 
 
 @pytest.mark.anyio
@@ -36,9 +38,21 @@ async def test_complete_viral_sync_lifecycle(db_session):
 
         # Seed de un Lead real para el tenant, de modo que el takeover resuelva a
         # handled_by_human (200) en lugar de 404/503 (fail-closed sin datos ficticios).
+        # Se persiste también un Tenant real (FK de leads.tenant_id), y todas las
+        # columnas NOT NULL del DDL (video_id, keyword, ig_user_id, mensaje_original)
+        # reciben valores — el lead_id es un UUID válido para ambos esquemas (SQLite
+        # ORM userId String y Postgres UUID).
+        db_session.add(Tenant(id=tenant_id, name="Cliente E2E Fitness"))
+        await db_session.commit()
+
+        seeded_lead_id = str(uuid.uuid4())
         seeded_lead = Lead(
-            id="lead-001",
+            id=seeded_lead_id,
             tenant_id=tenant_id,
+            video_id=str(uuid.uuid4()),
+            keyword="CONSULTA",
+            ig_user_id="user_ig_fitness_99",
+            mensaje_original="Quiero la CONSULTA por favor",
             origen="comment",
         )
         db_session.add(seeded_lead)
@@ -112,7 +126,7 @@ async def test_complete_viral_sync_lifecycle(db_session):
 
         # Step 8: Toma de Control por Operador Humano (Account Manager)
         res_takeover = await ac.post(
-            f"/api/v1/tenants/{tenant_id}/leads/lead-001/takeover",
+            f"/api/v1/tenants/{tenant_id}/leads/{seeded_lead_id}/takeover",
             json={"operator_id": "manager_uuid_99", "action": "pause_bot"},
             headers=auth_headers,
         )
