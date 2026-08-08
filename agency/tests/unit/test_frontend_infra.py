@@ -66,3 +66,108 @@ def test_jsconfig_alias_resolves():
 
     assert cfg["compilerOptions"]["baseUrl"] == "."
     assert cfg["compilerOptions"]["paths"]["@/*"] == ["./src/*"]
+
+
+# ---------------------------------------------------------------------------
+# frontend-feature-views-real-data — structure gates (REQ-FEAT-02 / FEAT-N1/N2)
+# ---------------------------------------------------------------------------
+
+
+def _feature_views_and_dashboard():
+    """Los 6 archivos objetivo del gate: las 5 vistas de features + page.js.
+
+    NOTA: Sidebar.jsx NO está en esta lista — su default `tenant-demo-001`
+    (navegación) está excluido del gate de forma intencional (tasks.md, diseño).
+    """
+    base = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "src")
+    return [
+        os.path.join(base, "features", "Ideation", "views", "IdeaApprovalView.jsx"),
+        os.path.join(base, "features", "Scriptwriting", "views", "ScriptInspectorView.jsx"),
+        os.path.join(base, "features", "RAGBrain", "views", "BrainManagementView.jsx"),
+        os.path.join(base, "features", "VideoPreview", "views", "PublishApprovalView.jsx"),
+        os.path.join(base, "features", "Metrics72h", "views", "MetricsDashboardView.jsx"),
+        os.path.join(base, "app", "page.js"),
+    ]
+
+
+def test_frontend_views_use_tenant_resource_hook():
+    """REQ-FEAT-4: las 5 vistas + dashboard consumen el hook compartido."""
+    for path in _feature_views_and_dashboard():
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+        assert "useTenantResource" in content, f"{path} no usa useTenantResource"
+
+
+def test_frontend_use_tenant_resource_hook_exists():
+    """T9: el hook compartido existe y envuelve fetchWithTenant con abort guard."""
+    hook_path = os.path.join(
+        os.path.dirname(__file__), "..", "..", "frontend", "src", "hooks", "useTenantResource.js"
+    )
+    assert os.path.exists(hook_path), "missing hooks/useTenantResource.js"
+    with open(hook_path, encoding="utf-8") as f:
+        content = f.read()
+    assert "fetchWithTenant" in content
+    assert "AbortController" in content
+
+
+def test_frontend_no_mock_literals():
+    """FEAT-N1: zero 'mock' matches in the 5 views + dashboard."""
+    for path in _feature_views_and_dashboard():
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+        assert "mock" not in content.lower(), f"mock literal still present in {path}"
+
+
+def test_frontend_no_demo_anchor_literals():
+    """FEAT-N2: zero demo anchors (idea-101, 1,240, 3 Errores, edited_output,
+    tenant-demo-001, s3://) in the 5 views + dashboard."""
+    anchors = ("idea-101", "1,240", "3 errores", "edited_output.mp4", "tenant-demo-001", "s3://")
+    for path in _feature_views_and_dashboard():
+        with open(path, encoding="utf-8") as f:
+            content = f.read().lower()
+        for anchor in anchors:
+            assert anchor not in content, f"{anchor!r} still present in {path}"
+
+
+def test_frontend_views_issue_exact_fetch_paths():
+    """REQ-FEAT-1/FEAT-V3: each view/dashboard wires the guarded resource."""
+    expectations = {
+        "IdeaApprovalView.jsx": "useTenantResource(\"ideas\", tenantId)",
+        "ScriptInspectorView.jsx": "useTenantResource(\"scripts\", tenantId)",
+        "BrainManagementView.jsx": "useTenantResource(\"brain\", tenantId)",
+        "PublishApprovalView.jsx": "useTenantResource(\"scripts\", tenantId)",
+        "MetricsDashboardView.jsx": "useTenantResource(\"metrics\", tenantId)",
+        # page.js pasa el tenant a través de scopedTenantId; debe referenciar los 3 recursos
+        "page.js": 'useTenantResource("ideas", scopedTenantId)',
+    }
+    for path in _feature_views_and_dashboard():
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+        fname = os.path.basename(path)
+        assert expectations[fname] in content, (
+            f"{fname} no reference the guarded endpoint via the shared hook"
+        )
+
+
+def test_frontend_metrics_flat_shape_no_legacy_deref():
+    """REQ-FEAT-4 FEAT-D2: flat views_72h/ratio_relativo without the legacy
+    nested metrics_72h deref (crash-proof on the DDL-002 shape)."""
+    # Sólo la vista de métricas y el dashboard consumen /metrics; las otras
+    # vistas no deben contener ningún rastro del contrato anidado legacy.
+    for path in _feature_views_and_dashboard():
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+        assert "metrics_72h" not in content, f"legacy metrics_72h deref still in {path}"
+
+    metrics_consumers = [
+        os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "src", "app", "page.js"),
+        os.path.join(
+            os.path.dirname(__file__), "..", "..", "frontend", "src",
+            "features", "Metrics72h", "components", "MetricClassificationCard.jsx",
+        ),
+    ]
+    for path in metrics_consumers:
+        with open(path, encoding="utf-8") as f:
+            content = f.read()
+        assert "views_72h" in content, f"flat views_72h missing in {path}"
+        assert "ratio_relativo" in content, f"flat ratio_relativo missing in {path}"
