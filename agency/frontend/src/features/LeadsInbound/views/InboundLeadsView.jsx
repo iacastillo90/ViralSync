@@ -3,8 +3,6 @@
 import { useState, useEffect } from "react";
 import { useAgentStore } from "@/stores/useAgentStore";
 import { fetchWithTenant } from "@/services/apiConfig";
-import { Header } from "@/components/layout/Header";
-import { Sidebar } from "@/components/layout/Sidebar";
 import { LeadsTable } from "../components/LeadsTable";
 import { MessageSquare } from "lucide-react";
 
@@ -51,39 +49,33 @@ export function InboundLeadsView({ tenantId }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      <Header />
-      <div className="flex flex-1">
-        <Sidebar tenantId={tenantId} />
-        <main className="flex-1 p-6 space-y-6">
-          <div className="flex justify-between items-center pb-4 border-b border-slate-800">
-            <div>
-              <h1 className="text-xl font-bold flex items-center gap-2">
-                <MessageSquare className="w-5 h-5 text-indigo-400" /> Leads Inbound & Atribución CTA
-              </h1>
-              <p className="text-xs text-slate-400">
-                Tenant: <span className="font-mono text-indigo-400">{tenantId}</span>
-              </p>
-            </div>
-          </div>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center pb-4 border-b border-slate-800">
+        <div>
+          <h1 className="text-xl font-bold flex items-center gap-2">
+            <MessageSquare className="w-5 h-5 text-indigo-400" /> Leads Inbound & Atribución CTA
+          </h1>
+          <p className="text-xs text-slate-400">
+            Tenant: <span className="font-mono text-indigo-400">{tenantId}</span>
+          </p>
+        </div>
+      </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
-            <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
-              Leads Calificados por Keyword
-            </h2>
-            {loading ? (
-              <p className="text-sm text-slate-400">Cargando…</p>
-            ) : error ? (
-              <div className="text-sm text-rose-300 bg-rose-950/40 border border-rose-500/30 rounded-lg p-3">
-                Error al cargar leads: {error.message}
-              </div>
-            ) : leads.length === 0 ? (
-              <p className="text-sm text-slate-400">No hay leads aún</p>
-            ) : (
-              <LeadsTable leads={leads} onTakeover={handleTakeover} />
-            )}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
+        <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
+          Leads Calificados por Keyword
+        </h2>
+        {loading ? (
+          <p className="text-sm text-slate-400">Cargando…</p>
+        ) : error ? (
+          <div className="text-sm text-rose-300 bg-rose-950/40 border border-rose-500/30 rounded-lg p-3">
+            Error al cargar leads: {error.message}
           </div>
-        </main>
+        ) : leads.length === 0 ? (
+          <p className="text-sm text-slate-400">No hay leads aún</p>
+        ) : (
+          <LeadsTable leads={leads} onTakeover={handleTakeover} />
+        )}
       </div>
     </div>
   );

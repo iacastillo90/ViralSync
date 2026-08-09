@@ -21,6 +21,8 @@ import {
 import Link from "next/link";
 
 import ProductIngestModal from "@/components/ProductIngestModal";
+import { Header } from "@/components/layout/Header";
+import { Sidebar } from "@/components/layout/Sidebar";
 import { fetchWithTenant } from "@/services/apiConfig";
 import { useTenantResource } from "@/hooks/useTenantResource";
 
@@ -184,9 +186,13 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100 p-6">
-      {/* Header Empresarial */}
-      <header className="flex justify-between items-center pb-6 border-b border-slate-800">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+      <Header />
+      <div className="flex flex-1">
+        <Sidebar tenantId={tenantId} />
+        <main className="flex-1 p-6 space-y-6">
+          {/* Header Empresarial */}
+          <div className="flex justify-between items-center pb-6 border-b border-slate-800">
         <div className="flex items-center gap-3">
           <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-lg shadow-indigo-500/20">
             <Sparkles className="w-6 h-6" />
@@ -204,7 +210,7 @@ export default function DashboardPage() {
         >
           <Play className="w-4 h-4 fill-current" /> Ejecutar Grafo
         </button>
-      </header>
+      </div>
 
       {/* Formulario de Ingesta de Producto/Servicio a MinIO */}
       <ProductIngestModal />
@@ -498,6 +504,8 @@ export default function DashboardPage() {
           </div>
         )
       )}
-    </main>
+        </main>
+      </div>
+    </div>
   );
 }

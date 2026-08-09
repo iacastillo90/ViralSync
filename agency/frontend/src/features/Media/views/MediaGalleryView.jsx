@@ -63,11 +63,7 @@ export function MediaGalleryView({ tenantId }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      <Header />
-      <div className="flex flex-1">
-        <Sidebar tenantId={tenantId} />
-        <main className="flex-1 p-6 space-y-6">
+    <div className="space-y-6">
           {/* Header de la Vista */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-800">
             <div>
@@ -300,8 +296,6 @@ export function MediaGalleryView({ tenantId }) {
               </div>
             </div>
           )}
-        </main>
-      </div>
     </div>
   );
 }
