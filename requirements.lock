@@ -23,6 +23,10 @@ anyio==4.14.2
     #   openai
     #   starlette
     #   watchfiles
+argon2-cffi==25.1.0
+    # via minio
+argon2-cffi-bindings==25.1.0
+    # via argon2-cffi
 asyncpg==0.29.0
     # via -r requirements.txt
 attrs==26.1.0
@@ -35,9 +39,12 @@ certifi==2026.7.22
     # via
     #   httpcore
     #   httpx
+    #   minio
     #   requests
 cffi==2.1.1
-    # via cryptography
+    # via
+    #   argon2-cffi-bindings
+    #   cryptography
 charset-normalizer==3.4.9
     # via requests
 click==8.4.2
@@ -166,6 +173,8 @@ markupsafe==3.0.3
     # via
     #   jinja2
     #   mako
+minio==7.2.20
+    # via -r requirements.txt
 moviepy==1.0.3
     # via -r requirements.txt
 multidict==6.7.1
@@ -223,6 +232,8 @@ pyasn1==0.6.4
     #   rsa
 pycparser==3.0
     # via cffi
+pycryptodome==3.23.0
+    # via minio
 pydantic==2.13.4
     # via
     #   fastapi
@@ -317,6 +328,7 @@ typing-extensions==4.16.0
     #   langchain-core
     #   langchain-protocol
     #   langsmith
+    #   minio
     #   openai
     #   psycopg
     #   psycopg-pool
@@ -335,6 +347,7 @@ tzlocal==5.4.4
     # via celery
 urllib3==2.7.0
     # via
+    #   minio
     #   qdrant-client
     #   requests
 uuid-utils==0.17.0

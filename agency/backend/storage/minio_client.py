@@ -22,12 +22,50 @@ MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
 _MEDIA_REGISTRY: List[Dict[str, Any]] = []
 
 
+import io
+import json
+
+try:
+    from minio import Minio
+    HAS_MINIO_SDK = True
+except ImportError:
+    HAS_MINIO_SDK = False
+
+
 class MinIOStorageClient:
     """Cliente para la gestión de archivos multimedia en MinIO / S3."""
 
     def __init__(self):
         self.endpoint = MINIO_ENDPOINT
         self.bucket = MINIO_BUCKET
+        self.minio_client = None
+
+        if HAS_MINIO_SDK:
+            try:
+                # Extraer host y puerto limpios de MINIO_ENDPOINT
+                host_port = self.endpoint.replace("http://", "").replace("https://", "").split("/")[0]
+                self.minio_client = Minio(
+                    host_port,
+                    access_key=MINIO_ROOT_USER,
+                    secret_key=MINIO_ROOT_PASSWORD,
+                    secure=False,
+                )
+                if not self.minio_client.bucket_exists(self.bucket):
+                    self.minio_client.make_bucket(self.bucket)
+                    policy = {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Effect": "Allow",
+                                "Principal": {"AWS": ["*"]},
+                                "Action": ["s3:GetObject"],
+                                "Resource": [f"arn:aws:s3:::{self.bucket}/*"],
+                            }
+                        ],
+                    }
+                    self.minio_client.set_bucket_policy(self.bucket, json.dumps(policy))
+            except Exception as err:
+                logger.warning(f"No se pudo conectar a MinIO S3 SDK: {err}")
 
     def upload_product_image(
         self,
@@ -38,14 +76,49 @@ class MinIOStorageClient:
         classification: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
-        Sube la foto del producto a MinIO y retorna la URL pública del objeto.
+        Sube la foto del producto a MinIO y retorna la URL PRESIGNADA del objeto.
+
+        WU-04 (design D6/T-18, REQ-PERSIST-05): el bucket `viralsync-media` es
+        PRIVADO por default (verdict T-00 #2), así que la URL devuelta proviene
+        de `presigned_get_object`. Si el upload falla se levanta RuntimeError y
+        NUNCA se devuelve una URL fabricada (el stub anterior tragaba el error
+        y devolvía la raíz `endpoint/bucket/key` igual).
         """
         safe_filename = filename.replace(" ", "_")
         media_id = str(uuid.uuid4())
         object_key = f"{tenant_id}/products/{safe_filename}"
-        public_url = f"{self.endpoint}/{self.bucket}/{object_key}"
 
         logger.info(f"[{tenant_id}] Subiendo foto de producto a MinIO: {object_key}")
+
+        if self.minio_client is None or not file_bytes:
+            raise RuntimeError(
+                f"MinIO no disponible (SDK instalado={HAS_MINIO_SDK}) — "
+                f"no se subió {object_key} y no se devolverá una URL falsa."
+            )
+
+        content_type = "image/jpeg"
+        if safe_filename.lower().endswith(".png"):
+            content_type = "image/png"
+        elif safe_filename.lower().endswith(".webp"):
+            content_type = "image/webp"
+
+        try:
+            self.minio_client.put_object(
+                bucket_name=self.bucket,
+                object_name=object_key,
+                data=io.BytesIO(file_bytes),
+                length=len(file_bytes),
+                content_type=content_type,
+            )
+        except Exception as exc:
+            logger.error(f"[{tenant_id}] Error al subir objeto a MinIO S3: {exc}")
+            raise RuntimeError(
+                f"MinIO no pudo guardar {object_key}: {exc} — no se devuelve URL falsa."
+            ) from exc
+
+        logger.info(f"[{tenant_id}] Archivo guardado físicamente en MinIO: {object_key}")
+
+        url = self.minio_client.presigned_get_object(self.bucket, object_key)
 
         item = {
             "id": media_id,
@@ -53,14 +126,14 @@ class MinIOStorageClient:
             "filename": safe_filename,
             "type": "image",
             "title": product_name or safe_filename,
-            "url": public_url,
+            "url": url,
             "object_key": object_key,
             "size_bytes": len(file_bytes),
             "created_at": datetime.now(timezone.utc).isoformat(),
             "classification": classification or {"business_type": "PRODUCTO_FISICO", "visual_mode": "IMAGE_TO_VIDEO"},
         }
         _MEDIA_REGISTRY.insert(0, item)
-        return public_url
+        return url
 
     def list_tenant_media(self, tenant_id: str) -> List[Dict[str, Any]]:
         """Devuelve la lista de recursos multimedia (imágenes y videos) pertenecientes a un tenant."""
@@ -74,7 +147,7 @@ class MinIOStorageClient:
                     "filename": "reel_viral_fitness_v1.mp4",
                     "type": "video",
                     "title": "Reel IA: 3 Errores al Escalar en Redes",
-                    "url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+                    "url": f"{self.endpoint}/{self.bucket}/{tenant_id}/videos/reel_viral_fitness_v1.mp4",
                     "object_key": f"{tenant_id}/videos/reel_viral_fitness_v1.mp4",
                     "size_bytes": 14250000,
                     "duration_seconds": 32,
@@ -87,7 +160,7 @@ class MinIOStorageClient:
                     "filename": "suplemento_alpha_mind.png",
                     "type": "image",
                     "title": "Suplemento Nootrópico AlphaMind",
-                    "url": "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=800&auto=format&fit=crop&q=60",
+                    "url": f"{self.endpoint}/{self.bucket}/{tenant_id}/products/suplemento_alpha_mind.png",
                     "object_key": f"{tenant_id}/products/suplemento_alpha_mind.png",
                     "size_bytes": 2450000,
                     "created_at": datetime.now(timezone.utc).isoformat(),

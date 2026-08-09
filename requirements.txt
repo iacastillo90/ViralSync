@@ -5,6 +5,10 @@ langgraph~=1.2.10
 # Checkpointer persistente del grafo (design D2/T-14, REQ-PERSIST-04): sesiones
 # sobreviven al restart del backend con `AsyncPostgresSaver` (pulls psycopg).
 langgraph-checkpoint-postgres~=3.1.0
+# SDK MinIO real para el upload de fotos de producto (design D6/T-18,
+# REQ-PERSIST-05): `put_object` + URL presignada; el backend NO lo tenía
+# (sí el renderer). Bucket PRIVADO por default → presigned_get_object (T-00 #2).
+minio~=7.2.0
 qdrant-client~=1.19.0
 celery~=5.6.3
 redis~=5.0.0
