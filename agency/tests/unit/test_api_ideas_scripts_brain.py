@@ -304,3 +304,58 @@ async def test_publish_approve_returns_202_no_fabricated_post_id(db_session):
     assert body["queued"] is True
     assert "published_post_id" not in body
     assert "ig_reel_" not in response.text
+
+
+@pytest.mark.anyio
+async def test_realtime_sse_dev_tenant_resolution():
+    """Verifica que TenantContextMiddleware resuelva el tenant_id de /realtime/sse/{tenant_id} en dev."""
+    from starlette.requests import Request
+    from starlette.responses import Response
+    from backend.security.auth import TenantContextMiddleware
+
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": f"/realtime/sse/{TENANT_A}",
+        "headers": [],
+        "query_string": b"",
+    }
+    request = Request(scope)
+    middleware = TenantContextMiddleware(app=None)
+
+    captured_request = None
+    async def dummy_call_next(req):
+        nonlocal captured_request
+        captured_request = req
+        return Response("ok")
+
+    await middleware.dispatch(request, dummy_call_next)
+    assert captured_request.state.tenant_id == TENANT_A
+
+
+@pytest.mark.anyio
+async def test_realtime_sse_query_token_auth(monkeypatch):
+    """Verifica que el parámetro ?token= resuelva el JWT en TenantContextMiddleware."""
+    from starlette.requests import Request
+    from starlette.responses import Response
+    from backend.security.auth import TenantContextMiddleware
+
+    token = create_access_token(user_id="usr_prod_001", tenant_id=TENANT_A, role="admin")
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": f"/realtime/sse/{TENANT_A}",
+        "headers": [],
+        "query_string": f"token={token}".encode("utf-8"),
+    }
+    request = Request(scope)
+    middleware = TenantContextMiddleware(app=None)
+
+    captured_request = None
+    async def dummy_call_next(req):
+        nonlocal captured_request
+        captured_request = req
+        return Response("ok")
+
+    await middleware.dispatch(request, dummy_call_next)
+    assert captured_request.state.tenant_id == TENANT_A

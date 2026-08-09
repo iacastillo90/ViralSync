@@ -112,8 +112,12 @@ async def sse_endpoint(tenant_id: str, request: Request):
             while True:
                 if await request.is_disconnected():
                     break
-                payload = await queue.get()
-                yield payload
+                try:
+                    payload = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    yield payload
+                except asyncio.TimeoutError:
+                    if await request.is_disconnected():
+                        break
         except asyncio.CancelledError:
             pass
         finally:

@@ -102,6 +102,9 @@ async def get_current_user(
     entorno no-dev el fallback NO existe: sin JWT → 401 (fail-closed).
     """
     if not credentials:
+        if request and request.query_params.get("token"):
+            return decode_access_token(request.query_params.get("token"))
+
         if AGENCY_ENV in ("dev", "development"):
             return {
                 "sub": "usr_dev_001",
@@ -135,10 +138,7 @@ async def verify_tenant_access(
 ) -> Dict[str, Any]:
     """
     Dependencia FastAPI compartida para el aislamiento Anti-IDOR en todos los endpoints
-    bajo /api/v1/tenants/{tenant_id}/...
-
-    Aplícala a nivel de APIRouter o include_router para que cubra automáticamente
-    cualquier endpoint presente o futuro, sin depender de llamadas manuales por función.
+    bajo /api/v1/tenants/{tenant_id}/... y /realtime/sse/{tenant_id}
 
     Verifica que:
     1. Existe un usuario autenticado con JWT válido (viene de get_current_user).
@@ -158,7 +158,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
     Middleware para forzar el aislamiento estricto de contexto de Tenant.
 
     En staging/prod: exige token JWT válido. Si falta o es inválido, rechaza 401.
-    En dev: acepta X-Tenant-ID header o extrae de la URL como fallback para facilitar el testing local.
+    En dev: acepta X-Tenant-ID header o extrae de la URL (/api/v1/tenants/ o /realtime/sse/) como fallback.
     Siempre marca request.state.jwt_verified=True/False para que los guards puedan distinguir
     si el tenant_id proviene de una fuente firmada o de un header sin autenticar.
     """
@@ -171,10 +171,15 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         tenant_id = None
         jwt_verified = False
 
-        # 1. Fuente de verdad primaria: JWT firmado
+        # 1. Fuente de verdad primaria: JWT firmado (Bearer header o ?token= param para EventSource)
         auth_header = request.headers.get("Authorization")
+        token = None
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header.split(" ")[1]
+        elif request.query_params.get("token"):
+            token = request.query_params.get("token")
+
+        if token:
             try:
                 payload = decode_access_token(token)
                 tenant_id = payload.get("tenant_id")
@@ -194,10 +199,15 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         if not tenant_id and AGENCY_ENV in ("dev", "development"):
             tenant_id = request.headers.get("X-Tenant-ID") or request.headers.get("x-tenant-id")
 
-        if not tenant_id and AGENCY_ENV in ("dev", "development") and request.url.path.startswith("/api/v1/tenants/"):
-            path_parts = request.url.path.split("/")
-            if len(path_parts) >= 5:
-                tenant_id = path_parts[4]
+        if not tenant_id and AGENCY_ENV in ("dev", "development"):
+            if request.url.path.startswith("/api/v1/tenants/"):
+                path_parts = request.url.path.split("/")
+                if len(path_parts) >= 5:
+                    tenant_id = path_parts[4]
+            elif request.url.path.startswith("/realtime/sse/"):
+                path_parts = request.url.path.split("/")
+                if len(path_parts) >= 4:
+                    tenant_id = path_parts[3]
 
         # 3. En staging/prod, sin JWT válido → rechazar 401 inmediatamente
         # NUNCA hacer fallback a "default_tenant" en prod.
