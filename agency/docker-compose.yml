@@ -86,6 +86,8 @@ services:
     container_name: viralsync_backend
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend:/app/backend
     environment:
       - DATABASE_URL=postgresql+asyncpg://agency:agency@postgres:5432/agency
       - POSTGRES_HOST=postgres
