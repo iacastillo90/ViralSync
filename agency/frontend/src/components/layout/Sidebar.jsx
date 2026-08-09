@@ -11,6 +11,7 @@ import {
   MessageSquare,
   BarChart3,
   Brain,
+  Film,
   ShieldCheck,
 } from "lucide-react";
 
@@ -54,6 +55,11 @@ export function Sidebar({ tenantId }) {
       label: "Cerebro RAG",
       icon: Brain,
       href: effectiveTenantId === "nuevo" ? "/tenants/nuevo" : `/tenants/${effectiveTenantId}/cerebro`,
+    },
+    {
+      label: "Videos & Media MinIO",
+      icon: Film,
+      href: effectiveTenantId === "nuevo" ? "/tenants/nuevo" : `/tenants/${effectiveTenantId}/media`,
     },
     { label: "Admin Sistema", icon: ShieldCheck, href: "/admin/sistema" },
   ];

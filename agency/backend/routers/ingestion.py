@@ -177,3 +177,19 @@ async def ingest_product_data(
         "classification": classification,
         "product_image_url": product_image_url,
     }
+
+
+@ingestion_router.get("/{tenant_id}/media")
+async def list_media(tenant_id: str):
+    """Lista todos los recursos multimedia (imágenes y videos) almacenados en MinIO para el tenant."""
+    items = get_tenant_media_list(tenant_id)
+    return items
+
+
+@ingestion_router.delete("/{tenant_id}/media/{media_id}")
+async def delete_media_item(tenant_id: str, media_id: str):
+    """Elimina un video o imagen de MinIO por su ID."""
+    success = delete_tenant_media_item(tenant_id, media_id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recurso multimedia no encontrado en MinIO")
+    return {"status": "success", "deleted_media_id": media_id}

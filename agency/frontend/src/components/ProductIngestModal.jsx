@@ -161,15 +161,31 @@ export default function ProductIngestModal({ onIngested }) {
         </button>
 
         {ingestedResult && (
-          <div className="p-3 bg-emerald-950/40 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-            <div>
-              <strong>¡Producto guardado en MinIO!</strong> Clasificado como{" "}
-              <span className="font-mono bg-emerald-900/60 px-2 py-0.5 rounded text-emerald-200">
-                {ingestedResult.business_type}
-              </span>{" "}
-              ({ingestedResult.visual_mode}).
+          <div className="p-3 bg-emerald-950/40 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+              <div>
+                <strong>¡Producto guardado en MinIO!</strong> Clasificado como{" "}
+                <span className="font-mono bg-emerald-900/60 px-2 py-0.5 rounded text-emerald-200">
+                  {typeof ingestedResult.classification === "object"
+                    ? ingestedResult.classification?.business_type || "PRODUCTO_FISICO"
+                    : ingestedResult.classification || "PRODUCTO_FISICO"}
+                </span>{" "}
+                (
+                {typeof ingestedResult.classification === "object"
+                  ? ingestedResult.classification?.visual_mode || "IMAGE_TO_VIDEO"
+                  : "IMAGE_TO_VIDEO"}
+                ).
+              </div>
             </div>
+            {tenantId && (
+              <a
+                href={`/tenants/${tenantId}/media`}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg font-medium text-xs transition-all shrink-0 flex items-center gap-1 shadow-md shadow-indigo-600/30"
+              >
+                Ver en Galería MinIO &rarr;
+              </a>
+            )}
           </div>
         )}
       </form>
