@@ -148,7 +148,10 @@ langgraph==1.2.10
 langgraph-checkpoint==4.1.1
     # via
     #   langgraph
+    #   langgraph-checkpoint-postgres
     #   langgraph-prebuilt
+langgraph-checkpoint-postgres==3.1.2
+    # via -r requirements.txt
 langgraph-prebuilt==1.1.0
     # via langgraph
 langgraph-sdk==0.4.2
@@ -178,6 +181,7 @@ openai==2.53.0
     # via litellm
 orjson==3.11.9
     # via
+    #   langgraph-checkpoint-postgres
     #   langgraph-sdk
     #   langsmith
 ormsgpack==1.12.2
@@ -207,6 +211,10 @@ propcache==0.5.2
     #   yarl
 protobuf==7.35.1
     # via qdrant-client
+psycopg==3.3.4
+    # via langgraph-checkpoint-postgres
+psycopg-pool==3.3.1
+    # via langgraph-checkpoint-postgres
 psycopg2-binary==2.9.12
     # via -r requirements.txt
 pyasn1==0.6.4
@@ -310,6 +318,8 @@ typing-extensions==4.16.0
     #   langchain-protocol
     #   langsmith
     #   openai
+    #   psycopg
+    #   psycopg-pool
     #   pydantic
     #   pydantic-core
     #   sqlalchemy

@@ -25,21 +25,35 @@ from backend.db.session import init_db
 # Importación de Routers Modularizados
 from backend.routers.health import router as health_router
 from backend.routers.ingestion import tenant_admin_router, ingestion_router
-from backend.routers.graph_execution import router as graph_router
+from backend.routers.graph_execution import router as graph_router, rebuild_graph_app
 from backend.routers.leads import router as leads_router
 from backend.routers.metrics import router as metrics_router
 from backend.routers.ideas import router as ideas_router
 from backend.routers.scripts import router as scripts_router
 from backend.routers.brain import router as brain_router
+from backend.db.checkpointer import is_force_sqlite, setup_postgres_checkpointer, close_postgres_checkpointer
 
 setup_logging()
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """Crea el esquema de base de datos en el arranque (idempotente via create_all)."""
+    """Crea el esquema de base de datos en el arranque (idempotente via create_all).
+
+    D2/T-14: en entornos PostgreSQL se abre la conexión async de larga vida del
+    checkpointer (AsyncPostgresSaver, langgraph-checkpoint-postgres) y se
+    reconstruye el graph_app con ella — thread_id=tenant_id, el estado de un run
+    pausado sobrevive al restart del backend (PERSIST-04-1). Bajo
+    FORCE_SQLITE=true (tests) el graph_app usa MemorySaver y NO se toca Postgres
+    (PERSIST-04-2: el historial en memoria se descarta, sin migración).
+    """
     await init_db()
+    if not is_force_sqlite():
+        await setup_postgres_checkpointer()
+        rebuild_graph_app()
     yield
+    if not is_force_sqlite():
+        await close_postgres_checkpointer()
 
 
 app = FastAPI(

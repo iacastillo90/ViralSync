@@ -17,21 +17,28 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 REQUIREMENTS_TXT = REPO_ROOT / "requirements.txt"
 REQUIREMENTS_LOCK = REPO_ROOT / "requirements.lock"
 
-# The 6 truly-dead direct dependencies pruned in Phase 0 (design D3).
+# The 5 still-dead direct dependencies pruned in Phase 0 (design D3).
+# NOTE: `langgraph-checkpoint-postgres` was pruned in Phase 0 (zero imports)
+# but the approved change `pipeline-production-gaps` (REQ-PERSIST-04 / design
+# D2, WU-03 T-14) makes it a DIRECT dependency again: `AsyncPostgresSaver`
+# lives in `backend/db/checkpointer.py` (import lazy, rama Postgres). It moved
+# from PRUNED to KEPT below with its `~=` floor.
 PRUNED = {
     "crewai",
     "crewai-tools",
     "llama-index",
     "llama-index-vector-stores-qdrant",
     "openai-whisper",
-    "langgraph-checkpoint-postgres",
 }
 
 # The kept dependencies with ~= floors (design D5 / Interface).
+# `langgraph-checkpoint-postgres` = checkpointer persistente del grafo
+# (design D2 / REQ-PERSIST-04): reincorporado como dependencia directa en WU-03.
 KEPT = {
     "fastapi",
     "uvicorn",
     "langgraph",
+    "langgraph-checkpoint-postgres",
     "qdrant-client",
     "celery",
     "redis",

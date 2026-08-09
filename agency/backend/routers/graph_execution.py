@@ -9,17 +9,34 @@ from fastapi import APIRouter, status, BackgroundTasks
 from pydantic import BaseModel
 from backend.sse_manager import sse_manager
 from agents.graph import build_agency_graph
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.types import Command
 from backend.db.daos import update_idea_approval
+from backend.db.checkpointer import build_checkpointer
+from langgraph.types import Command
 import asyncio
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["Graph Execution"])
 
-# Checkpointer global para persistencia en memoria (Demo/MVP)
-# En un entorno distribuido usaríamos AsyncSqliteSaver o PostgresSaver
-global_memory = MemorySaver()
-graph_app = build_agency_graph(checkpointer=global_memory)
+# Checkpointer (design D2 / T-14): reemplazó el global MemorySaver. La factory
+# decide — MemorySaver bajo FORCE_SQLITE=true (tests, PERSIST-04-2) o
+# AsyncPostgresSaver sobre la conexión long-lived que abre el lifespan de
+# main.py (PERSIST-04-1: thread_id=tenant_id, el estado sobrevive al restart).
+# El grafo se construye lazy y main.py lo reconstruye tras `setup` del saver PG.
+graph_app = None
+
+
+def get_graph_app():
+    """Devuelve el grafo compilado, construyéndolo con el checkpointer activo."""
+    global graph_app
+    if graph_app is None:
+        graph_app = build_agency_graph(checkpointer=build_checkpointer())
+    return graph_app
+
+
+def rebuild_graph_app():
+    """Reconstruye el grafo con un checkpointer nuevo (lifespan, T-14)."""
+    global graph_app
+    graph_app = build_agency_graph(checkpointer=build_checkpointer())
+    return graph_app
 
 
 class GraphRunRequest(BaseModel):
@@ -106,10 +123,10 @@ async def approve_idea(tenant_id: str, req: IdeaApproveRequest, background_tasks
 
     # Reanudar el grafo en background
     config = {"configurable": {"thread_id": tenant_id}}
-
+    
     async def _resume_graph():
         try:
-            await graph_app.ainvoke(Command(resume={"idea_approved": req.status == "approved"}), config=config)
+            await get_graph_app().ainvoke(Command(resume={"idea_approved": req.status == "approved"}), config=config)
         except Exception as e:
             print(f"Error reanudando grafo para {tenant_id}: {e}")
 
@@ -146,7 +163,7 @@ async def approve_publish(tenant_id: str, req: PublishApproveRequest, background
     
     async def _resume_publish():
         try:
-            await graph_app.ainvoke(Command(resume={"publish_approved": req.status == "approved"}), config=config)
+            await get_graph_app().ainvoke(Command(resume={"publish_approved": req.status == "approved"}), config=config)
         except Exception as e:
             print(f"Error reanudando grafo publish para {tenant_id}: {e}")
 
@@ -188,7 +205,7 @@ async def run_graph(tenant_id: str, req: GraphRunRequest, background_tasks: Back
 
     async def _run_graph_bg():
         try:
-            final_state = await graph_app.ainvoke(initial_state, config=config)
+            final_state = await get_graph_app().ainvoke(initial_state, config=config)
             await sse_manager.broadcast(
                 tenant_id,
                 "graph_complete",
