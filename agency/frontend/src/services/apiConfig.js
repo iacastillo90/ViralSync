@@ -4,8 +4,11 @@ const API_BASE_URL =
 export async function fetchWithTenant(endpoint, options = {}, tenantId) {
   let token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
   
-  if (!tenantId) {
+  if (!tenantId || tenantId === "nuevo" || tenantId === "null" || tenantId === "undefined") {
     tenantId = typeof window !== "undefined" ? localStorage.getItem("tenantId") : null;
+  }
+  if (tenantId === "nuevo" || tenantId === "null" || tenantId === "undefined") {
+    tenantId = null;
   }
   if (!tenantId) {
     console.warn("No tenantId provided or found in localStorage. Request may fail if endpoint requires it.");

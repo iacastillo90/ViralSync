@@ -41,7 +41,8 @@ export default function DashboardPage() {
   } = useAgentStore();
 
   // Recursos compartidos: mismas GETs que las vistas de features (REQ-FEAT-4).
-  const scopedTenantId = tenantId && tenantId !== "null" ? tenantId : null;
+  const scopedTenantId =
+    tenantId && tenantId !== "null" && tenantId !== "nuevo" ? tenantId : null;
   const ideasResource = useTenantResource("ideas", scopedTenantId);
   const scriptsResource = useTenantResource("scripts", scopedTenantId);
   const metricsResource = useTenantResource("metrics", scopedTenantId);
@@ -62,7 +63,7 @@ export default function DashboardPage() {
           
           // Si no hay tenant seleccionado, intentar recuperar de localStorage o usar el primero
           let savedTenantId = localStorage.getItem("tenantId");
-          let match = data.find((t) => t.id === savedTenantId) || data[0];
+          let match = data.find((t) => t.id === savedTenantId && t.id !== "nuevo") || data[0];
           
           if (match) {
             setActiveTenant(match);
@@ -75,11 +76,11 @@ export default function DashboardPage() {
   }, [setAvailableTenants, setActiveTenant, setTenantId]);
 
   // Iniciar conexión SSE en tiempo real (sólo si hay un tenantId válido)
-  useSSEStream(tenantId && tenantId !== "null" ? tenantId : null);
+  useSSEStream(tenantId && tenantId !== "null" && tenantId !== "nuevo" ? tenantId : null);
 
   // Cargar datos iniciales desde el backend FastAPI
   useEffect(() => {
-    if (!tenantId || tenantId === "null") return;
+    if (!tenantId || tenantId === "null" || tenantId === "nuevo") return;
 
     fetchWithTenant(`/tenants/${tenantId}/leads`, {}, tenantId)
       .then((data) => setLeads(data))

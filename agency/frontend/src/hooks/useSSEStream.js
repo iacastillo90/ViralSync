@@ -7,7 +7,14 @@ export function useSSEStream(tenantId) {
   const maxRetries = 5;
 
   useEffect(() => {
-    if (!tenantId) return;
+    if (
+      !tenantId ||
+      tenantId === "null" ||
+      tenantId === "undefined" ||
+      tenantId === "nuevo"
+    ) {
+      return;
+    }
 
     let eventSource = null;
     let timeoutId = null;

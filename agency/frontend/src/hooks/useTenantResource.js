@@ -29,7 +29,12 @@ export function useTenantResource(endpoint, tenantId) {
     setLoading(true);
     setError(null);
 
-    if (!tenantId) {
+    if (
+      !tenantId ||
+      tenantId === "null" ||
+      tenantId === "undefined" ||
+      tenantId === "nuevo"
+    ) {
       setError(new Error("Sin tenant activo"));
       setLoading(false);
       return undefined;
