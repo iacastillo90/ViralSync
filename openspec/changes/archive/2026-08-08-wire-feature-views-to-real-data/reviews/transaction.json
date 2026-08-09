@@ -1,0 +1,42 @@
+{
+  "schema": "gentle-ai/review/transaction/v1",
+  "lineage_id": "wire-feature-views-to-real-data",
+  "mode": "openspec",
+  "genesis": {
+    "review_start": "2026-08-08T00:00:00Z",
+    "initial_snapshot": "77d4ea19ad171fe6f3c6d4cc4ea8488cb9ec5ddc",
+    "final_candidate_tree": "b104974609caa1fc6796b42bb070cef353ce9e7d"
+  },
+  "risk_classification": {
+    "tier": "high",
+    "reason": "security paths touched (auth guards, tenant isolation, webhook secrets) and authored changed lines > 400"
+  },
+  "lenses": {
+    "initial": ["review-risk", "review-reliability", "review-readability", "review-resilience"],
+    "refuter": "none-launched: both severe findings deterministic (R1-001, R1-002) corroborated with proof; no inferential BLOCKER/CRITICAL candidates merged"
+  },
+  "correction": {
+    "transactions": 1,
+    "commits": ["d396d7c7d2509dc9d8f3a10bc9ce130b330ec8cf3", "6a48b8fc2814734e34c3a5211c84faf7e5def5d082", "b104974609caa1fc6796b42bb070cef353ce9e7d"],
+    "work_units": [
+      {"finding_ids": ["R1-001"], "commit": "d396d7c", "evidence": "fail-fast guard main.py:93-100; AGENCY_ENV in [prod,production,staging] + default secrets → ValueError; dev defaults intact"},
+      {"finding_ids": ["R1-002"], "commit": "6a48b8f", "evidence": "ingestion.py:56-63 trim to {id,name,niche}; ingestion.py:70 verify_tenant_access 403 cross-tenant; prod no-JWT 401; dev no-token 200"},
+      {"finding_ids": [], "commit": "b104974", "evidence": "docstring precision; non-functional"}
+    ]
+  },
+  "scoped_fix_delta_validation": {
+    "verdict": "approve",
+    "validator": "scoped-fix-delta-validator (fresh context)"
+  },
+  "final_verification": {
+    "verdict": "approved",
+    "evidence": {
+      "backend_suite": "155 passed, 0 failed (AGENCY_ENV=dev pytest -q)",
+      "frontend_build": "npm run build exit 0, no warnings",
+      "fail_fast_repro": "AGENCY_ENV=prod default secrets → ValueError; dev → IMPORT OK; prod custom creds → IMPORT OK",
+      "snapshot": "HEAD=b104974; correction=3 commits after 77d4ea1; no uncommitted source changes"
+    }
+  },
+  "state": "approved",
+  "mode_counters": {"correction_transactions": 1, "scoped_validations": 1, "final_verifications": 1}
+}

@@ -1,0 +1,25 @@
+{
+  "schema": "gentle-ai/review/receipt/v1",
+  "lineage_id": "wire-feature-views-to-real-data",
+  "state": "approved",
+  "terminal": "true",
+  "candidate_tree": "b104974609caa1fc6796b42bb070cef353ce9e7d",
+  "lineage_path": "openspec/changes/wire-feature-views-to-real-data/reviews",
+  "snapshot": {
+    "genesis": "77d4ea19ad171fe6f3c6d4cc4ea8488cb9ec5ddc",
+    "correction_delta": [
+      "d396d7c7d2509ddd8f3a10bc9ce130b330ec8cf3",
+      "6a48b8fc28147e34c3a5211c84faf7e5def5d082",
+      "b104974609caa1fc6796b42bb070cef353ce9e7d"
+    ]
+  },
+  "evidence": {
+    "backend_suite": "155 passed, 0 failed",
+    "frontend_build": "exit 0, no warnings",
+    "fail_fast_meta_secrets": "AGENCY_ENV=prod with defaults -> ValueError; dev defaults -> OK; prod custom creds -> OK",
+    "tenant_isolation": "cross-tenant 403 verified in tests and code",
+    "list_payload": "{id,name,niche} only; sensitive fields stripped",
+    "approve_publish": "202 accepted, queued:true, no DB writes"
+  },
+  "lifecycle_check": "pre-commit/pre-push/pre-PR must validate the same content-bound receipt via native review-validate; never create a new review budget"
+}

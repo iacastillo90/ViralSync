@@ -1,0 +1,203 @@
+{
+  "schema": "gentle-ai/review/ledger/v1",
+  "lineage_id": "wire-feature-views-to-real-data",
+  "findings": [
+    {
+      "id": "R1-001",
+      "lens": "risk",
+      "location": "agency/backend/main.py:85-100",
+      "severity": "CRITICAL",
+      "claim": "INSTAGRAM_APP_SECRET and INSTAGRAM_WEBHOOK_VERIFY_TOKEN default to known hardcoded secrets with no prod fail-fast",
+      "evidence_class": "deterministic",
+      "proof_refs": "main.py:93-100 guard; repro AGENCY_ENV=prod → ValueError at import",
+      "status": "verified"
+    },
+    {
+      "id": "R1-002",
+      "lens": "risk",
+      "location": "agency/backend/main.py:76; agency/backend/routers/ingestion.py:39-95",
+      "severity": "CRITICAL",
+      "claim": "Tenant GET list/detail exposed all tenants' profile data to any valid JWT (broken object-level auth)",
+      "evidence_class": "deterministic",
+      "proof_refs": "ingestion.py:70 verify_tenant_access; tests cross-tenant 403; trim to {id,name,niche}",
+      "status": "verified"
+    },
+    {
+      "id": "R1-003",
+      "lens": "risk",
+      "location": "agency/backend",
+      "severity": "WARNING",
+      "claim": "Additional hardening available",
+      "evidence_class": "inferential",
+      "proof_refs": "review-risk report",
+      "status": "info"
+    },
+    {
+      "id": "R1-004",
+      "lens": "risk",
+      "location": "agency/backend",
+      "severity": "WARNING",
+      "claim": "approve path without ownership-sensitivity hardening",
+      "evidence_class": "inferential",
+      "proof_refs": "review-risk report",
+      "status": "info"
+    },
+    {
+      "id": "R1-005",
+      "lens": "risk",
+      "location": "agency/backend",
+      "severity": "SUGGESTION",
+      "claim": "Optional hardening suggestions",
+      "evidence_class": "inferential",
+      "proof_refs": "review-risk report",
+      "status": "info"
+    },
+    {
+      "id": "R1-006",
+      "lens": "risk",
+      "location": "agency/backend",
+      "severity": "WARNING",
+      "claim": "Corroborated non-blocking observation",
+      "evidence_class": "deterministic",
+      "proof_refs": "review-risk report",
+      "status": "info"
+    },
+    {
+      "id": "R2-001",
+      "lens": "readability",
+      "location": "agency/frontend/src/app/page.js:456-494",
+      "severity": "WARNING",
+      "claim": "Metric card duplicated inline instead of shared MetricClassificationCard",
+      "evidence_class": "deterministic",
+      "proof_refs": "page.js vs components/MetricClassificationCard.jsx",
+      "status": "info"
+    },
+    {
+      "id": "R2-002",
+      "lens": "readability",
+      "location": "agency/frontend/src/features/*/views",
+      "severity": "WARNING",
+      "claim": "Tri-state ladder duplicated across 5+ views",
+      "evidence_class": "deterministic",
+      "proof_refs": "views use useTenantResource but repeat ladder",
+      "status": "info"
+    },
+    {
+      "id": "R3-001",
+      "lens": "reliability",
+      "location": "agency/backend/db/models.py; migrations/002_add_video_metrics_and_fix_leads.sql",
+      "severity": "SUGGESTION",
+      "claim": "VideoMetric counts Integer vs DDL BIGINT; drift tests lock names not types",
+      "evidence_class": "inferential",
+      "proof_refs": "models.py / migrations",
+      "status": "info"
+    },
+    {
+      "id": "R3-002",
+      "lens": "reliability",
+      "location": "agency/tests/unit/test_api_ideas_scripts_brain.py",
+      "severity": "WARNING",
+      "claim": "Empty-state tests depend on shared in-memory SQLite seeding order",
+      "evidence_class": "deterministic",
+      "proof_refs": "test file",
+      "status": "info"
+    },
+    {
+      "id": "R3-003",
+      "lens": "reliability",
+      "location": "agency/tests",
+      "severity": "WARNING",
+      "claim": "DROP TABLE scripts mutates shared schema in tests",
+      "evidence_class": "deterministic",
+      "proof_refs": "test file",
+      "status": "info"
+    },
+    {
+      "id": "R3-004",
+      "lens": "reliability",
+      "location": "agency/backend",
+      "severity": "WARNING",
+      "claim": "Additional reliability observations",
+      "evidence_class": "inferential",
+      "proof_refs": "review-reliability report",
+      "status": "info"
+    },
+    {
+      "id": "R4-001",
+      "lens": "resilience",
+      "location": "agency/frontend/src/hooks/useTenantResource.js",
+      "severity": "WARNING",
+      "claim": "Fetch has no timeout; hung backend leaves loading forever",
+      "evidence_class": "deterministic",
+      "proof_refs": "hook source",
+      "status": "info"
+    },
+    {
+      "id": "R4-002",
+      "lens": "resilience",
+      "location": "agency/frontend/src/hooks/useTenantResource.js",
+      "severity": "WARNING",
+      "claim": "data not reset on tenantId change → stale cross-tenant flash",
+      "evidence_class": "deterministic",
+      "proof_refs": "hook source",
+      "status": "info"
+    },
+    {
+      "id": "R4-003",
+      "lens": "resilience",
+      "location": "agency/frontend/src/features/*/views",
+      "severity": "WARNING",
+      "claim": "Error branches without manual retry",
+      "evidence_class": "deterministic",
+      "proof_refs": "views",
+      "status": "info"
+    },
+    {
+      "id": "R4-004",
+      "lens": "resilience",
+      "location": "agency/backend",
+      "severity": "WARNING",
+      "claim": "Additional resilience observations",
+      "evidence_class": "inferential",
+      "proof_refs": "review-resilience report",
+      "status": "info"
+    },
+    {
+      "id": "R4-005",
+      "lens": "resilience",
+      "location": "agency/backend",
+      "severity": "WARNING",
+      "claim": "Additional resilience observations",
+      "evidence_class": "inferential",
+      "proof_refs": "review-resilience report",
+      "status": "info"
+    },
+    {
+      "id": "R4-006",
+      "lens": "resilience",
+      "location": "agency/backend",
+      "severity": "WARNING",
+      "claim": "Additional resilience observations",
+      "evidence_class": "inferential",
+      "proof_refs": "review-resilience report",
+      "status": "info"
+    },
+    {
+      "id": "R4-008",
+      "lens": "resilience",
+      "location": "agency/backend",
+      "severity": "WARNING",
+      "claim": "Additional resilience observations",
+      "evidence_class": "inferential",
+      "proof_refs": "review-resilience report",
+      "status": "info"
+    }
+  ],
+  "summary": {
+    "blocking": {"open": 0, "corroborated": 0, "refuted": 0, "inconclusive": 0, "fixed": 0, "verified": 2},
+    "info": {"warning": 14, "suggestion": 1},
+    "correction_ids": ["R1-001", "R1-002"],
+    "scoped_validation": "approve",
+    "final_verification": "approved"
+  }
+}

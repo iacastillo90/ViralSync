@@ -1,0 +1,50 @@
+{
+  "schema": "gentle-ai/review/chain-bundle/v1",
+  "lineage_id": "wire-feature-views-to-real-data",
+  "genesis_event": {
+    "type": "review/start",
+    "target": "wire-feature-views-to-real-data",
+    "initial_snapshot": "77d4ea19ad171fe6f3c6d4cc4ea8488cb9ec5ddc",
+    "risk_tier": "high"
+  },
+  "events": [
+    {
+      "type": "lens/review-risk",
+      "result": "2 CRITICAL deterministic (R1-001 fail-fast Meta secrets; R1-002 tenant GET isolation), warnings info"
+    },
+    {
+      "type": "lens/review-reliability",
+      "result": "0 BLOCKER/CRITICAL; warnings/suggestions info"
+    },
+    {
+      "type": "lens/review-readability",
+      "result": "0 BLOCKER/CRITICAL; 2 deterministic WARNING info"
+    },
+    {
+      "type": "lens/review-resilience",
+      "result": "0 BLOCKER/CRITICAL; warnings info"
+    },
+    {
+      "type": "corroboration/R1-001",
+      "result": "corroborated deterministic (code + repro); no refuter"
+    },
+    {
+      "type": "corroboration/R1-002",
+      "result": "corroborated deterministic (code inspection); no refuter"
+    },
+    {
+      "type": "correction/transaction",
+      "result": "1 transaction, 3 work-unit commits (d396d7c, 6a48b8f, b104974)"
+    },
+    {
+      "type": "scoped-fix-delta-validation",
+      "result": "approve"
+    },
+    {
+      "type": "final-verification",
+      "result": "approved"
+    }
+  ],
+  "state": "approved",
+  "terminal": "true"
+}

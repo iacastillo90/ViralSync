@@ -1,0 +1,16 @@
+{
+  "schema": "gentle-ai/review/gate-context/v1",
+  "lineage_id": "wire-feature-views-to-real-data",
+  "mode": "openspec",
+  "expected_head": "b104974609caa1fc6796b42bb070cef353ce9e7d",
+  "genesis": "77d4ea19ad171fe6f3c6d4cc4ea8488cb9ec5ddc",
+  "chain_identity": ["d396d7c7d2509ddd8f3a10bc9ce130b330ec8cf3", "6a48b8fc28147e34c3a5211c84faf7e5def5d082", "b104974609caa1fc6796b42bb070cef353ce9e7d"],
+  "bundle_digest": "sha256:computed-on-validate",
+  "state": "approved",
+  "gates": {
+    "pre_commit": "validate receipt via native review-validate before commit; do not reset budget",
+    "pre_push": "validate receipt before push",
+    "pre_pr": "validate candidate tree, paths, policy, evidence, base relationship, receipt before PR",
+    "post_sdd_phase": "review started explicitly post-apply; receipt approved; no new budget"
+  }
+}
