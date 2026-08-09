@@ -2,12 +2,16 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useTenantStore } from "@/stores/useTenantStore";
+import { useAgentStore } from "@/stores/useAgentStore";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Building2, PlusCircle } from "lucide-react";
 
 export default function NuevoTenantPage() {
   const router = useRouter();
+  const { availableTenants, setActiveTenant, setAvailableTenants } = useTenantStore();
+  const { setTenantId } = useAgentStore();
   const [formData, setFormData] = useState({
     name: "",
     niche: "",
@@ -29,6 +33,12 @@ export default function NuevoTenantPage() {
 
     if (res.ok) {
       const data = await res.json();
+      setActiveTenant(data);
+      setAvailableTenants([...availableTenants, data]);
+      setTenantId(data.id);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("tenantId", data.id);
+      }
       router.push(`/tenants/${data.id}/pipeline`);
     } else {
       setLoading(false);

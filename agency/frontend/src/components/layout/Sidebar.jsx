@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useTenantStore } from "@/stores/useTenantStore";
+import { useAgentStore } from "@/stores/useAgentStore";
 import {
   Layers,
   Sparkles,
@@ -12,17 +14,47 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
-// tenantId is required; always passed by call sites (no demo fallback).
 export function Sidebar({ tenantId }) {
   const pathname = usePathname();
+  const { activeTenant } = useTenantStore();
+  const { tenantId: storeTenantId } = useAgentStore();
+
+  const effectiveTenantId =
+    tenantId && tenantId !== "nuevo"
+      ? tenantId
+      : activeTenant?.id || storeTenantId || "nuevo";
 
   const navItems = [
-    { label: "Pipeline Monitor", icon: Layers, href: `/tenants/${tenantId}/pipeline` },
-    { label: "Ideación RUM", icon: Sparkles, href: `/tenants/${tenantId}/aprobaciones/ideas` },
-    { label: "Guiones 4 Bloques", icon: FileText, href: `/tenants/${tenantId}/guiones` },
-    { label: "Leads Inbound", icon: MessageSquare, href: `/tenants/${tenantId}/leads` },
-    { label: "Métricas 72h", icon: BarChart3, href: `/tenants/${tenantId}/metricas` },
-    { label: "Cerebro RAG", icon: Brain, href: `/tenants/${tenantId}/cerebro` },
+    {
+      label: "Pipeline Monitor",
+      icon: Layers,
+      href: effectiveTenantId === "nuevo" ? "/tenants/nuevo" : `/tenants/${effectiveTenantId}/pipeline`,
+    },
+    {
+      label: "Ideación RUM",
+      icon: Sparkles,
+      href: effectiveTenantId === "nuevo" ? "/tenants/nuevo" : `/tenants/${effectiveTenantId}/aprobaciones/ideas`,
+    },
+    {
+      label: "Guiones 4 Bloques",
+      icon: FileText,
+      href: effectiveTenantId === "nuevo" ? "/tenants/nuevo" : `/tenants/${effectiveTenantId}/guiones`,
+    },
+    {
+      label: "Leads Inbound",
+      icon: MessageSquare,
+      href: effectiveTenantId === "nuevo" ? "/tenants/nuevo" : `/tenants/${effectiveTenantId}/leads`,
+    },
+    {
+      label: "Métricas 72h",
+      icon: BarChart3,
+      href: effectiveTenantId === "nuevo" ? "/tenants/nuevo" : `/tenants/${effectiveTenantId}/metricas`,
+    },
+    {
+      label: "Cerebro RAG",
+      icon: Brain,
+      href: effectiveTenantId === "nuevo" ? "/tenants/nuevo" : `/tenants/${effectiveTenantId}/cerebro`,
+    },
     { label: "Admin Sistema", icon: ShieldCheck, href: "/admin/sistema" },
   ];
 
@@ -37,7 +69,7 @@ export function Sidebar({ tenantId }) {
           const isActive = pathname === item.href;
           return (
             <Link
-              key={item.href}
+              key={item.label}
               href={item.href}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                 isActive
@@ -53,8 +85,12 @@ export function Sidebar({ tenantId }) {
       </div>
 
       <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs text-slate-400">
-        <p className="font-semibold text-slate-300 mb-1">Aislamiento Activo</p>
-        <p className="truncate font-mono text-indigo-400">{tenantId}</p>
+        <p className="font-semibold text-slate-300 mb-1 truncate">
+          {activeTenant?.name ? activeTenant.name : "Aislamiento Activo"}
+        </p>
+        <p className="truncate font-mono text-indigo-400">
+          {effectiveTenantId === "nuevo" ? "Sin Tenant Configurado" : effectiveTenantId}
+        </p>
       </div>
     </aside>
   );

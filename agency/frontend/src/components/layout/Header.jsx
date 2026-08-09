@@ -1,12 +1,32 @@
 "use client";
 
+import { useEffect } from "react";
 import { useTenantStore } from "@/stores/useTenantStore";
 import { useAgentStore } from "@/stores/useAgentStore";
 import { Sparkles, DollarSign, Building2 } from "lucide-react";
 
 export function Header() {
-  const { activeTenant, availableTenants, setActiveTenant } = useTenantStore();
+  const { activeTenant, availableTenants, setActiveTenant, setAvailableTenants } = useTenantStore();
   const { setTenantId } = useAgentStore();
+
+  useEffect(() => {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+    fetch(`${apiBase}/tenants`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setAvailableTenants(data);
+          let savedTenantId = typeof window !== "undefined" ? localStorage.getItem("tenantId") : null;
+          let match = data.find((t) => t.id === savedTenantId && t.id !== "nuevo") || data[0];
+          if (match) {
+            setActiveTenant(match);
+            setTenantId(match.id);
+            localStorage.setItem("tenantId", match.id);
+          }
+        }
+      })
+      .catch((err) => console.error("Error cargando tenants en Header:", err));
+  }, [setAvailableTenants, setActiveTenant, setTenantId]);
 
 
   return (
