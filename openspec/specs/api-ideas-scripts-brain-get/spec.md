@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Backend tenant-scoped GET endpoints for ideas/scripts/brain, real metrics shape, dev auth guard, honest approve no-op.
+Backend tenant-scoped GET endpoints for ideas/scripts/brain, real metrics shape, dev auth guard, real idea-approval commits, honest publish approval.
 
-Adds three tenant-scoped GET endpoints (`/ideas`, `/scripts`, `/brain`) with honest 200-empty behavior; defines the real metrics GET shape (which previously 503'd); fixes the dev auth guard so real tenant UUIDs work without a JWT in dev while production stays fail-closed; and converts approve/publish POSTs into honest 202 no-ops with no fabricated identities and no DB writes.
+Adds three tenant-scoped GET endpoints (`/ideas`, `/scripts`, `/brain`) with honest 200-empty behavior; defines the real metrics GET shape (which previously 503'd); fixes the dev auth guard so real tenant UUIDs work without a JWT in dev while production stays fail-closed; and makes approve/publish POSTs honest — `ideas/approve` performs a real `approval_status` UPDATE (reversing the earlier 202 no-op), `publish/approve` never fabricates identities, and neither endpoint invents DB writes it did not perform.
 
 - All routers mount under `_TENANT_GUARD = [Depends(verify_tenant_access)]` via `include_router` (`main.py:70-77`); new GET routers follow the same pattern.
 - `verify_tenant_access` (`security/auth.py:114-137`) 403s unless `current_user["tenant_id"] == url tenant`. `get_current_user` (`auth.py:91-98`) with no Bearer token returns a hardcoded `{"tenant_id": "default_tenant"}` in dev — the source of the 403 on real UUIDs. `TenantContextMiddleware` already resolves the dev tenant (X-Tenant-ID header, else URL path) into `request.state.tenant_id`.
@@ -117,30 +117,32 @@ The system MUST, when `AGENCY_ENV` is `dev`/`development` and no JWT is present,
 - WHEN the GET runs
 - THEN the response is `403`
 
-### Requirement: REQ-API-06 — Approve/publish: honest 202 no-ops
+### Requirement: REQ-API-06 — Approve/publish: real commits; no fabricated ids
 
-`POST /api/v1/tenants/{tid}/ideas/approve` and `POST /api/v1/tenants/{tid}/publish/approve` MUST return `202 Accepted` with a body signalling queued intent (`status: "accepted"`), broadcast the existing SSE checkpoint events and resume the graph, MUST NOT create/update DB rows, and MUST NOT return fabricated identifiers such as `published_post_id`.
+(Previously: both approve endpoints returned `202` queued-intent no-ops writing nothing — the semantic this change reverses for idea approval, per `pipeline-persistence-writes` REQ-PERSIST-03.)
 
-#### Scenario: API-06-1 — approve idea returns 202, no DB write
+`POST /api/v1/tenants/{tid}/ideas/approve` MUST perform a real `ideas.approval_status` UPDATE (per REQ-PERSIST-03) and return `202 Accepted` with the existing SSE checkpoint/resume contract. `POST /api/v1/tenants/{tid}/publish/approve` MUST NOT fabricate `published_post_id`/`ig_reel_*`; it MUST only resume publish when valid tokens exist in state, and MUST surface an honest error otherwise. Neither endpoint MAY invent identifiers.
 
-- GIVEN a dev backend with SQLite
-- WHEN `POST /api/v1/tenants/{uuid}/ideas/approve` is sent
-- THEN the response is `202` and the body carries only queued-intent fields (no fabricated `idea_id`/`published_post_id`)
-- AND `SELECT count(*) FROM ideas` (and `video_metrics`) is unchanged
+#### Scenario: API-06-1 — approve commits for real
 
-#### Scenario: API-06-2 — publish/approve has no invented post id
+- GIVEN a pending `ideas` row
+- WHEN `POST /api/v1/tenants/{tid}/ideas/approve` `{idea_id, status: "approved"}`
+- THEN the response signals the committed approval (202 accepted + resume, per existing SSE contract)
+- AND the row's `approval_status` is `approved` in the DB (no-op removed)
 
-- GIVEN a dev backend
-- WHEN `POST /api/v1/tenants/{uuid}/publish/approve`
-- THEN `202` is returned
-- AND the payload contains no `published_post_id`, `ig_reel_*`, or any fabricated resource
+#### Scenario: API-06-2 — publish approval without tokens is honest
+
+- GIVEN no IG credentials in state
+- WHEN `POST /api/v1/tenants/{tid}/publish/approve`
+- THEN the response contains no `published_post_id`, `ig_reel_*`, or any fabricated resource
+- AND publish does not pretend to run (honest queued/error state)
 
 ## Acceptance Criteria
 
 - [ ] `curl` on all four GETs returns 200 over real Postgres (ideas/scripts/brain/metrics; metrics no longer 503)
 - [ ] `pytest` suite green with added dev-200/prod-401 and flat-metrics tests
 - [ ] No mock/fabricated row is returned by any new endpoint
-- [ ] Approve/publish return `202` and write nothing
+- [ ] Approve/publish are honest: `ideas/approve` commits `approval_status` (`202` + resume); `publish/approve` fabricates no identifiers
 
 ## Notes on proof
 
