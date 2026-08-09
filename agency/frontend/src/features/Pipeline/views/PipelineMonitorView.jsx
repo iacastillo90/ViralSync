@@ -1,6 +1,7 @@
 "use client";
 
 import { useAgentStore } from "@/stores/useAgentStore";
+import { useTenantStore } from "@/stores/useTenantStore";
 import { useSSEStream } from "@/hooks/useSSEStream";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -8,16 +9,23 @@ import { Activity, Play } from "lucide-react";
 
 export function PipelineMonitorView({ tenantId }) {
   const { nodes, logs, addLog } = useAgentStore();
+  // Credenciales OAuth de la sesión (REQ-PUBLISH-03): viven en el tenant activo
+  // cuando la sesión las tiene; si no, el run arranca igual (PUBLISH-03-2) y el
+  // backend falla honestamente en publish (REQ-PUBLISH-01).
+  const activeTenant = useTenantStore((s) => s.activeTenant);
   useSSEStream(tenantId);
 
   const handleRunGraph = async () => {
     const apiBase =
       process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
     addLog(`Ejecutando StateGraph para tenant '${tenantId}'...`);
+    const { ig_user_id, ig_access_token } = activeTenant || {};
+    const credentials =
+      ig_user_id && ig_access_token ? { ig_user_id, ig_access_token } : {};
     await fetch(`${apiBase}/tenants/${tenantId}/graph/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ force_reideation: false }),
+      body: JSON.stringify({ force_reideation: false, ...credentials }),
     });
   };
 

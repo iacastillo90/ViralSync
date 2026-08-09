@@ -48,11 +48,16 @@ export default function ProductIngestModal({ onIngested }) {
       setIngestedResult(data);
       addLog(`Producto ingestado exitosamente en MinIO: ${data.product_image_url}`);
 
-      // Iniciar el flujo de LangGraph automáticamente
+      // Iniciar el flujo de LangGraph automáticamente (REQ-PUBLISH-03): el body
+      // reenvía el product_image_url REAL del ingest para que el state del grafo
+      // lo reciba (PERSIST-05-1); vacío si no se subió foto (PERSIST-05-2).
       await fetch(`${apiBase}/tenants/${tenantId}/graph/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ force_reideation: true }),
+        body: JSON.stringify({
+          force_reideation: true,
+          product_image_url: data.product_image_url,
+        }),
       });
 
       if (onIngested) onIngested(data);
