@@ -47,8 +47,9 @@ async def list_tenants(db: AsyncSession = Depends(get_async_db)):
       exposed here: only the minimal public onboarding shape (id, name, niche).
     - Prod: the TenantContextMiddleware already requires a valid JWT for these
       paths, so only an authenticated caller can list. Sensitive internal
-      fields (monthly_llm_budget_usd, litellm_virtual_key, id/Graph secrets)
-      must NEVER be aggregated back to the caller regardless of auth state.
+      fields (monthly_llm_budget_usd, litellm_virtual_key,
+      instagram_graph_api_token_ref) must NEVER be aggregated back to the
+      caller regardless of auth state.
     """
     result = await db.execute(select(Tenant))
     tenants = result.scalars().all()
