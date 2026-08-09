@@ -76,8 +76,9 @@ def test_jsconfig_alias_resolves():
 def _feature_views_and_dashboard():
     """Los 6 archivos objetivo del gate: las 5 vistas de features + page.js.
 
-    NOTA: Sidebar.jsx NO está en esta lista — su default `tenant-demo-001`
-    (navegación) está excluido del gate de forma intencional (tasks.md, diseño).
+    NOTA: Sidebar.jsx NO está en esta lista (navegación). Desde el fix de
+    producción, su prop `tenantId` es requerida y ya no existe default
+    `tenant-demo-001`; el grep de anclas demo cubre todo src/.
     """
     base = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "src")
     return [

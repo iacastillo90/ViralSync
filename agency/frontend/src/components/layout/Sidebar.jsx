@@ -12,7 +12,8 @@ import {
   ShieldCheck,
 } from "lucide-react";
 
-export function Sidebar({ tenantId = "tenant-demo-001" }) {
+// tenantId is required; always passed by call sites (no demo fallback).
+export function Sidebar({ tenantId }) {
   const pathname = usePathname();
 
   const navItems = [
