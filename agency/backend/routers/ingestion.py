@@ -19,6 +19,7 @@ from backend.storage.minio_client import (
     get_tenant_media_list,
     delete_tenant_media_item,
 )
+from backend.db.daos import upsert_product
 from agents.criterion.niche_classifier import classify_business_type
 from backend.sse_manager import sse_manager
 from backend.db.session import get_async_db
@@ -163,6 +164,25 @@ async def ingest_product_data(
         )
 
     classification = classify_business_type(description, user_choice=business_type)
+
+    # REQ-PERSIST-05 / D8: el product-ingest persiste la fila `products` (upsert
+    # por (tenant_id, name)) con los datos reales del form. Un fallo de DB es un
+    # 503 honesto, nunca un payload state-only con falso éxito.
+    try:
+        await upsert_product(
+            tenant_id,
+            {
+                "name": product_name,
+                "description": description,
+                "product_image_url": product_image_url,
+            },
+        )
+    except Exception as exc:
+        logger.error(f"[{tenant_id}] Error al persistir producto en DB: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Error temporal de base de datos al guardar el producto.",
+        )
 
     await sse_manager.broadcast(
         tenant_id,

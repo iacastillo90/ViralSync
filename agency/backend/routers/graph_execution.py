@@ -31,6 +31,12 @@ class GraphRunRequest(BaseModel):
     ig_access_token: Optional[str] = None
     tiktok_access_token: Optional[str] = None
     youtube_access_token: Optional[str] = None
+    # Datos de producto capturados en product-ingest (REQ-PERSIST-05 / D8): el
+    # backend acepta product_image_url (y name/description opcionales) y
+    # node_ideation persiste la fila `products` cuando la imagen viaja en state.
+    product_name: Optional[str] = None
+    product_description: Optional[str] = None
+    product_image_url: Optional[str] = None
 
 
 class ProgressReportRequest(BaseModel):
@@ -158,6 +164,9 @@ async def run_graph(tenant_id: str, req: GraphRunRequest, background_tasks: Back
         "ig_access_token": req.ig_access_token,
         "tiktok_access_token": req.tiktok_access_token,
         "youtube_access_token": req.youtube_access_token,
+        "product_name": req.product_name,
+        "product_description": req.product_description,
+        "product_image_url": req.product_image_url,
     }
     
     config = {"configurable": {"thread_id": tenant_id}}
