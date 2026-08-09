@@ -44,3 +44,11 @@ async def db_session(init_test_db):
     """Sesión asíncrona sobre el motor SQLite en memoria compartido."""
     async with AsyncSessionLocal() as session:
         yield session
+
+
+def pytest_configure(config):
+    """Registra markers custom para evitar PytestUnknownMarkWarning."""
+    config.addinivalue_line(
+        "markers",
+        "real_keys: requires real provider API keys (export RUN_REAL_KEYS=1)",
+    )
