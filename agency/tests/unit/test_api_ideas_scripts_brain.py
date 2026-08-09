@@ -39,14 +39,22 @@ TENANT_B = "83b8444c-f296-496a-9683-93eb5fa948d7"
 # de tenants.id con el db_session compartido a nivel de sesión)
 TENANT_BRAIN = "9a3f4d2c-1e5b-4c7a-8f2d-6b8e9c0a1d2e"
 
-# IDs de filas en espacio propio de este archivo (prefijo aaaa…) — el motor
-# SQLite en memoria se comparte para TODA la sesión de pytest (StaticPool,
+# IDs de filas en espacio propio de este archivo (prefijo aaaa…/eeee…) — el
+# motor SQLite en memoria se comparte para TODA la sesión de pytest (StaticPool,
 # conftest.py), así que cualquier UUID repetido entre archivos de test rompe
 # UNIQUE constraints. test_video_metric_orm_alignment.py usa 1111/3333/…,
 # test_enterprise_phases_0_to_5.py usa los suyos; este archivo usa el suyo.
 IDEA_TEST_ID = "aaaa0001-5555-6666-7777-888888888888"
 SCRIPT_TEST_ID = "aaaa0002-5555-6666-7777-888888888888"
 NICHE_TEST_ID = "aaaa0003-5555-6666-7777-888888888888"
+
+# Tenant + ideas dedicados a los tests de approve (PERSIST-03, WU-03): espacio
+# propio (eeee…) para que el resume del grafo en background (que re-ejecuta
+# node_ideation y escribe filas nuevas en el mismo DB compartido) nunca
+# colisione con los conteos/asserts de otros tests.
+APPROVE_TENANT_ID = "eeee0001-1111-2222-3333-444444444444"
+APPROVED_IDEA_ID = "eeee0002-1111-2222-3333-444444444444"
+REJECTED_IDEA_ID = "eeee0003-1111-2222-3333-444444444444"
 
 
 @pytest.mark.anyio
@@ -265,28 +273,99 @@ async def test_scripts_db_error_returns_503(db_session):
 
 
 # --------------------------------------------------------------------------- #
-# Checkpoints humanos honestos — 202 no-ops (REQ-API-06, design D6)
+# Checkpoints humanos honestos — 202 + commit real (REQ-API-06 / PERSIST-03)
 # --------------------------------------------------------------------------- #
 
+@pytest.fixture
+async def approve_tenant(db_session):
+    """Garantiza el tenant dedicado de approve una sola vez (idempotente).
+
+    Re-seedear el mismo tenants.id en cada test rompería UNIQUE; el fixture sólo
+    inserta el tenant faltante (patrón `dao_tenants` de test_daos.py).
+    """
+    existing = (
+        await db_session.execute(
+            select(Tenant.id).where(Tenant.id == APPROVE_TENANT_ID)
+        )
+    ).scalars().first()
+    if existing is None:
+        db_session.add(Tenant(id=APPROVE_TENANT_ID, name="Approve Tenant"))
+        await db_session.commit()
+
+
 @pytest.mark.anyio
-async def test_ideas_approve_returns_202_accepted_no_rows(db_session):
-    """REQ-API-06 (D6): approve → 202 {status:accepted, kind:idea_approval, queued:true} sin escrituras."""
-    before = (await db_session.execute(text("SELECT COUNT(*) FROM ideas"))).scalar_one()
+async def test_ideas_approve_commits_approval_status(db_session, approve_tenant):
+    """PERSIST-03-1 / API-06-1: approve = UPDATE real de approval_status (202 + commit).
+
+    REQ-API-06 (MODIFIED): el no-op histórico se revirtió — aprobar una idea
+    pendiente con un UUID real DEBE persistir `approval_status="approved"` en la
+    fila (verificado vía la sesión del fixture sobre el DB compartido) además de
+    devolver el 202 {status:accepted, kind:idea_approval, queued:true, idea_id}.
+    """
+    db_session.add(
+        Idea(
+            id=APPROVED_IDEA_ID,
+            tenant_id=APPROVE_TENANT_ID,
+            texto="Idea pendiente para aprobar",
+            approval_status="pending",
+        )
+    )
+    await db_session.commit()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         response = await ac.post(
-            f"/api/v1/tenants/{TENANT_A}/ideas/approve",
-            json={"idea_id": IDEA_TEST_ID, "status": "approved"},
+            f"/api/v1/tenants/{APPROVE_TENANT_ID}/ideas/approve",
+            json={"idea_id": APPROVED_IDEA_ID, "status": "approved"},
         )
     assert response.status_code == 202
     body = response.json()
     assert body["status"] == "accepted"
     assert body["kind"] == "idea_approval"
     assert body["queued"] is True
-    assert body["idea_id"] == IDEA_TEST_ID  # ecos del id real, nunca fabricado
+    assert body["idea_id"] == APPROVED_IDEA_ID  # eco del id real, nunca fabricado
 
-    after = (await db_session.execute(select(text("COUNT(*)")).select_from(text("ideas")))).scalar_one()
-    assert after == before, "approve NO debe escribir filas en la DB (no-op honesto)"
+    row = (
+        await db_session.execute(
+            select(Idea)
+            .where(Idea.id == APPROVED_IDEA_ID)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    assert row.approval_status == "approved", "approve DEBE commitear el status en la DB (no-op eliminado)"
+
+
+@pytest.mark.anyio
+async def test_ideas_reject_commits_rejected(db_session, approve_tenant):
+    """PERSIST-03-2: reject también commitea — la fila queda `rejected`."""
+    db_session.add(
+        Idea(
+            id=REJECTED_IDEA_ID,
+            tenant_id=APPROVE_TENANT_ID,
+            texto="Idea pendiente para rechazar",
+            approval_status="pending",
+        )
+    )
+    await db_session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.post(
+            f"/api/v1/tenants/{APPROVE_TENANT_ID}/ideas/approve",
+            json={"idea_id": REJECTED_IDEA_ID, "status": "rejected"},
+        )
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "accepted"
+    assert body["kind"] == "idea_approval"
+    assert body["queued"] is True
+
+    row = (
+        await db_session.execute(
+            select(Idea)
+            .where(Idea.id == REJECTED_IDEA_ID)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    assert row.approval_status == "rejected"
 
 
 @pytest.mark.anyio

@@ -11,6 +11,7 @@ from backend.sse_manager import sse_manager
 from agents.graph import build_agency_graph
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
+from backend.db.daos import update_idea_approval
 import asyncio
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["Graph Execution"])
@@ -74,8 +75,12 @@ async def report_progress(tenant_id: str, req: ProgressReportRequest):
 async def approve_idea(tenant_id: str, req: IdeaApproveRequest, background_tasks: BackgroundTasks):
     """Checkpoint Humano: Aprobar o Rechazar Idea candidata y reanudar grafo.
 
-    No-op honesto (REQ-API-06): NO escribe en DB ni fabrica filas; sólo transmite
-    el checkpoint via SSE y reanuda el grafo en background. El body devuelve
+    Commit real (REQ-PERSIST-03, design D4): además de transmitir el checkpoint
+    via SSE y reanudar el grafo en background, ejecuta `UPDATE ideas SET
+    approval_status=:st WHERE id=:idea_id AND tenant_id=:tenant_id` mediante el
+    DAO — la DB, el grafo y la UI quedan de acuerdo (REQ-API-06 MODIFIED). Un
+    idea_id no-UUID (p. ej. el id de e2e `"idea-e2e-001"`) actualiza 0 filas
+    (no-op inofensivo, T-08 acceptance). El body devuelve
     `{"status":"accepted","kind":"idea_approval","queued":true}` con echo del
     idea_id real del request — nunca un id inventado.
     """
@@ -88,10 +93,20 @@ async def approve_idea(tenant_id: str, req: IdeaApproveRequest, background_tasks
             "tenant_id": tenant_id,
         },
     )
-    
+
+    # REQ-PERSIST-03 / T-12: UPDATE real de approval_status en la fila ideas.
+    # si el id no matchea ninguna fila (no-UUID o de otro tenant) el DAO devuelve
+    # False y el resume sigue igual: la UI ya no miente sobre el commit.
+    updated = await update_idea_approval(tenant_id, req.idea_id, req.status)
+    if not updated:
+        print(
+            f"[approve] aprobación sin fila afectada: idea_id={req.idea_id} "
+            f"tenant={tenant_id} (0 rows — id no-UUID o inexistente)"
+        )
+
     # Reanudar el grafo en background
     config = {"configurable": {"thread_id": tenant_id}}
-    
+
     async def _resume_graph():
         try:
             await graph_app.ainvoke(Command(resume={"idea_approved": req.status == "approved"}), config=config)
