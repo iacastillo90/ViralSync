@@ -29,6 +29,11 @@ export function Header() {
   }, [setAvailableTenants, setActiveTenant, setTenantId]);
 
 
+  const formatCurrency = (val, fallback = 0) => {
+    const num = Number(val ?? fallback);
+    return isNaN(num) ? "0.00" : num.toFixed(2);
+  };
+
   return (
     <header className="flex justify-between items-center px-6 py-4 bg-slate-900 border-b border-slate-800 text-slate-100">
       <div className="flex items-center gap-3">
@@ -49,7 +54,9 @@ export function Header() {
           <DollarSign className="w-4 h-4 text-emerald-400" />
           <span className="text-slate-400">Gasto LLM:</span>
           <span className="font-mono font-semibold text-emerald-300">
-            {activeTenant ? `$${activeTenant.current_llm_spend_usd.toFixed(2)} / $${activeTenant.monthly_llm_budget_usd.toFixed(2)}` : "—"}
+            {activeTenant
+              ? `$${formatCurrency(activeTenant.current_llm_spend_usd, 0)} / $${formatCurrency(activeTenant.monthly_llm_budget_usd, 20)}`
+              : "—"}
           </span>
         </div>
 
