@@ -158,10 +158,10 @@ async def ingest_product_data(
     if file:
         content = await file.read()
         product_image_url = save_product_photo_to_minio(content, file.filename, tenant_id)
-    else:
-        product_image_url = (
-            f"http://localhost:9000/viralsync-media/{tenant_id}/products/default_product.jpg"
-        )
+    # Sin archivo: product_image_url queda VACÍO (honestidad T-18/PERSIST-05-2).
+    # Se eliminó el default muerto `.../products/default_product.jpg` — una URL
+    # fabricada de un objeto que nunca se subió (mismo anti-patrón que el
+    # s3:// del nodo publish, T-00 #3).
 
     classification = classify_business_type(description, user_choice=business_type)
 
