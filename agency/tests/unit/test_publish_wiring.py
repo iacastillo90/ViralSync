@@ -1,0 +1,255 @@
+"""
+test_publish_wiring.py
+
+Publish wiring tests for WU-04 (design D5, REQ-PUBLISH-01/02, REQ-API-06):
+`agents/nodes/publish.py` must be an `async def` node connected to the REAL
+publisher contract over HTTP (`PUBLISHER_URL`, default `http://localhost:8002`)
+instead of the old in-process adapter call with fabricated defaults:
+
+- `test_node_publish_no_tokens_raises_security_error` — PUBLISH-02-3 /
+  PUBLISH-01-2: sin `ig_user_id`/`ig_access_token` en state → ValueError honesto
+  y NO se hace ninguna llamada HTTP (ni id inventado).
+- `test_node_publish_calls_publisher_http` — PUBLISH-02-1: token real → POST
+  `{PUBLISHER_URL}/publish` con tenant_id/video_url/caption/credenciales y el
+  `published_post_id` devuelto es el REAL de la respuesta (nunca fabricado).
+- `test_node_publish_no_edited_uri_raises` — T-00 #3: se eliminó el default
+  muerto `s3://…`; sin `edited_video_uri` el nodo falla honesto.
+- `test_node_publish_dev_token_simulated` — PUBLISH-02-2: token `token_` (dev)
+  conserva la simulación honesta del micro (adapters): el id simulado viene del
+  contrato publisher, el nodo NO fabrica nada.
+- `test_node_publish_publisher_down_raises_honest_error` — D5: `:8002` caído →
+  RuntimeError claro, sin simulación.
+- `test_node_publish_response_without_id_never_fabricates` — anti-fabricación:
+  respuesta sin `published_post_id` → error; jamás `post_…`/`ig_reel_…` inventados.
+- `test_node_publish_source_has_no_fabricated_defaults` — T-16 acceptance:
+  el fuente del nodo no contiene defaults fabricados (`post_{` o `s3://`).
+
+Mocking: httpx.AsyncClient se reemplaza por un fake con context-manager que
+registra las llamadas y devuelve la respuesta configurada — el nodo nunca toca
+red en estos tests (la simulación dev vive en el adaptador del micro, probada
+en test_audit_findings_resolutions.py).
+"""
+
+import inspect
+
+import httpx
+import pytest
+
+from agents.nodes import publish as publish_module
+
+
+class FakeResponse:
+    """Superficie mínima de httpx.Response usada por el nodo."""
+
+    def __init__(self, status_code: int, payload=None):
+        self.status_code = status_code
+        self._payload = payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                f"HTTP {self.status_code}",
+                request=httpx.Request("POST", "http://publisher"),
+                response=httpx.Response(self.status_code, request=httpx.Request("POST", "http://publisher")),
+            )
+
+    def json(self):
+        return self._payload
+
+
+class FakeAsyncClient:
+    """Sustituto de httpx.AsyncClient: registra POSTs y devuelve la respuesta configurada."""
+
+    def __init__(self, *, timeout=None):
+        self.timeout = timeout
+        self.calls = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+    async def post(self, url, json=None):
+        self.calls.append((url, json))
+        if self._raise_exc is not None:
+            raise self._raise_exc
+        return self._response
+
+
+@pytest.fixture
+def fake_http(monkeypatch):
+    """Instala FakeAsyncClient en el módulo del nodo y expone el estado del fake."""
+    state = {"instance": None, "raise_exc": None, "response": None}
+
+    def _factory(*, timeout=None):
+        client = FakeAsyncClient(timeout=timeout)
+        client._response = state["response"]
+        client._raise_exc = state["raise_exc"]
+        state["instance"] = client
+        state["client"] = client
+        return client
+
+    monkeypatch.setattr(publish_module, "AsyncClient", _factory)
+    return state
+
+
+@pytest.mark.anyio
+async def test_node_publish_no_tokens_raises_security_error(fake_http, monkeypatch):
+    """PUBLISH-02-3: sin credenciales → error de seguridad; sin llamada HTTP; sin id."""
+    monkeypatch.setattr(publish_module, "PUBLISHER_URL", "http://test-publisher:8002")
+    from agents.nodes.publish import node_publish
+
+    with pytest.raises(ValueError, match="ausente"):
+        await node_publish(
+            {
+                "tenant_id": "t-pub-01",
+                "edited_video_uri": "http://minio:9000/viralsync-media/t-pub-01/final.mp4",
+                "script": {"gancho_0_5s": "Hook", "cta_50_60s": "CTA"},
+                "logs": [],
+            }
+        )
+
+    assert fake_http["instance"] is None  # el nodo NO llamó al publisher
+
+
+@pytest.mark.anyio
+async def test_node_publish_calls_publisher_http(fake_http, monkeypatch):
+    """PUBLISH-02-1: token real → POST a :8002 con el contrato y devuelve el id REAL."""
+    monkeypatch.setattr(publish_module, "PUBLISHER_URL", "http://test-publisher:8002")
+    fake_http["response"] = FakeResponse(
+        201,
+        {
+            "status": "published",
+            "published_post_id": "ig_reel_real_from_graph_api",
+            "tenant_id": "t-pub-02",
+            "platform": "instagram",
+        },
+    )
+    from agents.nodes.publish import node_publish
+
+    result = await node_publish(
+        {
+            "tenant_id": "t-pub-02",
+            "edited_video_uri": "http://minio:9000/viralsync-media/t-pub-02/final.mp4",
+            "script": {"gancho_0_5s": "Hook", "cta_50_60s": "CTA"},
+            "ig_user_id": "17841400000000001",
+            "ig_access_token": "EAAXrealToken",
+            "logs": [],
+        }
+    )
+
+    assert result["published_post_id"] == "ig_reel_real_from_graph_api"
+    assert fake_http["instance"] is not None
+    url, payload = fake_http["instance"].calls[0]
+    assert url == "http://test-publisher:8002/publish"
+    assert payload["tenant_id"] == "t-pub-02"
+    assert payload["video_url"].endswith("final.mp4")
+    assert payload["caption"] == "Hook\n\nCTA"
+    assert payload["instagram_user_id"] == "17841400000000001"
+    assert payload["access_token"] == "EAAXrealToken"
+
+
+@pytest.mark.anyio
+async def test_node_publish_no_edited_uri_raises(fake_http):
+    """T-00 #3: el default s3:// se eliminó — sin edited_video_uri el nodo falla honesto."""
+    from agents.nodes.publish import node_publish
+
+    with pytest.raises(ValueError, match="edited_video_uri"):
+        await node_publish(
+            {
+                "tenant_id": "t-pub-03",
+                "ig_user_id": "17841400000000001",
+                "ig_access_token": "token_x",
+                "logs": [],
+            }
+        )
+
+    assert fake_http["instance"] is None
+
+
+@pytest.mark.anyio
+async def test_node_publish_dev_token_simulated(fake_http, monkeypatch):
+    """PUBLISH-02-2: token_ (dev) → el id simulado lo emite el publisher (adapters), no el nodo."""
+    monkeypatch.setattr(publish_module, "PUBLISHER_URL", "http://test-publisher:8002")
+    fake_http["response"] = FakeResponse(
+        201,
+        {
+            "status": "published",
+            "published_post_id": "ig_reel_t-pub-04_1234567890",  # sim del micro en dev
+            "tenant_id": "t-pub-04",
+            "platform": "instagram",
+        },
+    )
+    from agents.nodes.publish import node_publish
+
+    result = await node_publish(
+        {
+            "tenant_id": "t-pub-04",
+            "edited_video_uri": "http://minio:9000/viralsync-media/t-pub-04/final.mp4",
+            "script": {"gancho_0_5s": "Hook", "cta_50_60s": "CTA"},
+            "ig_user_id": "17841400000000001",
+            "ig_access_token": "token_dev_simulado",
+            "logs": [],
+        }
+    )
+
+    assert result["published_post_id"] == "ig_reel_t-pub-04_1234567890"
+    _, payload = fake_http["instance"].calls[0]
+    assert payload["access_token"] == "token_dev_simulado"
+    assert result["logs"][-1].startswith("[publish]")
+
+
+@pytest.mark.anyio
+async def test_node_publish_publisher_down_raises_honest_error(fake_http, monkeypatch):
+    """D5: publisher caído → error claro, sin simulación ni id."""
+
+    class _ConnRefused(httpx.ConnectError):
+        def __init__(self):
+            super().__init__("All connection attempts failed: [Errno 111] Connection refused")
+
+    monkeypatch.setattr(publish_module, "PUBLISHER_URL", "http://test-publisher:8002")
+    fake_http["raise_exc"] = _ConnRefused()
+
+    from agents.nodes.publish import node_publish
+
+    with pytest.raises(RuntimeError, match="Publisher"):
+        await node_publish(
+            {
+                "tenant_id": "t-pub-05",
+                "edited_video_uri": "http://minio:9000/viralsync-media/t-pub-05/final.mp4",
+                "script": {},
+                "ig_user_id": "17841400000000001",
+                "ig_access_token": "EAAXrealToken",
+                "logs": [],
+            }
+        )
+
+
+@pytest.mark.anyio
+async def test_node_publish_response_without_id_never_fabricates(fake_http, monkeypatch):
+    """Anti-fabricación: respuesta sin published_post_id → error; jamás post_... inventado."""
+    monkeypatch.setattr(publish_module, "PUBLISHER_URL", "http://test-publisher:8002")
+    fake_http["response"] = FakeResponse(201, {"status": "published", "tenant_id": "t-pub-06"})
+    from agents.nodes.publish import node_publish
+
+    with pytest.raises(RuntimeError, match="published_post_id"):
+        await node_publish(
+            {
+                "tenant_id": "t-pub-06",
+                "edited_video_uri": "http://minio:9000/viralsync-media/t-pub-06/final.mp4",
+                "script": {},
+                "ig_user_id": "17841400000000001",
+                "ig_access_token": "EAAXrealToken",
+                "logs": [],
+            }
+        )
+
+
+def test_node_publish_source_has_no_fabricated_defaults():
+    """T-16 acceptance: el nodo ya no contiene defaults fabricados (f"post_{" / f"s3://")."""
+    from agents.nodes.publish import node_publish
+
+    src = inspect.getsource(node_publish)
+    assert 'f"post_{' not in src
+    assert 'f"s3://' not in src

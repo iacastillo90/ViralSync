@@ -1,20 +1,54 @@
+"""
+publish.py
+
+Nodo de Publicación de LangGraph (async) conectado al publisher REAL por HTTP
+(design D5 / REQ-PUBLISH-02): `POST {PUBLISHER_URL}/publish` con el contrato
+`PublishRequest` del microservicio (:8002 en compose).
+
+Comportamiento honesto (REQ-API-06 / PUBLISH-02-3):
+- Sin `edited_video_uri` en state → error honesto (se eliminó el default muerto
+  `s3://viralsync-media-dev/...`, T-00 #3).
+- Sin `ig_user_id`/`ig_access_token` → ValueError de seguridad espejo de
+  adapters.py — NUNCA se fabrica un `published_post_id`.
+- La simulación dev (`token_`, AGENCY_ENV=dev) vive en el micro (adapters),
+  no acá: el nodo se limita a reenviar las credenciales y a devolver el id
+  REAL que el publisher responde.
+- `:8002` caído o respuesta sin `published_post_id` → error claro, sin simular.
+"""
+
+import os
 import logging
 from typing import Dict, Any
-from microservices.publisher.adapters import PublisherFactory
+
+import httpx
+from httpx import AsyncClient
 
 logger = logging.getLogger(__name__)
 
+# Microservicio outbound de publicación (compose `video_publisher`, :8002).
+PUBLISHER_URL = os.getenv("PUBLISHER_URL", "http://localhost:8002")
 
-def node_publish(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Nodo que efectúa la publicación final en redes sociales vía Publisher Adapter."""
+# Timeout acotado: el poll IG (12×5s) corre en el micro, no en el loop del backend.
+_PUBLISH_TIMEOUT = 15.0
+
+
+async def node_publish(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Nodo que efectúa la publicación final vía el publisher HTTP real (:8002)."""
     tenant_id = state.get("tenant_id", "default_tenant")
-    edited_uri = state.get("edited_video_uri", f"s3://viralsync-media-dev/{tenant_id}/edited_output.mp4")
+    edited_uri = state.get("edited_video_uri")
+    if not edited_uri:
+        raise ValueError(
+            f"[{tenant_id}] edited_video_uri ausente en state: no hay video "
+            "renderizado para publicar (T-00 #3, sin default s3://)."
+        )
+
     script = state.get("script", {})
     caption = f"{script.get('gancho_0_5s', '')}\n\n{script.get('cta_50_60s', '')}"
     platform = state.get("target_platform", "instagram")
 
-    # Extraer credenciales OAuth desde el estado del grafo.
-    # El estado las recibe del endpoint /graph/run → vienen del frontend (sesión del usuario).
+    # Credenciales OAuth desde el estado del grafo (request-scoped, REQ-PUBLISH-01):
+    # vienen del endpoint /graph/run → frontend (sesión del usuario). Nunca se
+    # persisten en el servidor.
     user_id = state.get("ig_user_id")
     token = state.get("ig_access_token")
     if platform == "tiktok":
@@ -22,18 +56,39 @@ def node_publish(state: Dict[str, Any]) -> Dict[str, Any]:
     elif platform == "youtube_shorts":
         token = state.get("youtube_access_token")
 
-    logger.info(f"[{tenant_id}] Ejecutando nodo 'publish' en plataforma '{platform}' para video '{edited_uri}'")
+    if not user_id or not token:
+        raise ValueError(
+            f"[{tenant_id}] Fallo de Seguridad: Token o User ID de Instagram "
+            "ausente. No se permite fallback global para evitar fugas entre tenants."
+        )
 
-    publisher = PublisherFactory.get_publisher(platform=platform)
-    publish_result = publisher.publish_reel(
-        tenant_id=tenant_id,
-        video_url=edited_uri,
-        caption=caption,
-        user_id=user_id,
-        token=token,
-    )
+    payload = {
+        "tenant_id": tenant_id,
+        "video_url": edited_uri,
+        "caption": caption,
+        "platform": platform,
+        "instagram_user_id": user_id,
+        "access_token": token,
+    }
 
-    post_id = publish_result.get("published_post_id", f"post_{tenant_id[:8]}")
+    try:
+        async with AsyncClient(timeout=_PUBLISH_TIMEOUT) as client:
+            resp = await client.post(f"{PUBLISHER_URL}/publish", json=payload)
+            resp.raise_for_status()
+            result = resp.json()
+    except httpx.HTTPError as exc:
+        raise RuntimeError(
+            f"[{tenant_id}] Publisher no disponible o falló ({PUBLISHER_URL}): {exc}"
+        ) from exc
+
+    post_id = result.get("published_post_id") if isinstance(result, dict) else None
+    if not post_id:
+        raise RuntimeError(
+            f"[{tenant_id}] Publisher devolvió respuesta sin published_post_id: "
+            "no se inventa un id."
+        )
+
+    logger.info(f"[{tenant_id}] Video publicado en '{platform}' con Post ID '{post_id}'")
 
     logs = state.get("logs", [])
     logs.append(f"[publish] Video publicado en {platform.capitalize()} con Post ID '{post_id}'")
@@ -42,4 +97,3 @@ def node_publish(state: Dict[str, Any]) -> Dict[str, Any]:
         "published_post_id": post_id,
         "logs": logs,
     }
-
