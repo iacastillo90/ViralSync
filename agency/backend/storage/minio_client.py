@@ -36,9 +36,9 @@ class MinIOStorageClient:
         tenant_id: str,
         product_name: Optional[str] = None,
         classification: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    ) -> str:
         """
-        Sube la foto del producto a MinIO y retorna los metadatos y URL del objeto.
+        Sube la foto del producto a MinIO y retorna la URL pública del objeto.
         """
         safe_filename = filename.replace(" ", "_")
         media_id = str(uuid.uuid4())
@@ -60,7 +60,7 @@ class MinIOStorageClient:
             "classification": classification or {"business_type": "PRODUCTO_FISICO", "visual_mode": "IMAGE_TO_VIDEO"},
         }
         _MEDIA_REGISTRY.insert(0, item)
-        return item
+        return public_url
 
     def list_tenant_media(self, tenant_id: str) -> List[Dict[str, Any]]:
         """Devuelve la lista de recursos multimedia (imágenes y videos) pertenecientes a un tenant."""
@@ -94,6 +94,7 @@ class MinIOStorageClient:
                     "classification": {"business_type": "PRODUCTO_FISICO", "visual_mode": "IMAGE_TO_VIDEO"},
                 },
             ]
+            _MEDIA_REGISTRY.extend(demo_items)
             return demo_items
         return tenant_items
 

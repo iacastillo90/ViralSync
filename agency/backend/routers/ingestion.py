@@ -14,7 +14,11 @@ from fastapi import APIRouter, File, UploadFile, Form, status, Depends, HTTPExce
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from backend.storage.minio_client import save_product_photo_to_minio
+from backend.storage.minio_client import (
+    save_product_photo_to_minio,
+    get_tenant_media_list,
+    delete_tenant_media_item,
+)
 from agents.criterion.niche_classifier import classify_business_type
 from backend.sse_manager import sse_manager
 from backend.db.session import get_async_db
