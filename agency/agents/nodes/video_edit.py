@@ -2,19 +2,22 @@
 video_edit.py
 
 Nodo de Edición de Video de LangGraph.
-Solicita o dispara la tarea asíncrona de post-producción en Celery.
+Solicita o dispara la tarea asíncrona de post-producción en Celery y persiste la
+fila `videos` vía DAO (design D3): `insert_video` escribe la fila con FK al
+guion, capturando las URIs crudo/editado y `publish_approval_status='pending'`
+(REQ-PERSIST-02).
 """
 
-import os
 import logging
 from typing import Dict, Any
 from agents.crews.video_prompt_crew import run_video_prompt_crew
 from workers.video_edit_task import trigger_video_render
+from backend.db.daos import insert_video
 
 logger = logging.getLogger(__name__)
 
 
-def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
+async def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
     """Nodo que genera el storyboard de prompts visuales y efectúa el renderizado real del video."""
     tenant_id = state.get("tenant_id", "default_tenant")
     script = state.get("script", {})
@@ -44,6 +47,10 @@ def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
 
     raw_uri = state.get("raw_video_uri", f"s3://viralsync-media-dev/{tenant_id}/raw_input.mp4")
 
+    # 3. Persistencia real (PERSIST-02): fila `videos` FK al guion. Un fallo de
+    # DB se propaga (PERSIST-02-2), nunca un éxito state-only.
+    await insert_video(tenant_id, script.get("id"), raw_uri, edited_uri)
+
     logs = state.get("logs", [])
     logs.append(f"[video_edit] Storyboard generado con {len(storyboard)} escenas cinematográficas.")
     logs.append(f"[video_edit] Video procesado exitosamente: '{edited_uri}'")
@@ -54,4 +61,3 @@ def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
         "edited_video_uri": edited_uri,
         "logs": logs,
     }
-
