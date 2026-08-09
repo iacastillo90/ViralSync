@@ -238,3 +238,65 @@ async def test_create_tenant_no_jwt_required(init_test_db):
             # Sin header de Authorization
         )
     assert response.status_code == 201
+
+
+@pytest.mark.anyio
+async def test_list_tenants_returns_only_safe_public_fields(init_test_db, db_session):
+    """GET /api/v1/tenants list dev NO expone campos sensibles por tenant (R1-002)."""
+    public_a = "cafe0001-0000-4000-8000-000000000001"
+    public_b = "cafe0001-0000-4000-8000-000000000002"
+    db_session.add(Tenant(id=public_a, name="Publico A", niche="SaaS"))
+    db_session.add(Tenant(id=public_b, name="Publico B", niche="Gyms"))
+    await db_session.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get("/api/v1/tenants")
+    assert response.status_code == 200
+    body = response.json()
+    assert isinstance(body, list)
+    # La shared-DB de la sesión pytest acumula tenants de otros tests: solo
+    # verificamos que NUESTROS tenants estén presentes y que NINGÚN item
+    # exponga campos internos (independiente del conteo total).
+    ids = {item["id"] for item in body}
+    assert public_a in ids and public_b in ids
+    for item in body:
+        assert set(item.keys()) == {"id", "name", "niche"}, (
+            f"El listado de tenants NO debe exponer campos internos, recibió keys={set(item.keys())}"
+        )
+
+
+@pytest.mark.anyio
+async def test_get_tenant_detail_requires_own_jwt(init_test_db):
+    """GET /api/v1/tenants/{id} exige aislamiento Anti-IDOR (R1-002): JWT del mismo tenant."""
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+
+        # Crear tenant vía flujo real (registro público) para tener un UUID/DB válida.
+        created = await ac.post(
+            "/api/v1/tenants",
+            json={"name": "Detail Tenant", "niche": "Fitness", "monthly_llm_budget_usd": 30.0},
+        )
+        assert created.status_code == 201
+        tenant_id = created.json()["id"]
+
+        # JWT del MISMO tenant -> 200 y detalle visible
+        own = await ac.get(
+            f"/api/v1/tenants/{tenant_id}",
+            headers=_auth_header(tenant_id),
+        )
+        assert own.status_code == 200, f"JWT propio debe ver el detalle, recibió {own.status_code}"
+        detail = own.json()
+        assert detail["id"] == tenant_id
+        assert detail["name"] == "Detail Tenant"
+        assert "litellm_virtual_key" not in detail
+
+        # JWT de OTRO tenant -> 403 (aislamiento Anti-IDOR en detalle)
+        intruder = await ac.get(
+            f"/api/v1/tenants/{tenant_id}",
+            headers=_auth_header("tenant-intruso"),
+        )
+        assert intruder.status_code == 403, (
+            f"JWT de otro tenant NO puede ver el detalle, recibió {intruder.status_code}"
+        )

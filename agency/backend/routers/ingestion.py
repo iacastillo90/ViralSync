@@ -9,7 +9,7 @@ Router de Ingesta dividido en dos APIRouter:
 """
 
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, File, UploadFile, Form, status, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +19,7 @@ from agents.criterion.niche_classifier import classify_business_type
 from backend.sse_manager import sse_manager
 from backend.db.session import get_async_db
 from backend.db.models import Tenant
+from backend.security.auth import verify_tenant_access
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,16 @@ tenant_admin_router = APIRouter(prefix="/api/v1/tenants", tags=["Tenant Admin"])
 @tenant_admin_router.get("", status_code=status.HTTP_200_OK)
 async def list_tenants(db: AsyncSession = Depends(get_async_db)):
     """
-    Retorna la lista completa de tenants registrados en el sistema.
+    Returns the list of registered tenants.
+
+    Listing policy (explicit for onboarding, documented):
+    - Dev: public onboarding list, so the frontend boot flow (GET /tenants at
+      boot) can render the tenant picker. NO sensitive per-tenant fields are
+      exposed here: only the minimal public onboarding shape (id, name, niche).
+    - Prod: the TenantContextMiddleware already requires a valid JWT for these
+      paths, so only an authenticated caller can list. Sensitive internal
+      fields (monthly_llm_budget_usd, litellm_virtual_key, id/Graph secrets)
+      must NEVER be aggregated back to the caller regardless of auth state.
     """
     result = await db.execute(select(Tenant))
     tenants = result.scalars().all()
@@ -47,17 +57,26 @@ async def list_tenants(db: AsyncSession = Depends(get_async_db)):
             "id": t.id,
             "name": t.name,
             "niche": t.niche,
-            "monthly_llm_budget_usd": t.monthly_llm_budget_usd,
-            "created_at": t.created_at.isoformat() if t.created_at else None,
         }
         for t in tenants
     ]
 
 
 @tenant_admin_router.get("/{tenant_id}", status_code=status.HTTP_200_OK)
-async def get_tenant(tenant_id: str, db: AsyncSession = Depends(get_async_db)):
+async def get_tenant(
+    tenant_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: Dict[str, Any] = Depends(verify_tenant_access),
+):
     """
-    Retorna los detalles de un tenant específico.
+    Returns the details of a specific tenant.
+
+    Tenant isolation (Anti-IDOR, OWASP A01): only a valid JWT whose tenant_id
+    matches the requested tenant_id may read this tenant's profile. Reuses the
+    same verify_tenant_access guard as every other tenant-scoped route:
+    - mismatch JWT vs URL tenant -> 403
+    - prod without a valid JWT -> 401 (fail-closed, verified by the middleware)
+    - dev without JWT keeps the documented dev fallback (onboarding) -> 200
     """
     result = await db.execute(select(Tenant).where(Tenant.id == tenant_id))
     t = result.scalars().first()
