@@ -125,6 +125,45 @@ class Lead(Base):
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class Product(Base):
+    # Alineada con migrations/004_add_products.sql (REQ-PERSIST-01): la migración
+    # SQL es la fuente de verdad — el ORM declara EXACTAMENTE las columnas del DDL
+    # 004 (id, tenant_id, name, description, product_image_url, created_at).
+    # create_all sólo crea la tabla si falta; sobre la tabla ya existente el ORM
+    # mapea exactamente las columnas que INSERT/UPDATE tocan.
+    __tablename__ = "products"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    product_image_url: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
+class Video(Base):
+    # Alineada con migrations/001_init_schema.sql (124-146): la migración SQL es
+    # la fuente de verdad. Necesario como tipo de retorno de insert_video
+    # (daos.py, design D3) — no existía modelo ORM para la tabla videos.
+    # create_all crea la tabla si falta; sobre la ya existente mapea exactamente
+    # las columnas que INSERT/UPDATE tocan.
+    __tablename__ = "videos"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    script_id: Mapped[str] = mapped_column(ForeignKey("scripts.id"), nullable=False)
+    raw_video_uri: Mapped[Optional[str]] = mapped_column(Text)
+    edited_video_uri: Mapped[Optional[str]] = mapped_column(Text)
+    publish_approval_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    instagram_post_id: Mapped[Optional[str]] = mapped_column(Text)
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    views_72h: Mapped[Optional[int]] = mapped_column(Integer)
+    followers_at_publish: Mapped[Optional[int]] = mapped_column(Integer)
+    classification: Mapped[Optional[str]] = mapped_column(String(32))
+    metrics_captured_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
 class VideoMetric(Base):
     """Métricas de rendimiento de video por tenant en ventana de 72 horas.
 
