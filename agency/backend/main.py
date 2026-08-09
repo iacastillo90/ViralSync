@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from backend.security.hmac_validator import verify_meta_hmac_signature
-from backend.security.auth import TenantContextMiddleware, verify_tenant_access
+from backend.security.auth import AGENCY_ENV, TenantContextMiddleware, verify_tenant_access
 from backend.sse_manager import sse_manager
 from backend.webhooks.instagram_inbound import process_instagram_webhook_payload
 
@@ -84,6 +84,20 @@ app.include_router(brain_router, dependencies=_TENANT_GUARD)
 
 INSTAGRAM_APP_SECRET = os.getenv("INSTAGRAM_APP_SECRET", "secreto_meta_app_dev")
 INSTAGRAM_VERIFY_TOKEN = os.getenv("INSTAGRAM_WEBHOOK_VERIFY_TOKEN", "token_verificacion_meta_dev")
+
+# Security fail-fast guard (mirrors the JWT_SECRET_KEY guard in auth.py:27-28):
+# in staging/prod a known default (or a missing env var that falls back to the
+# default) for these Meta credentials must NOT be allowed to boot, otherwise an
+# attacker can forge X-Hub-Signature-256 webhooks or pass hub.verify_token.
+# Dev keeps the documented defaults so local onboarding keeps working.
+if AGENCY_ENV in ["prod", "production", "staging"] and (
+    INSTAGRAM_APP_SECRET == "secreto_meta_app_dev"
+    or INSTAGRAM_VERIFY_TOKEN == "token_verificacion_meta_dev"
+):
+    raise ValueError(
+        "CRÍTICO DE SEGURIDAD: INSTAGRAM_APP_SECRET / INSTAGRAM_WEBHOOK_VERIFY_TOKEN "
+        "por defecto están prohibidos en entornos staging/prod. Configúrelos antes de arrancar."
+    )
 
 
 # --------------------------------------------------------------------- #
