@@ -6,14 +6,13 @@ Crew de Ideación de ViralSync (CrewAI):
 2. Diseñador RUM: Evalúa las variables RUM y aplica el gate del Filtro 5/50.
 """
 
-import os
 import json
 import logging
 from typing import List, Dict, Any
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from agents.mcp_servers.searxng_mcp_server import searxng_search_sanitized
 from agents.criterion.rum_calculator import calculate_rum_score
 from agents.criterion.filter_5_50 import passes_5_50_filter
+import agents.llm as llm
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +31,8 @@ def run_ideation_crew(niche: str, market_map: Dict[str, Any]) -> List[Dict[str, 
 
     candidate_ideas = []
 
-    # 2. Generación dinámica asistida por LLM (LiteLLM)
+    # 2. Generación dinámica asistida por LLM (router compartido, proxy-first)
     try:
-        import litellm
-        model = os.getenv("LITELLM_DEFAULT_MODEL", "gemini/gemini-1.5-flash")
-        
         system_prompt = (
             "Eres un Investigador de Contenido Viral experto en Instagram Reels y TikTok. "
             "Tu objetivo es proponer 5 ideas de alto impacto viral estructuradas en formato JSON. "
@@ -64,32 +60,22 @@ def run_ideation_crew(niche: str, market_map: Dict[str, Any]) -> List[Dict[str, 
             "]"
         )
 
-        @retry(
-            stop=stop_after_attempt(3),
-            wait=wait_exponential(multiplier=1, min=2, max=10),
-            reraise=True
-        )
-        def _call_litellm():
-            return litellm.completion(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.7,
-                max_tokens=1000,
-            )
+        content = llm.complete(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.7,
+            max_tokens=1000,
+        ).strip()
 
-        res = _call_litellm()
-
-        content = res.choices[0].message.content.strip()
         if content.startswith("```"):
             content = content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         parsed = json.loads(content)
         if isinstance(parsed, list) and len(parsed) > 0:
             candidate_ideas = parsed
     except Exception as exc:
-        logger.warning(f"LiteLLM no disponible o error en respuesta ({exc}). Usando fallback dinámico.")
+        logger.warning(f"Router LLM no disponible o error en respuesta ({exc}). Usando fallback dinámico.")
 
     # Fallback dinámico si no se obtuvieron ideas por LLM
     if not candidate_ideas:

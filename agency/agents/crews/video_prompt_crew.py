@@ -8,10 +8,9 @@ Text-to-Video (Fal.ai Wan2.1, Google Veo, CogVideoX, LTX-Video) en formato verti
 """
 
 import logging
-import os
 import json
 from typing import Dict, Any, List
-from tenacity import retry, stop_after_attempt, wait_exponential
+import agents.llm as llm
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +38,8 @@ def run_video_prompt_crew(
 
     storyboard = []
 
-    # Generación dinámica de prompts cinematográficos vía LiteLLM
+    # Generación dinámica de prompts cinematográficos vía router LLM compartido
     try:
-        import litellm
-        model = os.getenv("LITELLM_DEFAULT_MODEL", "gemini/gemini-1.5-flash")
-
         system_prompt = (
             "You are an expert AI Video Prompt Engineer and Director of Photography for vertical 9:16 short-form content. "
             "Generate highly detailed, cinematic Text-to-Video / Image-to-Video visual prompts in English for 4 sequential scenes. "
@@ -73,25 +69,15 @@ def run_video_prompt_crew(
             "]"
         )
 
-        @retry(
-            stop=stop_after_attempt(3),
-            wait=wait_exponential(multiplier=1, min=2, max=10),
-            reraise=True
-        )
-        def _call_litellm():
-            return litellm.completion(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.7,
-                max_tokens=1500,
-            )
+        content = llm.complete(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.7,
+            max_tokens=1500,
+        ).strip()
 
-        res = _call_litellm()
-
-        content = res.choices[0].message.content.strip()
         if content.startswith("```"):
             content = content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         parsed = json.loads(content)
@@ -100,7 +86,7 @@ def run_video_prompt_crew(
                 sc["image_url"] = product_image_url if product_image_url else None
             storyboard = parsed
     except Exception as exc:
-        logger.warning(f"LiteLLM no disponible para video prompting ({exc}). Usando fallback cinematográfico.")
+        logger.warning(f"Router LLM no disponible para video prompting ({exc}). Usando fallback cinematográfico.")
 
     if not storyboard:
         # Storyboard estructurado de respaldo por marcas de tiempo

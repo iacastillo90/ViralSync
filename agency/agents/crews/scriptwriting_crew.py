@@ -6,13 +6,12 @@ Crew de Guionismo de ViralSync (CrewAI):
 2. Guionista Viral: Redacta guiones estructurados en 4 bloques con palabra clave única de CTA.
 """
 
-import os
 import json
 import logging
 from typing import Dict, Any
-from tenacity import retry, stop_after_attempt, wait_exponential
 from agents.mcp_servers.rag_mcp_server import query_rag_knowledge
 from agents.criterion.ppp_validator import validate_ppp_structure
+import agents.llm as llm
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +40,8 @@ def run_scriptwriting_crew(
 
     script = {}
 
-    # 3. Generación asistida por LLM (LiteLLM)
+    # 3. Generación asistida por LLM (router compartido, proxy-first)
     try:
-        import litellm
-        model = os.getenv("LITELLM_DEFAULT_MODEL", "gemini/gemini-1.5-flash")
-
         system_prompt = (
             "Eres un Guionista Viral de elite para Instagram Reels y TikTok. "
             "Redacta un guion hiper-efectivo estructurado en exactamente 4 bloques cronológicos y una palabra clave de CTA. "
@@ -67,32 +63,22 @@ def run_scriptwriting_crew(
             "}"
         )
 
-        @retry(
-            stop=stop_after_attempt(3),
-            wait=wait_exponential(multiplier=1, min=2, max=10),
-            reraise=True
-        )
-        def _call_litellm():
-            return litellm.completion(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.7,
-                max_tokens=1500,
-            )
+        content = llm.complete(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.7,
+            max_tokens=1500,
+        ).strip()
 
-        res = _call_litellm()
-
-        content = res.choices[0].message.content.strip()
         if content.startswith("```"):
             content = content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         parsed = json.loads(content)
         if isinstance(parsed, dict) and "gancho_0_5s" in parsed:
             script = parsed
     except Exception as exc:
-        logger.warning(f"LiteLLM no disponible para guionismo ({exc}). Usando fallback dinámico.")
+        logger.warning(f"Router LLM no disponible para guionismo ({exc}). Usando fallback dinámico.")
 
     # Fallback dinámico si el LLM no está disponible
     if not script:

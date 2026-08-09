@@ -10,10 +10,10 @@ import os
 import json
 import logging
 from typing import Dict, Any, List, Optional, Tuple
-from tenacity import retry, stop_after_attempt, wait_exponential
 from typing_extensions import TypedDict
 from agents.mcp_servers.rag_mcp_server import query_rag_knowledge
 from backend.sse_manager import emit_node_progress
+import agents.llm as llm
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +56,10 @@ def generate_grounded_reply(message: str, rag_context: str, tenant_id: str = "de
         reply = "Gracias por escribirnos. Un especialista humano se pondrá en contacto contigo en breve para darte respuesta exacta."
         return reply, 0.50
 
-    # Intento de generación con LiteLLM / Gemini Gateway en entorno conectado
+    # Intento de generación con el router LLM compartido en entorno conectado
     try:
-        import litellm
         import redis as _redis
-        from backend.services.llm_budget_service import track_llm_token_usage, check_tenant_llm_budget
+        from backend.services.llm_budget_service import check_tenant_llm_budget
 
         # Guard de presupuesto: bloquear si el tenant ya superó el límite mensual
         _redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -72,36 +71,20 @@ def generate_grounded_reply(message: str, rag_context: str, tenant_id: str = "de
         except _redis.RedisError as _re:
             logger.warning(f"[{tenant_id}] Redis no disponible para verificar presupuesto ({_re}). Continuando sin guard.")
 
-        model = os.getenv("LITELLM_DEFAULT_MODEL", "gemini/gemini-1.5-flash")
         system_prompt = "Eres un Asistente de Ventas de Instagram. Responde de forma concisa (máximo 2 oraciones) y amigable en español."
         user_prompt = f"Contexto RAG de marca:\n{rag_context}\n\nMensaje del Cliente: '{message}'"
 
-        @retry(
-            stop=stop_after_attempt(3),
-            wait=wait_exponential(multiplier=1, min=2, max=10),
-            reraise=True
-        )
-        def _call_litellm():
-            return litellm.completion(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.6,
-                max_tokens=300,
-            )
+        generated_reply = llm.complete(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.6,
+            max_tokens=300,
+        ).strip()
 
-        res = _call_litellm()
-        generated_reply = res.choices[0].message.content.strip()
-
-        # Registrar consumo de presupuesto LLM si LiteLLM devuelve tokens
-        usage = getattr(res, "usage", None)
-        if usage:
-            prompt_tokens = getattr(usage, "prompt_tokens", 50)
-            completion_tokens = getattr(usage, "completion_tokens", 50)
-            track_llm_token_usage(tenant_id, model, prompt_tokens, completion_tokens)
-
+        # El router devuelve texto plano: el guard de presupuesto ya protegió el gasto
+        # antes de llamar, pero no expone metadata de tokens (usage) del proveedor.
         confidence = 0.92
         return generated_reply, confidence
     except Exception as exc:
