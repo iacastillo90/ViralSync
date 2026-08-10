@@ -318,12 +318,14 @@ async def test_node_publish_persists_write_back_after_2xx(fake_http, monkeypatch
     )
 
     calls = []
+    async def _fake_update_video_publish(tenant_id, video_id, post_id, published_at):
+        calls.append((tenant_id, video_id, post_id, published_at))
+        return True
+
     monkeypatch.setattr(
         publish_module,
         "update_video_publish",
-        lambda tenant_id, video_id, post_id, published_at: (
-            calls.append((tenant_id, video_id, post_id, published_at)) or True
-        ),
+        _fake_update_video_publish,
         raising=False,
     )
     from agents.nodes.publish import node_publish
@@ -365,10 +367,14 @@ async def test_node_publish_skips_write_back_without_video_id(fake_http, monkeyp
     )
 
     calls = []
+    async def _fake_update_video_publish(*args, **kwargs):
+        calls.append(args)
+        return True
+
     monkeypatch.setattr(
         publish_module,
         "update_video_publish",
-        lambda *args, **kwargs: calls.append(args) or True,
+        _fake_update_video_publish,
         raising=False,
     )
     from agents.nodes.publish import node_publish
@@ -401,10 +407,14 @@ async def test_node_publish_failure_never_writes_back(fake_http, monkeypatch):
     fake_http["raise_exc"] = _ConnRefused()
 
     calls = []
+    async def _fake_update_video_publish(*args, **kwargs):
+        calls.append(args)
+        return True
+
     monkeypatch.setattr(
         publish_module,
         "update_video_publish",
-        lambda *args, **kwargs: calls.append(args) or True,
+        _fake_update_video_publish,
         raising=False,
     )
     from agents.nodes.publish import node_publish

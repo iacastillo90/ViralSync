@@ -25,6 +25,7 @@ through the fixture session, proving the shared in-memory DB contract.
 """
 
 import pytest
+from datetime import datetime, timezone
 from sqlalchemy import select
 
 from backend.db.models import Idea, Product, Script, Tenant, Video
@@ -33,6 +34,7 @@ from backend.db.daos import (
     insert_script,
     insert_video,
     update_idea_approval,
+    update_video_publish,
     upsert_product,
 )
 
@@ -275,3 +277,63 @@ async def test_daos_update_idea_approval_other_tenant_returns_false(db_session, 
         await db_session.execute(select(Idea).where(Idea.id == idea_row.id))
     ).scalars().all()
     assert rows[0].approval_status == "pending"  # sin efecto colateral
+
+
+@pytest.mark.anyio
+async def test_daos_update_video_publish_changes_row(db_session, dao_tenants):
+    """REQ-PTT-01 (D-F) unit: `update_video_publish` es UN UPDATE real — setea
+    `instagram_post_id` + `published_at` y NO toca `publish_approval_status`
+    (CHECK-safe: la DDL 001 nunca ve 'published')."""
+    idea_row = (await insert_ideas(DAO_TENANT_ID, [IDEA_PAYLOAD]))[0]
+    script_row = await insert_script(DAO_TENANT_ID, idea_row.id, SCRIPT_PAYLOAD)
+    video_row = await insert_video(
+        DAO_TENANT_ID,
+        script_row.id,
+        raw_video_uri=f"s3://viralsync-media-dev/{DAO_TENANT_ID}/raw_input.mp4",
+        edited_video_uri=f"http://static.viralsync/{DAO_TENANT_ID}/final.mp4",
+    )
+
+    published_at = datetime.now(timezone.utc)
+    ok = await update_video_publish(
+        DAO_TENANT_ID, video_row.id, "ig_reel_dao_write_back", published_at
+    )
+    assert ok is True
+
+    rows = (
+        await db_session.execute(
+            select(Video)
+            .where(Video.id == video_row.id)
+            .execution_options(populate_existing=True)
+        )
+    ).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].instagram_post_id == "ig_reel_dao_write_back"
+    assert rows[0].published_at is not None
+    assert rows[0].publish_approval_status == "pending"  # el write-back no la toca
+
+
+@pytest.mark.anyio
+async def test_daos_update_video_publish_non_uuid_returns_false(db_session, dao_tenants):
+    """REQ-PTT-01: video_id no-UUID → no-op False, sin error (mismo patrón _is_uuid)."""
+    ok = await update_video_publish(
+        DAO_TENANT_ID, "not-a-video-id", "ig_reel_x", datetime.now(timezone.utc)
+    )
+    assert ok is False
+
+
+@pytest.mark.anyio
+async def test_daos_update_video_publish_other_tenant_returns_false(db_session, dao_tenants):
+    """REQ-PTT-01: `update_video_publish` está scoped por tenant — id de otro tenant → False."""
+    idea_row = (await insert_ideas(DAO_TENANT_ID, [IDEA_PAYLOAD]))[0]
+    script_row = await insert_script(DAO_TENANT_ID, idea_row.id, SCRIPT_PAYLOAD)
+    video_row = await insert_video(
+        DAO_TENANT_ID,
+        script_row.id,
+        raw_video_uri=f"s3://viralsync-media-dev/{DAO_TENANT_ID}/raw_input.mp4",
+        edited_video_uri=f"http://static.viralsync/{DAO_TENANT_ID}/final.mp4",
+    )
+
+    ok = await update_video_publish(
+        DAO_TENANT_2_ID, video_row.id, "ig_reel_x", datetime.now(timezone.utc)
+    )
+    assert ok is False  # la fila pertenece a DAO_TENANT_ID, no a B

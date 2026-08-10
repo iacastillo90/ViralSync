@@ -14,6 +14,7 @@ Los dicts de los crews se mapean por whitelist a las columnas reales del DDL
 
 import logging
 import uuid
+from datetime import datetime
 from typing import Any, Callable, Dict, List
 
 from sqlalchemy import select, update
@@ -162,6 +163,33 @@ async def update_idea_approval(tenant_id: str, idea_id: str, status: str) -> boo
             update(Idea)
             .where(Idea.id == idea_id, Idea.tenant_id == tenant_id)
             .values(approval_status=status)
+        )
+        return result.rowcount > 0
+
+    return await _run_with_commit(_work)
+
+
+async def update_video_publish(
+    tenant_id: str,
+    video_id: str,
+    post_id: str,
+    published_at: datetime,
+) -> bool:
+    """Write-back del publish real sobre la fila `videos` (REQ-PTT-01 / D-F).
+
+    Un único UPDATE atómico de `instagram_post_id` + `published_at` WHERE
+    (id, tenant_id) — nunca un write parcial. `publish_approval_status` queda
+    intacto (CHECK-safe: la DDL 001 sólo permite pending|approved|rejected,
+    jamás 'published'). Un video_id no-UUID es un no-op `False`, nunca un error.
+    """
+    if not _is_uuid(video_id):
+        return False
+
+    async def _work(session: AsyncSession) -> bool:
+        result = await session.execute(
+            update(Video)
+            .where(Video.id == video_id, Video.tenant_id == tenant_id)
+            .values(instagram_post_id=post_id, published_at=published_at)
         )
         return result.rowcount > 0
 

@@ -58,8 +58,10 @@ async def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
     raw_uri = state.get("raw_video_uri", f"s3://viralsync-media-dev/{tenant_id}/raw_input.mp4")
 
     # 3. Persistencia real (PERSIST-02): fila `videos` FK al guion. Un fallo de
-    # DB se propaga (PERSIST-02-2), nunca un éxito state-only.
-    await insert_video(tenant_id, script.get("id"), raw_uri, edited_uri)
+    # DB se propaga (PERSIST-02-2), nunca un éxito state-only. La fila devuelta
+    # por el DAO ya NO se descarta: su `id` viaja en state como `video_id` para
+    # que node_publish haga el write-back (design D-A, REQ-PTT-01).
+    row = await insert_video(tenant_id, script.get("id"), raw_uri, edited_uri)
 
     logs = state.get("logs", [])
     logs.append(f"[video_edit] Storyboard generado con {len(storyboard)} escenas cinematográficas.")
@@ -69,5 +71,6 @@ async def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
         "video_storyboard": storyboard,
         "raw_video_uri": raw_uri,
         "edited_video_uri": edited_uri,
+        "video_id": row.id,
         "logs": logs,
     }

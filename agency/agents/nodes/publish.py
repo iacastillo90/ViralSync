@@ -18,10 +18,13 @@ Comportamiento honesto (REQ-API-06 / PUBLISH-02-3):
 
 import os
 import logging
+from datetime import datetime, timezone
 from typing import Dict, Any
 
 import httpx
 from httpx import AsyncClient
+
+from backend.db.daos import update_video_publish
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +111,17 @@ async def node_publish(state: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     logger.info(f"[{tenant_id}] Video publicado en '{platform}' con Post ID '{post_id}'")
+
+    # REQ-PTT-01 / D-F: write-back atómico. Tras POST 2xx + post_id REAL, la fila
+    # `videos` (identificada por `video_id` en state) guarda dónde se publicó
+    # (instagram_post_id + published_at) en UN solo UPDATE. Sin `video_id` en
+    # state (replay/resume) → skip sin crash y sin fabricar un id (PTT-01-3); si
+    # el publisher raise, nunca llegamos acá → no write parcial (PTT-01-2).
+    video_id = state.get("video_id")
+    if video_id:
+        await update_video_publish(
+            tenant_id, video_id, post_id, datetime.now(timezone.utc)
+        )
 
     logs = state.get("logs", [])
     logs.append(f"[publish] Video publicado en {platform.capitalize()} con Post ID '{post_id}'")

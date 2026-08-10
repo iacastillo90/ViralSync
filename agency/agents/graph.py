@@ -32,6 +32,7 @@ class AgencyState(TypedDict, total=False):
     video_storyboard: List[Dict[str, Any]]
     raw_video_uri: str
     edited_video_uri: str
+    video_id: str
     publish_approved: bool
     published_post_id: str
     logs: List[str]
