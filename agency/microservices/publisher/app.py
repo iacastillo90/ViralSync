@@ -9,7 +9,7 @@ import logging
 from typing import Optional
 from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
-from adapters import PublisherFactory
+from adapters import PublisherFactory, publish_reel_once
 
 # Configuración de Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -29,6 +29,10 @@ class PublishRequest(BaseModel):
     platform: Optional[str] = Field(default="instagram", example="instagram")
     instagram_user_id: Optional[str] = Field(default=None)
     access_token: Optional[str] = Field(default=None)
+    idempotency_key: Optional[str] = Field(
+        default=None,
+        description="Stable key so retries of the same publish are deduped (RESILIENCE-001).",
+    )
 
 
 class PublishResponse(BaseModel):
@@ -47,13 +51,21 @@ async def publish_video_endpoint(req: PublishRequest):
     publisher = PublisherFactory.get_publisher(req.platform)
 
     try:
-        result = publisher.publish_reel(
+        result = publish_reel_once(
+            publisher,
+            idempotency_key=req.idempotency_key,
+            platform=req.platform or "instagram",
             tenant_id=req.tenant_id,
             video_url=req.video_url,
             caption=req.caption,
             user_id=req.instagram_user_id,
             token=req.access_token,
         )
+        if result.get("deduped"):
+            logger.info(
+                f"[{req.tenant_id}] Idempotency key {req.idempotency_key[:12]}... "
+                "replayed: returning existing post without republishing."
+            )
         return PublishResponse(
             status=result["status"],
             published_post_id=result["published_post_id"],

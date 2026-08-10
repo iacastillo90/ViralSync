@@ -80,7 +80,12 @@ class FakeAsyncClient:
 @pytest.fixture
 def fake_http(monkeypatch):
     """Instala FakeAsyncClient en el módulo del nodo y expone el estado del fake."""
-    state = {"instance": None, "raise_exc": None, "response": None}
+    state = {
+        "instance": None,
+        "raise_exc": None,
+        "response": None,
+        "clients": [],
+    }
 
     def _factory(*, timeout=None):
         client = FakeAsyncClient(timeout=timeout)
@@ -88,6 +93,7 @@ def fake_http(monkeypatch):
         client._raise_exc = state["raise_exc"]
         state["instance"] = client
         state["client"] = client
+        state["clients"].append(client)
         return client
 
     monkeypatch.setattr(publish_module, "AsyncClient", _factory)
@@ -244,6 +250,39 @@ async def test_node_publish_response_without_id_never_fabricates(fake_http, monk
                 "logs": [],
             }
         )
+
+
+@pytest.mark.anyio
+async def test_node_publish_sends_stable_idempotency_key(fake_http, monkeypatch):
+    """RESILIENCE-001: el payload lleva una idempotency_key estable — un retry del
+    MISMO publish manda la MISMA key (el micro puede dedupear y no duplicar)."""
+    monkeypatch.setattr(publish_module, "PUBLISHER_URL", "http://test-publisher:8002")
+    fake_http["response"] = FakeResponse(
+        201,
+        {
+            "status": "published",
+            "published_post_id": "ig_reel_real",
+            "tenant_id": "t-pub-07",
+            "platform": "instagram",
+        },
+    )
+    from agents.nodes.publish import node_publish
+
+    state = {
+        "tenant_id": "t-pub-07",
+        "edited_video_uri": "http://minio:9000/viralsync-media/t-pub-07/final.mp4",
+        "script": {"gancho_0_5s": "Hook", "cta_50_60s": "CTA"},
+        "ig_user_id": "17841400000000001",
+        "ig_access_token": "EAAXrealToken",
+        "logs": [],
+    }
+
+    await node_publish(dict(state))
+    await node_publish(dict(state))  # retry del mismo publish
+
+    keys = [calls[1]["idempotency_key"] for client in fake_http["clients"] for calls in client.calls]
+    assert len(keys) == 2
+    assert keys[0] == keys[1]  # estable: el micro puede dedupear el retry
 
 
 def test_node_publish_source_has_no_fabricated_defaults():

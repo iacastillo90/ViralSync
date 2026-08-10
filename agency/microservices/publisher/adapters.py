@@ -201,3 +201,66 @@ class PublisherFactory:
         elif platform_lower in ["youtube", "youtube_shorts", "shorts"]:
             return YouTubeShortsPublisher()
         return InstagramGraphPublisher()
+
+
+# RESILIENCE-001: in-process registry of idempotency keys already published.
+# A retry carrying the same key returns the existing post_id instead of
+# posting the video a second time. (Dev/prod single-instance scope; a shared
+# store would be needed for horizontal scaling.)
+_PUBLISHED_BY_KEY: Dict[str, str] = {}
+
+
+def already_published(key: str) -> Optional[str]:
+    """Return the post_id already published for ``key``, or ``None`` when unknown."""
+    return _PUBLISHED_BY_KEY.get(key)
+
+
+def record_published(key: str, post_id: str) -> None:
+    """Mark ``key`` as published with ``post_id`` so retries do not duplicate."""
+    _PUBLISHED_BY_KEY[key] = post_id
+
+
+def publish_reel_once(
+    publisher: BaseSocialPublisher,
+    *,
+    idempotency_key: Optional[str],
+    tenant_id: str,
+    video_url: str,
+    caption: str,
+    platform: str = "instagram",
+    user_id: Optional[str] = None,
+    token: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Publish exactly once per idempotency key (retry-safe).
+
+    If ``idempotency_key`` matches a previous publication, return the stored
+    post_id WITHOUT calling the adapter again; otherwise publish through the
+    adapter, persist the mapping, and return the fresh result.
+    """
+    if idempotency_key:
+        existing = _PUBLISHED_BY_KEY.get(idempotency_key)
+        if existing is not None:
+            logger.info(
+                f"[{tenant_id}] Publish retry for key {idempotency_key[:12]}... "
+                f"-> reusing post_id {existing}, no duplicate publication."
+            )
+            return {
+                "status": "published",
+                "published_post_id": existing,
+                "tenant_id": tenant_id,
+                "platform": platform,
+                "deduped": True,
+            }
+
+    result = publisher.publish_reel(
+        tenant_id=tenant_id,
+        video_url=video_url,
+        caption=caption,
+        user_id=user_id,
+        token=token,
+    )
+    post_id = result.get("published_post_id")
+    if idempotency_key and post_id:
+        _PUBLISHED_BY_KEY[idempotency_key] = post_id
+    result.setdefault("deduped", False)
+    return result

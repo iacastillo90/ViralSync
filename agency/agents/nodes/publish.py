@@ -28,8 +28,24 @@ logger = logging.getLogger(__name__)
 # Microservicio outbound de publicación (compose `video_publisher`, :8002).
 PUBLISHER_URL = os.getenv("PUBLISHER_URL", "http://localhost:8002")
 
-# Timeout acotado: el poll IG (12×5s) corre en el micro, no en el loop del backend.
-_PUBLISH_TIMEOUT = 15.0
+# RELIABILITY-002 fix: the publisher flow with real tokens runs the IG poll
+# (12x5s = up to ~60s) plus container/publish calls, so worst case is ~90s+.
+# The backend client timeout MUST cover that legitimate duration; 15s used to
+# abort healthy publishes and force frontend retries that duplicated posting.
+_PUBLISH_TIMEOUT = 150.0
+
+
+def _publish_idempotency_key(tenant_id: str, platform: str, edited_uri: str) -> str:
+    """Stable idempotency key for one logical publication (RESILIENCE-001).
+
+    Derived from tenant+platform+video identity so a backend retry or a client
+    double-submit of the SAME publish sends the same key and the publisher can
+    dedupe instead of posting the video twice.
+    """
+    import hashlib
+
+    raw = f"{tenant_id}|{platform}|{edited_uri}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 async def node_publish(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -69,6 +85,9 @@ async def node_publish(state: Dict[str, Any]) -> Dict[str, Any]:
         "platform": platform,
         "instagram_user_id": user_id,
         "access_token": token,
+        # RESILIENCE-001: idempotency key so a retry of the same publish does
+        # not create a duplicate post. Stable for (tenant, platform, video).
+        "idempotency_key": _publish_idempotency_key(tenant_id, platform, edited_uri),
     }
 
     try:
