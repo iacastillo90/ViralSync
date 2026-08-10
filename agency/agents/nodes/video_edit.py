@@ -40,6 +40,14 @@ async def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
         logger.error(f"[{tenant_id}] Fallo explícito en node_video_edit: {err_msg}")
         raise ValueError(f"Edición de video rechazada por calidad: {err_msg}")
 
+    if render_status == "failed":
+        # RELIABILITY-001 fix: a render failure must propagate honestly. The
+        # fabricated default_rendered_output.mp4 URL was removed from the worker,
+        # so this node never persists a lie as edited_video_uri.
+        err_msg = render_res.get("message", "El renderizado de video falló.")
+        logger.error(f"[{tenant_id}] Fallo honesto de renderizado en node_video_edit: {err_msg}")
+        raise RuntimeError(f"Fallo en renderizado de video para tenant '{tenant_id}': {err_msg}")
+
     edited_uri = render_res.get("video_url")
     if not edited_uri:
         logger.error(f"[{tenant_id}] No se obtuvo video_url del microservicio de renderizado.")

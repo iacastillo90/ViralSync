@@ -88,12 +88,17 @@ async def test_complete_viral_sync_lifecycle(db_session):
         assert "gancho_0_5s" in script
 
         # Step 5: Post-producción Asíncrona de Video (Celery Eager)
+        # RELIABILITY-001: sin microservicio de renderizado REAL en el entorno de
+        # test, el pipeline reporta un fallo HONESTO (status 'failed',
+        # edited_video_uri=None) — nunca una URL fabricada de video "exitoso".
         video_res = process_video_postproduction(
             tenant_id=tenant_id,
             raw_video_uri=f"s3://viralsync-media-dev/{tenant_id}/raw.mp4",
             script=script,
         )
-        assert video_res["status"] == "completed"
+        assert video_res["status"] == "failed"
+        assert video_res.get("edited_video_uri") is None
+        assert "default_rendered_output.mp4" not in str(video_res)
 
         # Step 6: Checkpoint Humano — Aprobar Publicación
         res_pub_app = await ac.post(

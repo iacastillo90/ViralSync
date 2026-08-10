@@ -40,6 +40,9 @@ def test_extract_keywords_from_script():
 
 
 def test_trigger_video_render_task_fallback():
+    """RELIABILITY-001: sin un render real disponible (json2video/local caídos),
+    trigger_video_render NUNCA fabrica una URL default — devuelve status 'failed'
+    con video_url vacía y un mensaje honesto."""
     good_script = {
         "gancho_0_5s": "3 errores masivos al escalar tu software SaaS en 2026.",
         "contexto_5_30s": "El problema principal es intentar abarcar todo sin foco ni automatización. Cuando simplificas tu arquitectura, la conversión aumenta.",
@@ -49,6 +52,8 @@ def test_trigger_video_render_task_fallback():
     }
     result = trigger_video_render.run(tenant_id="tenant-task-test", script=good_script)
 
-    assert result["status"] == "completed"
-    assert "video_url" in result
+    assert result["status"] == "failed"
+    assert result["video_url"] == ""  # nunca una URL fabricada
+    assert result["message"]
     assert result["tenant_id"] == "tenant-task-test"
+    assert "default_rendered_output.mp4" not in str(result)

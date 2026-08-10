@@ -9,13 +9,19 @@ from workers.metrics_loop_task import audit_72h_metrics
 
 
 def test_video_edit_task_eager_execution():
+    """RELIABILITY-001: sin un render real, la tarea devuelve un fallo HONESTO
+    (status 'failed', edited_video_uri=None) en lugar de fabricar una URL
+    default p.ej. http://localhost:9000/.../default_rendered_output.mp4."""
     res = process_video_postproduction(
         tenant_id="tenant-demo-001",
         raw_video_uri="s3://viralsync-media-dev/tenant-demo-001/raw_input.mp4",
         script={"keyword": "CONSULTA"},
     )
-    assert res["status"] == "completed"
-    assert "edited_video_uri" in res
+    assert res["status"] == "failed"
+    assert res.get("edited_video_uri") is None
+    assert res.get("error")
+    # Ninguna URL fabricada puede colarse como si fuera un render real
+    assert "default_rendered_output.mp4" not in str(res)
 
 
 def test_metrics_loop_task_verde():

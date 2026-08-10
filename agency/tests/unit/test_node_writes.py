@@ -54,6 +54,7 @@ T_IDS = {
     "product_yes": "dddd0005-1111-2222-3333-444444444444",
     "product_no": "dddd0006-1111-2222-3333-444444444444",
     "honest": "dddd0007-1111-2222-3333-444444444444",
+    "render_fail": "dddd0009-1111-2222-3333-444444444444",
     "get": "dddd0008-1111-2222-3333-444444444444",
 }
 
@@ -323,6 +324,46 @@ async def test_node_ideation_dao_failure_fails_honestly(db_session, node_tenants
         await db_session.execute(select(Idea).where(Idea.tenant_id == tenant_id))
     ).scalars().all()
     assert rows == []
+
+
+@pytest.mark.anyio
+async def test_node_video_edit_failed_render_propagates_honestly(db_session, node_tenants, monkeypatch):
+    """RELIABILITY-001: si trigger_video_render devuelve status 'failed' (sin URL
+    fabricada), node_video_edit propaga un RuntimeError y NO persiste ningún
+    edited_video_uri falso en la fila `videos`."""
+    from agents.nodes.video_edit import node_video_edit
+
+    tenant_id = T_IDS["render_fail"]
+    idea_row = (await insert_ideas(tenant_id, [IDEA_PAYLOAD]))[0]
+
+    monkeypatch.setattr(
+        "agents.nodes.video_edit.run_video_prompt_crew",
+        lambda script, idea, product_image_url="": list(STORYBOARD_PAYLOAD),
+    )
+    monkeypatch.setattr(
+        "agents.nodes.video_edit.trigger_video_render",
+        lambda tenant_id, script, idea: {
+            "status": "failed",
+            "video_url": "",
+            "message": "No real rendered video produced",
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="No real rendered video produced"):
+        await node_video_edit(
+            {
+                "tenant_id": tenant_id,
+                "script": {"id": idea_row.id},
+                "selected_idea": {"id": idea_row.id},
+                "raw_video_uri": f"s3://viralsync-media-dev/{tenant_id}/raw_input.mp4",
+                "logs": [],
+            }
+        )
+
+    rows = (
+        await db_session.execute(select(Video).where(Video.tenant_id == tenant_id))
+    ).scalars().all()
+    assert rows == []  # no fila `videos` con un URI falso persistido
 
 
 @pytest.mark.anyio

@@ -114,7 +114,21 @@ def trigger_video_render(
             logger.error(f"Fallo definitivo conectando al microservicio de renderizado local: {fallback_exc}")
 
     if not video_url:
-        video_url = f"http://localhost:9000/viralsync-media/{tenant_id}/products/default_rendered_output.mp4"
+        # RELIABILITY-001 fix: never fabricate a default rendered video URL.
+        # Without a real render (json2video or local renderer), report an
+        # honest failure so downstream nodes do not persist a lie as
+        # edited_video_uri nor publish a non-existent video.
+        return {
+            "tenant_id": tenant_id,
+            "video_url": "",
+            "payload": render_payload,
+            "status": "failed",
+            "provider": "local",
+            "message": (
+                "No real rendered video produced: json2video and local "
+                f"renderer ({target_url}) did not deliver a video_url."
+            ),
+        }
 
     return {
         "tenant_id": tenant_id,
@@ -139,7 +153,21 @@ def process_video_postproduction(
 
     # Ejecutar el despacho del microservicio faceless
     render_result = trigger_video_render(tenant_id=tenant_id, script=script)
-    edited_video_uri = render_result.get("video_url", f"s3://viralsync-media-dev/{tenant_id}/edited_output.mp4")
+    edited_video_uri = render_result.get("video_url", "")
+    if render_result.get("status") != "completed" or not edited_video_uri:
+        # RELIABILITY-001 fix: propagate the honest render failure instead of
+        # persisting a fabricated s3:// default as a "completed" edit.
+        return {
+            "tenant_id": tenant_id,
+            "raw_video_uri": raw_video_uri,
+            "edited_video_uri": None,
+            "generated_scenes": [],
+            "status": "failed",
+            "error": render_result.get(
+                "message",
+                f"No real rendered video produced for tenant '{tenant_id}'.",
+            ),
+        }
 
     # Generación opcional de storyboard para metadatos del grafo
     if not storyboard:
