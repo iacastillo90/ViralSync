@@ -50,7 +50,13 @@ from microservices.renderer import app as renderer_app  # noqa: E402
 RENDERER_FASTAPI_APP = renderer_app.app  # noqa: E402
 
 
-def test_video_director_crew_payload_formatting():
+def test_video_director_crew_payload_formatting(monkeypatch):
+    # PR-B/WU3 determinismo: bloquea el guard de presupuesto para que la
+    # curaduría use la plantilla (zero tokens, sin Redis ni providers).
+    monkeypatch.setattr(
+        "agents.crews.video_director_crew._tenant_within_llm_budget",
+        lambda tenant_id: False,
+    )
     script = {
         "gancho_0_5s": "3 errores fatales al escalar tu software SaaS en 2026.",
         "contexto_5_30s": "El problema principal es intentar abarcar todo sin foco ni automatización. Cuando simplificas tu arquitectura, la conversión aumenta.",
@@ -80,10 +86,15 @@ def test_extract_keywords_from_script():
     assert "business" in keywords or "inteligencia" in keywords
 
 
-def test_trigger_video_render_task_fallback():
+def test_trigger_video_render_task_fallback(monkeypatch):
     """RELIABILITY-001: sin un render real disponible (json2video/local caídos),
     trigger_video_render NUNCA fabrica una URL default — devuelve status 'failed'
     con video_url vacía y un mensaje honesto."""
+    # PR-B/WU3 determinismo: plantilla en el director (zero tokens, sin Redis).
+    monkeypatch.setattr(
+        "agents.crews.video_director_crew._tenant_within_llm_budget",
+        lambda tenant_id: False,
+    )
     good_script = {
         "gancho_0_5s": "3 errores masivos al escalar tu software SaaS en 2026.",
         "contexto_5_30s": "El problema principal es intentar abarcar todo sin foco ni automatización. Cuando simplificas tu arquitectura, la conversión aumenta.",
