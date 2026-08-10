@@ -11,3 +11,5 @@ build/
 Doc/agency_pending_files.zip
 .venv/
 venv/
+.vscode/
+Test/
