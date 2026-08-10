@@ -23,7 +23,6 @@ _MEDIA_REGISTRY: List[Dict[str, Any]] = []
 
 
 import io
-import json
 
 try:
     from minio import Minio
@@ -51,19 +50,11 @@ class MinIOStorageClient:
                     secure=False,
                 )
                 if not self.minio_client.bucket_exists(self.bucket):
+                    # RISK-01 fix: the bucket is created PRIVATE by default. The
+                    # anonymous public-read policy (s3:GetObject for Principal *)
+                    # was removed — media access happens exclusively through the
+                    # existing presigned URLs (presigned_get_object).
                     self.minio_client.make_bucket(self.bucket)
-                    policy = {
-                        "Version": "2012-10-17",
-                        "Statement": [
-                            {
-                                "Effect": "Allow",
-                                "Principal": {"AWS": ["*"]},
-                                "Action": ["s3:GetObject"],
-                                "Resource": [f"arn:aws:s3:::{self.bucket}/*"],
-                            }
-                        ],
-                    }
-                    self.minio_client.set_bucket_policy(self.bucket, json.dumps(policy))
             except Exception as err:
                 logger.warning(f"No se pudo conectar a MinIO S3 SDK: {err}")
 
