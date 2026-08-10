@@ -19,18 +19,25 @@ import agents.llm as llm
 
 
 # --------------------------------------------------------------------------- #
-# LLM-02-1: ningún call site usa litellm.completion directamente (REQ-LLM-02)
+# LLM-02-1 / LLM-04-1: ningún call site usa litellm.completion; exactamente 5
+# call sites de acomplete() (ideation/scriptwriting/video_prompt/dm_response/
+# director). REQ-LLM-04: el único site nuevo es el director (gate de presupuesto).
 # --------------------------------------------------------------------------- #
 CALL_SITE_FILES = (
     "agents/crews/ideation_crew.py",
     "agents/crews/scriptwriting_crew.py",
     "agents/crews/video_prompt_crew.py",
     "agents/nodes/dm_response.py",
+    "agents/crews/video_director_crew.py",
 )
+
+# El margen del director referencia ``agents.llm.acomplete()`` en su docstring;
+# el call site real es ``await llm.acomplete(``, que es lo que se cuenta.
+ACOMPLETE_CALL_MARKER = "await llm.acomplete("
 
 
 def test_no_direct_litellm_completion_in_call_sites():
-    """LLM-02-1: los 4 call sites delegan en agents.llm, nunca en litellm directo."""
+    """LLM-02-1/LLM-04-1: los 5 call sites delegan en agents.llm, nunca en litellm."""
     repo_root = Path(__file__).resolve().parents[2]
     offenders = [
         rel
@@ -38,6 +45,27 @@ def test_no_direct_litellm_completion_in_call_sites():
         if "litellm.completion" in (repo_root / rel).read_text(encoding="utf-8")
     ]
     assert offenders == [], f"Direct litellm.completion still present in: {offenders}"
+
+
+def test_exactly_five_acomplete_call_sites_across_files():
+    """LLM-04-1: exactamente 5 call sites de ``await llm.acomplete(``, uno por archivo.
+
+    Evidencia: ideation:64, scriptwriting:81, video_prompt:86, dm_response:78,
+    director:228. Sin la exhaustividad fallaría si el director regresara a
+    litellm directo o si se añadiera un 6º site sin pasar por el router.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    counts = {
+        rel: (repo_root / rel).read_text(encoding="utf-8").count(ACOMPLETE_CALL_MARKER)
+        for rel in CALL_SITE_FILES
+    }
+    assert counts == {rel: 1 for rel in CALL_SITE_FILES}, (
+        f"Expected exactly one acomplete() call per file, got: {counts}"
+    )
+    assert sum(counts.values()) == len(CALL_SITE_FILES) == 5
+    # El call site del director debe estar gated por el presupuesto de tenant.
+    director = (repo_root / CALL_SITE_FILES[-1]).read_text(encoding="utf-8")
+    assert "check_tenant_llm_budget" in director
 
 
 # --------------------------------------------------------------------------- #
