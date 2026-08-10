@@ -4,6 +4,7 @@ test_ideation_crew.py
 Pruebas unitarias TDD para la Crew de Ideación (CrewAI).
 """
 
+import asyncio
 import json
 
 from agents.crews.ideation_crew import run_ideation_crew
@@ -15,8 +16,8 @@ def test_run_ideation_crew_structure():
         "errores": ["Falta de tracción"],
         "deseos": ["Escalar ventas"],
     }
-    
-    ideas = run_ideation_crew(niche, market_map)
+
+    ideas = asyncio.run(run_ideation_crew(niche, market_map))
     
     assert isinstance(ideas, list)
     assert len(ideas) >= 1
@@ -55,16 +56,17 @@ def test_ideation_uses_llm_text_when_provider_responds(monkeypatch):
         ensure_ascii=False,
     )
 
-    def fake_complete(messages, temperature=0.7, max_tokens=1000, **kwargs):
-        # La crew preserva la temperatura y max_tokens del call site (design D1).
+    async def fake_acomplete(messages, temperature=0.7, max_tokens=1000, **kwargs):
+        # La crew preserva la temperatura y max_tokens del call site (design D1)
+        # y llama al seam ASYNC (RELIABILITY-003): nunca complete() síncrono.
         assert temperature == 0.7
         assert max_tokens == 1000
         assert messages[0]["role"] == "system"
         return llm_text
 
-    monkeypatch.setattr("agents.llm.complete", fake_complete)
+    monkeypatch.setattr("agents.llm.acomplete", fake_acomplete)
 
-    ideas = run_ideation_crew(niche, market_map)
+    ideas = asyncio.run(run_ideation_crew(niche, market_map))
 
     assert len(ideas) >= 1
     assert ideas[0]["texto"] == "TITULO REAL GENERADO POR EL LLM"

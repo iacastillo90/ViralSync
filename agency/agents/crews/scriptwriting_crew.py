@@ -16,7 +16,7 @@ import agents.llm as llm
 logger = logging.getLogger(__name__)
 
 
-def run_scriptwriting_crew(
+async def run_scriptwriting_crew(
     idea: Dict[str, Any], niche_ppp: str = ""
 ) -> Dict[str, Any]:
     """
@@ -63,13 +63,15 @@ def run_scriptwriting_crew(
             "}"
         )
 
-        content = llm.complete(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.7,
-            max_tokens=1500,
+        content = (
+            await llm.acomplete(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.7,
+                max_tokens=1500,
+            )
         ).strip()
 
         if content.startswith("```"):

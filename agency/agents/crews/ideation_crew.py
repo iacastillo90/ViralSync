@@ -17,7 +17,7 @@ import agents.llm as llm
 logger = logging.getLogger(__name__)
 
 
-def run_ideation_crew(niche: str, market_map: Dict[str, Any]) -> List[Dict[str, Any]]:
+async def run_ideation_crew(niche: str, market_map: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     Ejecuta el flujo de ideación de 4 cuadrantes para un nicho dado usando LiteLLM y SearXNG.
     
@@ -60,13 +60,15 @@ def run_ideation_crew(niche: str, market_map: Dict[str, Any]) -> List[Dict[str, 
             "]"
         )
 
-        content = llm.complete(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.7,
-            max_tokens=1000,
+        content = (
+            await llm.acomplete(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.7,
+                max_tokens=1000,
+            )
         ).strip()
 
         if content.startswith("```"):

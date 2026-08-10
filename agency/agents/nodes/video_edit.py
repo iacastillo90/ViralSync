@@ -27,7 +27,7 @@ async def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
     logger.info(f"[{tenant_id}] Ejecutando nodo 'video_edit' con Agente de Prompting Visual")
 
     # 1. Ejecutar Crew de Prompting Visual segundo a segundo (Image-to-Video si existe foto)
-    storyboard = run_video_prompt_crew(
+    storyboard = await run_video_prompt_crew(
         script=script, idea=selected_idea, product_image_url=product_image_url
     )
 

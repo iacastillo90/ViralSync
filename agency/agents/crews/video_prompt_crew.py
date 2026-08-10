@@ -15,7 +15,7 @@ import agents.llm as llm
 logger = logging.getLogger(__name__)
 
 
-def run_video_prompt_crew(
+async def run_video_prompt_crew(
     script: Dict[str, Any], idea: Dict[str, Any], product_image_url: str = ""
 ) -> List[Dict[str, Any]]:
     """
@@ -69,13 +69,15 @@ def run_video_prompt_crew(
             "]"
         )
 
-        content = llm.complete(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.7,
-            max_tokens=1500,
+        content = (
+            await llm.acomplete(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.7,
+                max_tokens=1500,
+            )
         ).strip()
 
         if content.startswith("```"):

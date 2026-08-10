@@ -47,7 +47,7 @@ def classify_intent(message: str) -> str:
     return "unclear"
 
 
-def generate_grounded_reply(message: str, rag_context: str, tenant_id: str = "default_tenant") -> Tuple[str, float]:
+async def generate_grounded_reply(message: str, rag_context: str, tenant_id: str = "default_tenant") -> Tuple[str, float]:
     """
     Genera una respuesta basada en RAG utilizando el Gateway LLM si está disponible,
     con registro de consumo de presupuesto en USD y estimación del score de confianza.
@@ -74,13 +74,15 @@ def generate_grounded_reply(message: str, rag_context: str, tenant_id: str = "de
         system_prompt = "Eres un Asistente de Ventas de Instagram. Responde de forma concisa (máximo 2 oraciones) y amigable en español."
         user_prompt = f"Contexto RAG de marca:\n{rag_context}\n\nMensaje del Cliente: '{message}'"
 
-        generated_reply = llm.complete(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.6,
-            max_tokens=300,
+        generated_reply = (
+            await llm.acomplete(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.6,
+                max_tokens=300,
+            )
         ).strip()
 
         # El router devuelve texto plano: el guard de presupuesto ya protegió el gasto
@@ -115,7 +117,7 @@ async def node_dm_response(state: DMState) -> DMState:
     rag_context = "\n".join([doc.get("content", "") for doc in rag_docs if isinstance(doc, dict)])
 
     # 3. Generación de Respuesta asistida por LLM / Grounding RAG y Tracking de Presupuesto
-    reply_text, confidence = generate_grounded_reply(incoming_msg, rag_context, tenant_id=tenant_id)
+    reply_text, confidence = await generate_grounded_reply(incoming_msg, rag_context, tenant_id=tenant_id)
 
     # 4. Evaluación de Handoff a Humano
     requires_human = (

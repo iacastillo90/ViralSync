@@ -24,7 +24,7 @@ async def node_scriptwriting(state: Dict[str, Any]) -> Dict[str, Any]:
 
     logger.info(f"[{tenant_id}] Ejecutando nodo 'scriptwriting'")
 
-    script = run_scriptwriting_crew(idea=selected_idea, niche_ppp=niche_ppp)
+    script = await run_scriptwriting_crew(idea=selected_idea, niche_ppp=niche_ppp)
 
     # Persistencia real (PERSIST-02): fila `scripts` FK a la idea aprobada. Un
     # fallo de DB se propaga (PERSIST-02-2). El id del guion se inyecta en state

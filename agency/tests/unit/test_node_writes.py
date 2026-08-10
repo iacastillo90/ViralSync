@@ -105,9 +105,19 @@ async def node_tenants(db_session):
     await db_session.commit()
 
 
-def _fake_ideation_crew(niche, market_map):
-    """Crew mockeada: devuelve 2 candidatas sin `id` (el DAO genera el UUID)."""
+async def _fake_ideation_crew(niche, market_map):
+    """Crew mockeada (async tras RELIABILITY-003): devuelve 2 candidatas sin `id`."""
     return [dict(IDEA_PAYLOAD), dict(IDEA_PAYLOAD, texto="La Verdad Incómoda sobre el SaaS")]
+
+
+async def _fake_scriptwriting_crew(idea, niche_ppp=""):
+    """Crew mockeada (async tras RELIABILITY-003): guion de 4 bloques sin `id`."""
+    return dict(SCRIPT_PAYLOAD)
+
+
+async def _fake_video_prompt_crew(script, idea, product_image_url=""):
+    """Crew mockeada (async tras RELIABILITY-003): storyboard estático de 4 escenas."""
+    return list(STORYBOARD_PAYLOAD)
 
 
 @pytest.mark.anyio
@@ -152,7 +162,7 @@ async def test_node_scriptwriting_persists_script_row(db_session, node_tenants, 
 
     monkeypatch.setattr(
         "agents.nodes.scriptwriting.run_scriptwriting_crew",
-        lambda idea, niche_ppp="": dict(SCRIPT_PAYLOAD),
+        _fake_scriptwriting_crew,
     )
 
     result = await node_scriptwriting(
@@ -186,7 +196,7 @@ async def test_node_video_edit_persists_video_row(db_session, node_tenants, monk
 
     monkeypatch.setattr(
         "agents.nodes.video_edit.run_video_prompt_crew",
-        lambda script, idea, product_image_url="": list(STORYBOARD_PAYLOAD),
+        _fake_video_prompt_crew,
     )
     monkeypatch.setattr(
         "agents.nodes.video_edit.trigger_video_render",
@@ -338,7 +348,7 @@ async def test_node_video_edit_failed_render_propagates_honestly(db_session, nod
 
     monkeypatch.setattr(
         "agents.nodes.video_edit.run_video_prompt_crew",
-        lambda script, idea, product_image_url="": list(STORYBOARD_PAYLOAD),
+        _fake_video_prompt_crew,
     )
     monkeypatch.setattr(
         "agents.nodes.video_edit.trigger_video_render",
@@ -378,7 +388,7 @@ async def test_get_ideas_and_scripts_return_node_written_rows(db_session, node_t
     monkeypatch.setattr("agents.nodes.ideation.run_ideation_crew", _fake_ideation_crew)
     monkeypatch.setattr(
         "agents.nodes.scriptwriting.run_scriptwriting_crew",
-        lambda idea, niche_ppp="": dict(SCRIPT_PAYLOAD),
+        _fake_scriptwriting_crew,
     )
 
     await node_ideation(

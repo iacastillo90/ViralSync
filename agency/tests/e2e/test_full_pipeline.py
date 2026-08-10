@@ -56,8 +56,8 @@ async def test_complete_viral_sync_lifecycle(db_session):
         db_session.add(seeded_lead)
         await db_session.commit()
 
-        # Step 2: Ejecución de Ideación RUM
-        ideas = run_ideation_crew(
+        # Step 2: Ejecución de Ideación RUM (crew async tras RELIABILITY-003)
+        ideas = await run_ideation_crew(
             niche="Fitness B2B y Gimnasios",
             market_map={"errores": ["Falta de retención"]},
         )
@@ -79,8 +79,8 @@ async def test_complete_viral_sync_lifecycle(db_session):
         # No debe existir ningún ID de idea fabricado; el echo es el real del request
         assert idea_body["idea_id"] == "idea-e2e-001"
 
-        # Step 4: Guionismo en 4 Bloques
-        script = run_scriptwriting_crew(
+        # Step 4: Guionismo en 4 Bloques (crew async tras RELIABILITY-003)
+        script = await run_scriptwriting_crew(
             idea=selected_idea,
             niche_ppp="Consigue 50 socios en 30 días sin pagar anuncios",
         )

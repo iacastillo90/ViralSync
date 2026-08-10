@@ -29,7 +29,7 @@ async def node_ideation(state: Dict[str, Any]) -> Dict[str, Any]:
 
     logger.info(f"[{tenant_id}] Ejecutando nodo 'ideation' para nicho '{niche}'")
 
-    ideas = run_ideation_crew(niche=niche, market_map=market_map)
+    ideas = await run_ideation_crew(niche=niche, market_map=market_map)
     selected_idea = ideas[0] if ideas else {}
 
     # Persistencia real (PERSIST-02): una fila `ideas` por candidata. El id del

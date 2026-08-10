@@ -4,6 +4,8 @@ test_video_prompt_crew.py
 Pruebas unitarias para el Agente CrewAI de Prompting Visual y Directiva de Cámara.
 """
 
+import asyncio
+
 from agents.crews.video_prompt_crew import run_video_prompt_crew
 from agents.mcp_servers.video_gen_client import generate_storyboard_videos, VideoGenerationClient
 
@@ -18,7 +20,7 @@ def test_video_prompt_crew_storyboard_generation():
     }
     idea = {"texto": "Escalamiento SaaS", "niche": "B2B Software"}
 
-    storyboard = run_video_prompt_crew(script=script, idea=idea)
+    storyboard = asyncio.run(run_video_prompt_crew(script=script, idea=idea))
 
     assert isinstance(storyboard, list)
     assert len(storyboard) == 4

@@ -112,12 +112,13 @@ def test_dm_intent_classification():
     assert classify_intent("Ganar crypto gratis http://link") == "spam"
 
 
-def test_dm_grounded_reply_confidence():
-    """Verifica el cálculo del score de confianza en respuestas RAG."""
-    reply, conf = generate_grounded_reply("¿Cómo funciona?", "Nuestro software automatiza el marketing...")
+@pytest.mark.anyio
+async def test_dm_grounded_reply_confidence():
+    """Verifica el cálculo del score de confianza en respuestas RAG (crew async)."""
+    reply, conf = await generate_grounded_reply("¿Cómo funciona?", "Nuestro software automatiza el marketing...")
     assert conf >= 0.75
 
-    reply_fail, conf_fail = generate_grounded_reply("Pregunta desconocida", "no se encontro informacion")
+    reply_fail, conf_fail = await generate_grounded_reply("Pregunta desconocida", "no se encontro informacion")
     assert conf_fail < 0.75
 
 
