@@ -292,3 +292,134 @@ def test_node_publish_source_has_no_fabricated_defaults():
     src = inspect.getsource(node_publish)
     assert 'f"post_{' not in src
     assert 'f"s3://' not in src
+
+
+# --------------------------------------------------------------------------- #
+# Publish write-back (REQ-PTT-01 / D-F): un único UPDATE atómico tras 2xx + id
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.anyio
+async def test_node_publish_persists_write_back_after_2xx(fake_http, monkeypatch):
+    """PTT-01-1: tras POST 2xx + post_id real, `update_video_publish` se llama
+    EXACTAMENTE una vez con `(tenant_id, video_id, post_id, published_at)` — el
+    write-back persiste dónde se publicó (REQ-PTT-01, design D-F)."""
+    from datetime import datetime
+
+    monkeypatch.setattr(publish_module, "PUBLISHER_URL", "http://test-publisher:8002")
+    fake_http["response"] = FakeResponse(
+        201,
+        {
+            "status": "published",
+            "published_post_id": "ig_reel_write_back_real",
+            "tenant_id": "t-pub-08",
+            "platform": "instagram",
+        },
+    )
+
+    calls = []
+    monkeypatch.setattr(
+        publish_module,
+        "update_video_publish",
+        lambda tenant_id, video_id, post_id, published_at: (
+            calls.append((tenant_id, video_id, post_id, published_at)) or True
+        ),
+        raising=False,
+    )
+    from agents.nodes.publish import node_publish
+
+    await node_publish(
+        {
+            "tenant_id": "t-pub-08",
+            "video_id": "dddd0003-1111-2222-3333-444444444444",
+            "edited_video_uri": "http://minio:9000/viralsync-media/t-pub-08/final.mp4",
+            "script": {"gancho_0_5s": "Hook", "cta_50_60s": "CTA"},
+            "ig_user_id": "17841400000000001",
+            "ig_access_token": "EAAXrealToken",
+            "logs": [],
+        }
+    )
+
+    assert len(calls) == 1  # un único UPDATE atómico, nunca dos (D-F)
+    tenant_id, video_id, post_id, published_at = calls[0]
+    assert tenant_id == "t-pub-08"
+    assert video_id == "dddd0003-1111-2222-3333-444444444444"
+    assert post_id == "ig_reel_write_back_real"
+    assert isinstance(published_at, datetime)
+    assert published_at.tzinfo is not None  # timestamp utc-aware persistible
+
+
+@pytest.mark.anyio
+async def test_node_publish_skips_write_back_without_video_id(fake_http, monkeypatch):
+    """PTT-01-3: state sin `video_id` (replay/resume) → publish OK, sin UPDATE,
+    sin crash — nunca se fabrica un write-back (D-F: `if not video_id: skip`)."""
+    monkeypatch.setattr(publish_module, "PUBLISHER_URL", "http://test-publisher:8002")
+    fake_http["response"] = FakeResponse(
+        201,
+        {
+            "status": "published",
+            "published_post_id": "ig_reel_replay_no_video_id",
+            "tenant_id": "t-pub-09",
+            "platform": "instagram",
+        },
+    )
+
+    calls = []
+    monkeypatch.setattr(
+        publish_module,
+        "update_video_publish",
+        lambda *args, **kwargs: calls.append(args) or True,
+        raising=False,
+    )
+    from agents.nodes.publish import node_publish
+
+    result = await node_publish(
+        {
+            "tenant_id": "t-pub-09",
+            "edited_video_uri": "http://minio:9000/viralsync-media/t-pub-09/final.mp4",
+            "script": {"gancho_0_5s": "Hook", "cta_50_60s": "CTA"},
+            "ig_user_id": "17841400000000001",
+            "ig_access_token": "EAAXrealToken",
+            "logs": [],
+        }
+    )
+
+    assert result["published_post_id"] == "ig_reel_replay_no_video_id"
+    assert calls == []  # sin video_id ⇒ cero UPDATEs (PTT-01-3)
+
+
+@pytest.mark.anyio
+async def test_node_publish_failure_never_writes_back(fake_http, monkeypatch):
+    """PTT-01-2: publisher falla → node_publish raise; `update_video_publish` NUNCA
+    se invoca — no existe write parcial (D-F: el UPDATE sólo corre tras 2xx + id)."""
+
+    class _ConnRefused(httpx.ConnectError):
+        def __init__(self):
+            super().__init__("All connection attempts failed: [Errno 111] Connection refused")
+
+    monkeypatch.setattr(publish_module, "PUBLISHER_URL", "http://test-publisher:8002")
+    fake_http["raise_exc"] = _ConnRefused()
+
+    calls = []
+    monkeypatch.setattr(
+        publish_module,
+        "update_video_publish",
+        lambda *args, **kwargs: calls.append(args) or True,
+        raising=False,
+    )
+    from agents.nodes.publish import node_publish
+
+    with pytest.raises(RuntimeError, match="Publisher"):
+        await node_publish(
+            {
+                "tenant_id": "t-pub-10",
+                "video_id": "dddd0003-1111-2222-3333-444444444444",
+                "edited_video_uri": "http://minio:9000/viralsync-media/t-pub-10/final.mp4",
+                "script": {},
+                "ig_user_id": "17841400000000001",
+                "ig_access_token": "EAAXrealToken",
+                "logs": [],
+            }
+        )
+
+    assert calls == []  # raise ⇒ sin write-back; la fila queda intacta (PTT-01-2)

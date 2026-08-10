@@ -56,6 +56,8 @@ T_IDS = {
     "honest": "dddd0007-1111-2222-3333-444444444444",
     "render_fail": "dddd0009-1111-2222-3333-444444444444",
     "get": "dddd0008-1111-2222-3333-444444444444",
+    "video_id": "dddd0010-1111-2222-3333-444444444444",
+    "publish_wb": "dddd0011-1111-2222-3333-444444444444",
 }
 
 IDEA_PAYLOAD = {
@@ -118,6 +120,34 @@ async def _fake_scriptwriting_crew(idea, niche_ppp=""):
 async def _fake_video_prompt_crew(script, idea, product_image_url=""):
     """Crew mockeada (async tras RELIABILITY-003): storyboard estático de 4 escenas."""
     return list(STORYBOARD_PAYLOAD)
+
+
+class _FakePublishResponse:
+    """Superficie mínima de httpx.Response para el publisher fake (2xx + id real)."""
+
+    status_code = 201
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {"status": "published", "published_post_id": "ig_reel_write_back_001"}
+
+
+class _FakePublishClient:
+    """Sustituto local de httpx.AsyncClient para node_publish: POST → 2xx + id real."""
+
+    def __init__(self, *, timeout=None):
+        self.timeout = timeout
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+    async def post(self, url, json=None):
+        return _FakePublishResponse()
 
 
 @pytest.mark.anyio
@@ -374,6 +404,113 @@ async def test_node_video_edit_failed_render_propagates_honestly(db_session, nod
         await db_session.execute(select(Video).where(Video.tenant_id == tenant_id))
     ).scalars().all()
     assert rows == []  # no fila `videos` con un URI falso persistido
+
+
+@pytest.mark.anyio
+async def test_node_video_edit_exposes_video_id_from_insert_video(db_session, node_tenants, monkeypatch):
+    """PTT-01/D-A: node_video_edit ya NO descarta la fila de `insert_video` — el
+    `video_id` viaja en state para que node_publish pueda hacer el write-back."""
+    from agents.nodes.video_edit import node_video_edit
+
+    tenant_id = T_IDS["video_id"]
+    idea_row = (await insert_ideas(tenant_id, [IDEA_PAYLOAD]))[0]
+    script_row = await insert_script(tenant_id, idea_row.id, SCRIPT_PAYLOAD)
+
+    monkeypatch.setattr(
+        "agents.nodes.video_edit.run_video_prompt_crew",
+        _fake_video_prompt_crew,
+    )
+    monkeypatch.setattr(
+        "agents.nodes.video_edit.trigger_video_render",
+        lambda tenant_id, script, idea, storyboard=None: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
+    )
+
+    result = await node_video_edit(
+        {
+            "tenant_id": tenant_id,
+            "script": {"id": script_row.id},
+            "selected_idea": {"id": idea_row.id},
+            "raw_video_uri": f"s3://viralsync-media-dev/{tenant_id}/raw_input.mp4",
+            "logs": [],
+        }
+    )
+
+    persisted = (
+        await db_session.execute(select(Video).where(Video.tenant_id == tenant_id))
+    ).scalars().all()
+    assert len(persisted) == 1
+    # El id del state ES el id de la fila `videos` persistida (D-A: fila real, no descartada)
+    assert result["video_id"] == persisted[0].id
+
+
+@pytest.mark.anyio
+async def test_publish_write_back_persists_on_videos_row(db_session, node_tenants, monkeypatch):
+    """PTT-01-1 (nivel DB, design D-F): node_publish persiste `instagram_post_id` +
+    `published_at` en la fila `videos` vía `update_video_publish` — y NO toca
+    `publish_approval_status`, que queda en el valor previo 'approved' (CHECK-safe:
+    la DDL 001 sólo permite pending|approved|rejected — jamás 'published')."""
+    from agents.nodes.video_edit import node_video_edit
+    from agents.nodes.publish import node_publish
+    import agents.nodes.publish as publish_module
+
+    tenant_id = T_IDS["publish_wb"]
+    idea_row = (await insert_ideas(tenant_id, [IDEA_PAYLOAD]))[0]
+    script_row = await insert_script(tenant_id, idea_row.id, SCRIPT_PAYLOAD)
+
+    monkeypatch.setattr(
+        "agents.nodes.video_edit.run_video_prompt_crew",
+        _fake_video_prompt_crew,
+    )
+    monkeypatch.setattr(
+        "agents.nodes.video_edit.trigger_video_render",
+        lambda tenant_id, script, idea, storyboard=None: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
+    )
+    monkeypatch.setattr(publish_module, "PUBLISHER_URL", "http://test-publisher:8002")
+    monkeypatch.setattr(publish_module, "AsyncClient", _FakePublishClient)
+
+    # 1. node_video_edit persiste la fila `videos` (publish_approval_status='pending')
+    edited = await node_video_edit(
+        {
+            "tenant_id": tenant_id,
+            "script": {"id": script_row.id},
+            "selected_idea": {"id": idea_row.id},
+            "raw_video_uri": f"s3://viralsync-media-dev/{tenant_id}/raw_input.mp4",
+            "logs": [],
+        }
+    )
+    video_row = (
+        await db_session.execute(select(Video).where(Video.tenant_id == tenant_id))
+    ).scalars().one()
+
+    # 2. La aprobación de publicación (checkpoint humano previo al publish) deja la
+    # fila en 'approved' — estado legal antes de publicar (CHECK-safe, spec risk note).
+    video_row.publish_approval_status = "approved"
+    await db_session.commit()
+
+    # 3. node_publish: POST 2xx + post_id real → update_video_publish (write-back)
+    await node_publish(
+        {
+            "tenant_id": tenant_id,
+            "video_id": edited["video_id"],
+            "edited_video_uri": edited["edited_video_uri"],
+            "script": {"gancho_0_5s": "Hook", "cta_50_60s": "CTA"},
+            "ig_user_id": "17841400000000001",
+            "ig_access_token": "EAAXrealToken",
+            "logs": [],
+        }
+    )
+
+    # 4. Read-back vía SQLite: el write-back persistió dónde se publicó
+    refreshed = (
+        await db_session.execute(
+            select(Video)
+            .where(Video.id == edited["video_id"])
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    assert refreshed.instagram_post_id == "ig_reel_write_back_001"
+    assert refreshed.published_at is not None
+    assert refreshed.publish_approval_status == "approved"  # jamás 'published' (CHECK 001)
 
 
 @pytest.mark.anyio
