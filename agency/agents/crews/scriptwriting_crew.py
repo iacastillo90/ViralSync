@@ -11,6 +11,7 @@ import logging
 from typing import Dict, Any
 from agents.mcp_servers.rag_mcp_server import query_rag_knowledge
 from agents.criterion.ppp_validator import validate_ppp_structure
+from agents.crews.prompt_context import build_trend_section, resolve_rum_threshold
 import agents.llm as llm
 
 logger = logging.getLogger(__name__)
@@ -37,11 +38,22 @@ async def run_scriptwriting_crew(
 
     idea_title = idea.get("texto", "Estrategia de Crecimiento")
     gancho_base = idea.get("gancho", f"Si buscas escalar en {idea_title}, escucha esto")
+    niche = idea.get("niche", "B2B Marketing")
 
     script = {}
 
     # 3. Generación asistida por LLM (router compartido, proxy-first)
     try:
+        # Contexto dinámico del nicho (D7): umbral RUM de Redis (CVD-03) y
+        # tendencias sanitizadas de la caché (CVD-04). Ambos no-fatal.
+        rum_threshold = resolve_rum_threshold(niche)
+        trend_section = build_trend_section(niche)
+        trend_line = (
+            f"Trending topics ({niche}):\n{trend_section}\n"
+            if trend_section
+            else ""
+        )
+
         system_prompt = (
             "Eres un Guionista Viral de elite para Instagram Reels y TikTok. "
             "Redacta un guion hiper-efectivo estructurado en exactamente 4 bloques cronológicos y una palabra clave de CTA. "
@@ -52,7 +64,9 @@ async def run_scriptwriting_crew(
             f"Título de la idea: {idea_title}\n"
             f"Gancho inicial sugerido: {gancho_base}\n"
             f"Promesa Principal de Producto (PPP): {niche_ppp}\n"
-            f"Contexto de Marca (RAG): {json.dumps(brand_context, ensure_ascii=False)}\n\n"
+            f"Contexto de Marca (RAG): {json.dumps(brand_context, ensure_ascii=False)}\n"
+            f"Target RUM threshold ({niche}): {rum_threshold:.2f}\n"
+            f"{trend_line}"
             "Devuelve un objeto JSON con la siguiente estructura exacta:\n"
             "{\n"
             '  "gancho_0_5s": "Frase de gancho inicial (0-5s)",\n'

@@ -10,6 +10,7 @@ Text-to-Video (Fal.ai Wan2.1, Google Veo, CogVideoX, LTX-Video) en formato verti
 import logging
 import json
 from typing import Dict, Any, List
+from agents.crews.prompt_context import build_trend_section, resolve_rum_threshold
 import agents.llm as llm
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,16 @@ async def run_video_prompt_crew(
 
     # Generación dinámica de prompts cinematográficos vía router LLM compartido
     try:
+        # Contexto dinámico del nicho (D7): umbral RUM de Redis (CVD-03) y
+        # tendencias sanitizadas de la caché (CVD-04). Ambos no-fatal.
+        rum_threshold = resolve_rum_threshold(niche)
+        trend_section = build_trend_section(niche)
+        trend_line = (
+            f"Trending topics ({niche}):\n{trend_section}\n"
+            if trend_section
+            else ""
+        )
+
         system_prompt = (
             "You are an expert AI Video Prompt Engineer and Director of Photography for vertical 9:16 short-form content. "
             "Generate highly detailed, cinematic Text-to-Video / Image-to-Video visual prompts in English for 4 sequential scenes. "
@@ -48,6 +59,8 @@ async def run_video_prompt_crew(
 
         user_prompt = (
             f"Niche: {niche}\n"
+            f"Target RUM threshold ({niche}): {rum_threshold:.2f}\n"
+            f"{trend_line}"
             f"Idea: {idea_title}\n"
             f"Product Image URL: {product_image_url or 'None'}\n"
             f"Scene 1 (0s-5s - Hook): {gancho}\n"
