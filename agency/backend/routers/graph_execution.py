@@ -13,6 +13,9 @@ from backend.db.daos import update_idea_approval
 from backend.db.checkpointer import build_checkpointer
 from langgraph.types import Command
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["Graph Execution"])
 
@@ -37,6 +40,54 @@ def rebuild_graph_app():
     global graph_app
     graph_app = build_agency_graph(checkpointer=build_checkpointer())
     return graph_app
+
+
+def _thread_config(tenant_id: str) -> dict:
+    """Configuración del checkpointer por thread (thread_id = tenant_id, PERSIST-04)."""
+    return {"configurable": {"thread_id": tenant_id}}  # noqa: C408
+
+
+async def _resume_graph_background(tenant_id: str, resume_payload: dict) -> None:
+    """Reanuda un grafo pausado en background (RESILIENCE-002).
+
+    Logea el resultado y, ante un fallo, emite un evento SSE ``graph_error`` con
+    ``thread_id`` + mensaje para que el frontend no quede esperando eventos que
+    nunca llegarán (sólo se emitían node_start/graph_complete).
+    """
+    config = _thread_config(tenant_id)
+    try:
+        await get_graph_app().ainvoke(Command(resume=resume_payload), config=config)
+        logger.info("Graph resumed for tenant %s (resume payload: %s)", tenant_id, resume_payload)
+    except Exception as exc:  # noqa: BLE001 - absence of logging means silent hang
+        logger.error("Graph resume failed for tenant %s: %s", tenant_id, exc, exc_info=True)
+        await sse_manager.emit_graph_error(tenant_id, str(exc))
+
+
+async def _run_graph_background(tenant_id: str, initial_state: dict) -> None:
+    """Ejecuta el grafo multi-agente en background (RESILIENCE-002).
+
+    Idem ``_resume_graph_background``: broadcast de graph_complete en éxito o
+    gráfica de error SSE en fallo.
+    """
+    config = _thread_config(tenant_id)
+    try:
+        final_state = await get_graph_app().ainvoke(initial_state, config=config)
+        await sse_manager.broadcast(
+            tenant_id,
+            "graph_complete",
+            {
+                "node": "complete",
+                "message": "Grafo ejecutado con éxito.",
+                "final_state": {
+                    "tenant_id": tenant_id,
+                    "ideas_count": len(final_state.get("ideas", [])),
+                },
+            },
+        )
+        logger.info("Graph execution completed for tenant %s", tenant_id)
+    except Exception as exc:  # noqa: BLE001 - absence of logging means silent hang
+        logger.error("Graph execution failed for tenant %s: %s", tenant_id, exc, exc_info=True)
+        await sse_manager.emit_graph_error(tenant_id, str(exc))
 
 
 class GraphRunRequest(BaseModel):
@@ -116,21 +167,18 @@ async def approve_idea(tenant_id: str, req: IdeaApproveRequest, background_tasks
     # False y el resume sigue igual: la UI ya no miente sobre el commit.
     updated = await update_idea_approval(tenant_id, req.idea_id, req.status)
     if not updated:
-        print(
-            f"[approve] aprobación sin fila afectada: idea_id={req.idea_id} "
-            f"tenant={tenant_id} (0 rows — id no-UUID o inexistente)"
+        logger.info(
+            "approval affected 0 rows: idea_id=%s tenant=%s (id no-UUID or nonexistent)",
+            req.idea_id,
+            tenant_id,
         )
 
-    # Reanudar el grafo en background
-    config = {"configurable": {"thread_id": tenant_id}}
-    
-    async def _resume_graph():
-        try:
-            await get_graph_app().ainvoke(Command(resume={"idea_approved": req.status == "approved"}), config=config)
-        except Exception as e:
-            print(f"Error reanudando grafo para {tenant_id}: {e}")
-
-    background_tasks.add_task(_resume_graph)
+    # Reanudar el grafo en background (log + SSE graph_error ante fallo)
+    background_tasks.add_task(
+        _resume_graph_background,
+        tenant_id,
+        {"idea_approved": req.status == "approved"},
+    )
 
     return {
         "status": "accepted",
@@ -158,16 +206,12 @@ async def approve_publish(tenant_id: str, req: PublishApproveRequest, background
         },
     )
     
-    # Reanudar el grafo en background
-    config = {"configurable": {"thread_id": tenant_id}}
-    
-    async def _resume_publish():
-        try:
-            await get_graph_app().ainvoke(Command(resume={"publish_approved": req.status == "approved"}), config=config)
-        except Exception as e:
-            print(f"Error reanudando grafo publish para {tenant_id}: {e}")
-
-    background_tasks.add_task(_resume_publish)
+    # Reanudar el grafo en background (log + SSE graph_error ante fallo)
+    background_tasks.add_task(
+        _resume_graph_background,
+        tenant_id,
+        {"publish_approved": req.status == "approved"},
+    )
 
     return {
         "status": "accepted",
@@ -201,27 +245,8 @@ async def run_graph(tenant_id: str, req: GraphRunRequest, background_tasks: Back
         "product_image_url": req.product_image_url,
     }
     
-    config = {"configurable": {"thread_id": tenant_id}}
-
-    async def _run_graph_bg():
-        try:
-            final_state = await get_graph_app().ainvoke(initial_state, config=config)
-            await sse_manager.broadcast(
-                tenant_id,
-                "graph_complete",
-                {
-                    "node": "complete",
-                    "message": "Grafo ejecutado con éxito.",
-                    "final_state": {
-                        "tenant_id": tenant_id,
-                        "ideas_count": len(final_state.get("ideas", [])),
-                    },
-                },
-            )
-        except Exception as e:
-            print(f"Error en ejecución del grafo para {tenant_id}: {e}")
-
-    background_tasks.add_task(_run_graph_bg)
+    # Ejecutar el grafo en background (log + SSE graph_error ante fallo)
+    background_tasks.add_task(_run_graph_background, tenant_id, initial_state)
 
     return {
         "status": "accepted",
