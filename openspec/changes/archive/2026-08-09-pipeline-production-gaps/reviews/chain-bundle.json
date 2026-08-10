@@ -1,0 +1,103 @@
+{
+  "schema": "gentle-ai.review-chain-bundle/v1",
+  "transaction_id": "txn-2026-08-09-pipeline-production-gaps",
+  "lineage_id": "pipeline-production-gaps",
+  "mode": "4R",
+  "generation": 1,
+  "genesis": "961edc3",
+  "base_tree": "bf7dd12696cd76c76d1818dc31773310d03d4a4e",
+  "candidate_tree": "022883a",
+  "final_candidate_tree": "f00f9be",
+  "expected_head": "f00f9be",
+  "path_scope": ["agency/", "requirements.txt", "requirements.lock"],
+  "events": [
+    {
+      "seq": 1,
+      "event": "review-start",
+      "actor": "gentle-orchestrator",
+      "content_hash": "txn-init",
+      "predecessor": null,
+      "detail": "Explicit review/start(pipeline-production-gaps); High tier (security/auth/payments, >400 authored lines) -> full 4R selected"
+    },
+    {
+      "seq": 2,
+      "event": "lens-risk-sweep",
+      "actor": "review-risk",
+      "content_hash": "RISK-01..RISK-11",
+      "predecessor": 1,
+      "detail": "11 findings: 1 CRITICAL (RISK-01 deterministic), 7 WARNING, 3 SUGGESTION"
+    },
+    {
+      "seq": 3,
+      "event": "lens-readability-sweep",
+      "actor": "review-readability",
+      "content_hash": "READABILITY-001..011",
+      "predecessor": 2,
+      "detail": "11 findings: 5 WARNING, 6 SUGGESTION (no severe)"
+    },
+    {
+      "seq": 4,
+      "event": "lens-reliability-sweep",
+      "actor": "review-reliability",
+      "content_hash": "RELIABILITY-001..012",
+      "predecessor": 3,
+      "detail": "12 findings: 3 CRITICAL (RELIABILITY-001/002 deterministic, RELIABILITY-003 inferential), 5 WARNING, 4 SUGGESTION"
+    },
+    {
+      "seq": 5,
+      "event": "lens-resilience-sweep",
+      "actor": "review-resilience",
+      "content_hash": "RESILIENCE-001..010",
+      "predecessor": 4,
+      "detail": "10 findings: 2 CRITICAL (RESILIENCE-001/002 deterministic), 7 WARNING, 1 SUGGESTION"
+    },
+    {
+      "seq": 6,
+      "event": "ledger-freeze",
+      "actor": "gentle-orchestrator",
+      "content_hash": "ledger.json@2026-08-09",
+      "predecessor": 5,
+      "detail": "44 findings frozen. 5 severe deterministic corroborated directly; 1 inferential severe (RELIABILITY-003) routed to refuter; WARNING/SUGGESTION remain info"
+    },
+    {
+      "seq": 7,
+      "event": "refuter-batch-1",
+      "actor": "review-refuter",
+      "content_hash": "RELIABILITY-003:corroborated",
+      "predecessor": 6,
+      "detail": "Single refuter batch for RELIABILITY-003 (inferential severe). Verdict: corroborated with file:line evidence on all 5 verification points"
+    },
+    {
+      "seq": 8,
+      "event": "correction-transaction-1",
+      "actor": "general (correction actor)",
+      "content_hash": "b2038af,2b9e15f,0db4c7b,908f627,f00f9be",
+      "predecessor": 7,
+      "detail": "One correction transaction, 5 atomic work units (WU-FIX-1..5), each maps exactly to frozen IDs, one conventional commit per unit, independent rollback boundary"
+    },
+    {
+      "seq": 9,
+      "event": "scoped-validation-1",
+      "actor": "general (scoped fix-delta validator)",
+      "content_hash": "approve",
+      "predecessor": 8,
+      "detail": "Detached read-only validator; verified original acceptance criteria intact + correction regression evidence (focused 58 passed/1 skipped; total 213 passed/1 skipped/0 failed)"
+    },
+    {
+      "seq": 10,
+      "event": "final-verification",
+      "actor": "gentle-orchestrator",
+      "content_hash": "approved",
+      "predecessor": 9,
+      "detail": "Suite rerun independently: 213 passed/1 skipped/0 failed at f00f9be; snapshot identity, ledger resolution, counter coherence confirmed. Terminal state: approved"
+    }
+  ],
+  "bindings": {
+    "policy": "policy.md",
+    "ledger": "ledger.json",
+    "receipt": "receipt.json",
+    "gate_context": "gate-context.json",
+    "fix_delta": "b2038af..f00f9be"
+  },
+  "recovery_note": "Clean-clone recovery MUST import this bundle via review-bundle-import after validating bundle digest, event hashes/predecessors, lineage/generation/mode, snapshot identities, and terminal fix-diff semantics; review-validate never auto-imports."
+}

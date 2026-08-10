@@ -1,0 +1,56 @@
+{
+  "schema": "gentle-ai.review-transaction/v1",
+  "transaction_id": "txn-2026-08-09-pipeline-production-gaps",
+  "mode": "4R",
+  "target": {
+    "lineage_id": "pipeline-production-gaps",
+    "genesis": "961edc3",
+    "base_tree": "bf7dd12696cd76c76d1818dc31773310d03d4a4e",
+    "candidate_tree": "022883a",
+    "final_candidate_tree": "f00f9be",
+    "path_scope": ["agency/", "requirements.txt", "requirements.lock"]
+  },
+  "lenses_frozen": ["risk", "readability", "reliability", "resilience"],
+  "ledger": {
+    "total_findings": 44,
+    "by_severity": { "CRITICAL": 6, "WARNING": 24, "SUGGESTION": 14 },
+    "corroborated_deterministic": ["RISK-01", "RELIABILITY-001", "RELIABILITY-002", "RESILIENCE-001", "RESILIENCE-002"],
+    "corroborated_by_refuter": ["RELIABILITY-003"],
+    "verified_after_correction": ["RISK-01", "RELIABILITY-001", "RELIABILITY-002", "RELIABILITY-003", "RESILIENCE-001", "RESILIENCE-002"],
+    "info_non_blocking": "WARNING/SUGGESTION rows remain info; never drive correction or approval"
+  },
+  "refuter": {
+    "status": "consumed",
+    "inferential_severe_ids": ["RELIABILITY-003"],
+    "result": { "RELIABILITY-003": "corroborated" }
+  },
+  "correction": {
+    "status": "applied",
+    "commits": {
+      "b2038af": "fix(storage): keep viralsync-media bucket private by default",
+      "2b9e15f": "fix(workers): stop fabricating a fake rendered video URL on render failure",
+      "0db4c7b": "fix(publish): align publisher timeout with real flow and add idempotency",
+      "908f627": "fix(backend): emit SSE graph_error on background graph failure",
+      "f00f9be": "perf(llm): use async acomplete in all four LLM call sites"
+    },
+    "work_units": "WU-FIX-1..5, one atomic commit each, independent rollback boundary"
+  },
+  "scoped_validation": {
+    "status": "approve",
+    "verifier": "ses_016e2c2fbffeRG7KdOJqBiY2zD",
+    "evidence": "focused tests 58 passed/1 skipped/0 failed + full suite 213 passed/1 skipped/0 failed at HEAD f00f9be"
+  },
+  "final_verification": {
+    "status": "approved",
+    "snapshot_identity": "genesis 961edc3 -> candidate 022883a -> corrected f00f9be; base_tree bf7dd12 unchanged",
+    "suite": "213 passed, 1 skipped (real-keys gate), 0 failed — verified independently by orchestrator",
+    "counter_coherence": "4 lens sweeps, 1 refuter batch (consumed), 1 correction transaction, 1 scoped validation; all corroborated IDs map to correction IDs; no pending severe work"
+  },
+  "status": "approved",
+  "counter": {
+    "initial_lens_sweeps": 4,
+    "refuter_batches": 1,
+    "correction_transactions": 1,
+    "scoped_validations": 1
+  }
+}

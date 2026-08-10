@@ -1,0 +1,449 @@
+{
+  "schema": "gentle-ai.review-ledger/v1",
+  "transaction_id": "txn-2026-08-09-pipeline-production-gaps",
+  "target_snapshot": "bf7dd12..022883a",
+  "lenses": ["risk", "readability", "reliability", "resilience"],
+  "frozen_at": "2026-08-09T23:20:00Z",
+  "findings": [
+    {
+      "id": "RISK-01",
+      "lens": "risk",
+      "location": "agency/backend/storage/minio_client.py:53-66",
+      "severity": "CRITICAL",
+      "claim": "Al crear el bucket (if not bucket_exists -> make_bucket), el cliente aplica una política de lectura ANÓNIMA sobre TODO el bucket (Principal AWS: [*], Action s3:GetObject en arn:aws:s3:::viralsync-media/*). Esto contradice el verdict T-00#2 y su propio docstring (líneas 81-85) de bucket PRIVADO por default con presigned URLs; el resultado es que cualquier foto de producto de CUALQUIER tenant es legible sin autenticación, anulando el aislamiento cross-tenant que las presigned URLs pretendían dar.",
+      "evidence_class": "deterministic",
+      "proof_refs": "minio_client.py:53-66 (bloque bucket_exists/make_bucket/set_bucket_policy con Principal {\\\"AWS\\\":[\\\"*\\\"]}); contraste con minio_client.py:81-85 y tasks.md T-00 #2",
+      "status": "verified"
+    },
+    {
+      "id": "RISK-02",
+      "lens": "risk",
+      "location": "agency/backend/storage/minio_client.py:18-19",
+      "severity": "WARNING",
+      "claim": "Credenciales root de MinIO con fallback hardcodeado en código commiteado: MINIO_ROOT_USER/MINIO_ROOT_PASSWORD default \"minioadmin\". A diferencia de los guards fail-fast existentes para JWT (auth.py:27-28), secretos Instagram (main.py:107-114) y password Postgres (session.py:31-32), no existe ningún guard para staging/prod que impida arrancar con estas credenciales conocidas -> control administrativo total del bucket si el deploy no setea las env vars.",
+      "evidence_class": "deterministic",
+      "proof_refs": "minio_client.py:18-19; ausencia de guard comparado con auth.py:27-28, main.py:107-114, session.py:31-32",
+      "status": "open"
+    },
+    {
+      "id": "RISK-03",
+      "lens": "risk",
+      "location": "agency/backend/storage/minio_client.py:46-52",
+      "severity": "WARNING",
+      "claim": "El cliente MinIO se construye con secure=False incondicional, incluso si MINIO_ENDPOINT es un endpoint remoto https (p. ej. AWS S3 en producción): credenciales (access_key/secret_key) y URLs viajan en texto plano por HTTP.",
+      "evidence_class": "deterministic",
+      "proof_refs": "minio_client.py:46-52 (secure=False en línea 51, MINIO_ENDPOINT con http/https posible vía os.getenv línea 16)",
+      "status": "open"
+    },
+    {
+      "id": "RISK-04",
+      "lens": "risk",
+      "location": "agency/backend/storage/minio_client.py:121 (+ persistencia en agency/backend/routers/ingestion.py:172-178)",
+      "severity": "WARNING",
+      "claim": "La URL devuelta por presigned_get_object (default SDK = 7 días) se persiste como products.product_image_url y se reinyecta en state; tras ~7 días la URL expira (403) y la fila de producto queda con un link muerto persistido, sin mecanismo de refresco.",
+      "evidence_class": "deterministic",
+      "proof_refs": "minio_client.py:121 (sin expires); .venv/.../minio/api.py:2502-2506 (default timedelta(days=7)); ingestion.py:172-178; daos.py:190-191",
+      "status": "open"
+    },
+    {
+      "id": "RISK-05",
+      "lens": "risk",
+      "location": "agency/agents/nodes/publish.py:29,65-76",
+      "severity": "WARNING",
+      "claim": "El nodo publica el access_token de Instagram del usuario en un POST JSON a PUBLISHER_URL cuyo default es http://localhost:8002 (HTTP plano). Si en producción el publisher es remoto y la env var no es https, el token OAuth viaja en claro; además no hay credencial de servicio entre backend y publisher.",
+      "evidence_class": "deterministic",
+      "proof_refs": "publish.py:29 (os.getenv(\"PUBLISHER_URL\", \"http://localhost:8002\")), publish.py:65-72 (payload con access_token), publish.py:76 (client.post)",
+      "status": "open"
+    },
+    {
+      "id": "RISK-06",
+      "lens": "risk",
+      "location": "agency/backend/routers/graph_execution.py:188-202 (+ agency/backend/db/checkpointer.py:92-94)",
+      "severity": "WARNING",
+      "claim": "Los tokens OAuth (ig_access_token, tiktok_access_token, youtube_access_token) viajan en initial_state hacia un grafo con AsyncPostgresSaver que persiste el estado completo en Postgres. Hoy no se persisten solo porque langgraph descarta keys no declaradas en AgencyState (map_input), la garantía 'nunca se persisten en el servidor' es accidental, no enforced: si alguien agrega esas keys al schema (graph.py:20-37), los checkpoints escribirán tokens en claro en la tabla checkpoints.",
+      "evidence_class": "inferential",
+      "proof_refs": "graph_execution.py:188-202 (tokens en initial_state), checkpointer.py:92-94 (AsyncPostgresSaver sobre PG), graph.py:20-37 (schema sin esas keys), .venv/.../langgraph/pregel/_io.py:93-97 (drop de keys no declaradas)",
+      "status": "open"
+    },
+    {
+      "id": "RISK-07",
+      "lens": "risk",
+      "location": "agency/backend/storage/minio_client.py:140-182",
+      "severity": "WARNING",
+      "claim": "list_tenant_media y delete_media operan sobre el registro EN MEMORIA _MEDIA_REGISTRY (línea 22), no sobre objetos MinIO reales: tras un restart los objetos subidos desaparecen de listados, list_tenant_media fabrica ítems demo con URLs inventadas (líneas 143-171), y delete_media (174-182) solo filtra la lista - NUNCA llama remove_object - por lo que el objeto persiste en storage y la API responde éxito por un borrado que no ocurrió.",
+      "evidence_class": "deterministic",
+      "proof_refs": "minio_client.py:22 (registro), 140-172 (listado + demo seed), 174-182 (delete solo filtra la lista)",
+      "status": "open"
+    },
+    {
+      "id": "RISK-08",
+      "lens": "risk",
+      "location": "agency/backend/db/checkpointer.py:92",
+      "severity": "WARNING",
+      "claim": "El AsyncPostgresSaver usa UNA única conexión psycopg long-lived compartida por todos los tenants (thread_id=tenant_id) mientras psycopg-pool está disponible (3.3.1) y es el patrón recomendado por langgraph-checkpoint-postgres para concurrencia: ejecuciones simultáneas de grafos de distintos tenants serializan/escalan sus checkpoints sobre una sola conexión, sin pool ni reconexión si la conexión se cae.",
+      "evidence_class": "inferential",
+      "proof_refs": "checkpointer.py:92 (AsyncConnection.connect única); .venv/.../langgraph/checkpoint/postgres/aio.py:25 (AsyncConnectionPool); requirements.lock línea 225 (psycopg-pool==3.3.1)",
+      "status": "open"
+    },
+    {
+      "id": "RISK-09",
+      "lens": "risk",
+      "location": "agency/backend/db/daos.py:180-204 (+ agency/migrations/004_add_products.sql:7-16)",
+      "severity": "SUGGESTION",
+      "claim": "upsert_product es SELECT-then-INSERT sin constraint UNIQUE(tenant_id, name) en el DDL 004: dos ingests concurrentes del mismo producto pueden INSERTar filas duplicadas (la docstring de daos.py:171-177 promete 'no duplicar').",
+      "evidence_class": "inferential",
+      "proof_refs": "daos.py:180-204 (select previo + insert), 004_add_products.sql:7-16 (sin UNIQUE), tasks.md T-08 nota 'no existe UNIQUE natural'",
+      "status": "open"
+    },
+    {
+      "id": "RISK-10",
+      "lens": "risk",
+      "location": "agency/backend/routers/graph_execution.py:66-68,117",
+      "severity": "SUGGESTION",
+      "claim": "IdeaApproveRequest.status es un string libre del cliente que se persiste tal cual vía update_idea_approval (daos.py:151-168) sin allowlist (approved/rejected): cualquier valor arbitrario queda escrito en ideas.approval_status.",
+      "evidence_class": "deterministic",
+      "proof_refs": "graph_execution.py:66-68 (modelo sin validación), 117 (paso directo al DAO), daos.py:160-166 (UPDATE con el valor crudo)",
+      "status": "open"
+    },
+    {
+      "id": "RISK-11",
+      "lens": "risk",
+      "location": "agency/backend/routers/ingestion.py:159-160",
+      "severity": "SUGGESTION",
+      "claim": "await file.read() sin límite de tamaño ni validación de tipo real (content-type se deduce solo del nombre): un tenant autenticado puede subir archivos arbitrariamente grandes a MinIO (abuso de almacenamiento/costo; el upload ocurre antes de cualquier validación de negocio).",
+      "evidence_class": "deterministic",
+      "proof_refs": "ingestion.py:159-160 (file.read() sin límite, file.filename crudo), minio_client.py:87-89 (object_key con el filename del cliente)",
+      "status": "open"
+    },
+    {
+      "id": "READABILITY-001",
+      "lens": "readability",
+      "location": "agency/agents/nodes/video_edit.py:48 (rango 48-52)",
+      "severity": "WARNING",
+      "claim": "La ruta de escritura nueva del change (WU-02b) persiste en la tabla videos la URI fabricada s3://viralsync-media-dev/{tenant_id}/raw_input.mp4 cuando raw_video_uri no está en state: el change eliminó el default s3:// de publish.py (T-00 #3, T-16) pero la misma clase de fabricación ahora queda materializada en DB por el insert_video nuevo - contradice la intención de honestidad declarada del change.",
+      "evidence_class": "deterministic",
+      "proof_refs": "video_edit.py:48 (raw_uri = state.get(\"raw_video_uri\", f\"s3://...\")), video_edit.py:52 (await insert_video(tenant_id, script.get(\"id\"), raw_uri, edited_uri)); archive-report.md:64",
+      "status": "open"
+    },
+    {
+      "id": "READABILITY-002",
+      "lens": "readability",
+      "location": "agency/backend/storage/minio_client.py:143-171",
+      "severity": "WARNING",
+      "claim": "Tras el rewrite a SDK real (T-18), list_tenant_media sigue leyendo de un registro en memoria (_MEDIA_REGISTRY) y devuelve seeds demo con URLs raíz fabricadas de objetos que nunca se subieron; el mismo archivo declara en su docstring 'NUNCA se devuelve una URL fabricada'. Resultado: dos fuentes de verdad (MinIO real vs registro por proceso) y el listado pierde uploads reales tras un restart.",
+      "evidence_class": "deterministic",
+      "proof_refs": "minio_client.py:150 (url demo reel_viral_fitness_v1.mp4 fabricada), :163 (url demo suplemento_alpha_mind.png), :22, :135, :140 (registro en memoria), :83-85 (docstring propio de honestidad)",
+      "status": "open"
+    },
+    {
+      "id": "READABILITY-003",
+      "lens": "readability",
+      "location": "agency/agents/llm.py:42",
+      "severity": "WARNING",
+      "claim": "DEFAULT_PROVIDER = \"groq\" no tiene ningún efecto en producción: complete()/acomplete() nunca lo leen (el orden real es proxy-first + DIRECT_CHAIN completo); la única referencia es un assert de test. El nombre y el comentario describen un comportamiento que el router no implementa - constante que documenta una intención inexistente.",
+      "evidence_class": "deterministic",
+      "proof_refs": "llm.py:42; llm.py:67-110 (sin referencia a DEFAULT_PROVIDER); tests/unit/test_llm_router.py:264 (única referencia)",
+      "status": "open"
+    },
+    {
+      "id": "READABILITY-004",
+      "lens": "readability",
+      "location": "agency/agents/llm.py:113-121",
+      "severity": "WARNING",
+      "claim": "acomplete() es API muerta en producción: el único caller es un test (test_llm_router.py:249); los 4 call sites usan complete() sync incluso desde dentro de nodos async. La intención del design 'async where the node is async' (tasks.md T-04) no se realizó y el seam async queda sin uso; el docstring del módulo (llm.py:16) afirma que los módulos llaman a acomplete().",
+      "evidence_class": "deterministic",
+      "proof_refs": "grep acomplete -> solo test_llm_router.py:249; llm.py:113-121; call sites sync: dm_response.py:77, ideation_crew.py:63, scriptwriting_crew.py:66, video_prompt_crew.py:72",
+      "status": "open"
+    },
+    {
+      "id": "READABILITY-005",
+      "lens": "readability",
+      "location": "agency/agents/crews/ideation_crew.py:72-77",
+      "severity": "WARNING",
+      "claim": "El patrón 'try llm.complete -> strip de fences -> json.loads -> fallback de plantillas' se duplica casi idéntico en los 4 call sites; el bloque de stripping es verbo a verbo idéntico en 3 archivos distintos. Un helper del router (p. ej. complete_json) eliminaría la duplicación.",
+      "evidence_class": "deterministic",
+      "proof_refs": "ideation_crew.py:72-73, scriptwriting_crew.py:75-76, video_prompt_crew.py:81-82 (bloques idénticos); estructura try/except/fallback en dm_response.py:60-96",
+      "status": "open"
+    },
+    {
+      "id": "READABILITY-006",
+      "lens": "readability",
+      "location": "agency/agents/crews/ideation_crew.py:22",
+      "severity": "SUGGESTION",
+      "claim": "Docstrings obsoletos tras el refactor WU-01: declaran que la crew usa 'LiteLLM' directo cuando el código llama al router compartido agents.llm; un lector del docstring entendería un mecanismo distinto del implementado.",
+      "evidence_class": "deterministic",
+      "proof_refs": "ideation_crew.py:22 ('usando LiteLLM y SearXNG'), scriptwriting_crew.py:23 ('usando LiteLLM y RAG context'), vs llm.complete en ideation_crew.py:63 y scriptwriting_crew.py:66; dm_response.py:52 ('Gateway LLM')",
+      "status": "open"
+    },
+    {
+      "id": "READABILITY-007",
+      "lens": "readability",
+      "location": "agency/agents/llm.py:6-18",
+      "severity": "SUGGESTION",
+      "claim": "El change mezcla idiomas de documentación sin criterio dentro de una misma feature: llm.py en inglés, daos.py/checkpointer.py/nodos en español; además el typo 'Contracto de uso' (por 'Contrato') en checkpointer.py:17.",
+      "evidence_class": "deterministic",
+      "proof_refs": "llm.py:6-18 (inglés) vs daos.py:3-13 (español) vs checkpointer.py:17 (typo)",
+      "status": "open"
+    },
+    {
+      "id": "READABILITY-008",
+      "lens": "readability",
+      "location": "agency/backend/routers/graph_execution.py:119-122",
+      "severity": "SUGGESTION",
+      "claim": "La rama nueva de approve sin fila afectada (WU-03) reporta el diagnóstico con print() a stdout en una app con logging estructurado (backend/logging_config.py); el módulo ni siquiera importa logging. El patrón print preexistente en :131/:168/:222 se extiende en código nuevo en vez de corregirse.",
+      "evidence_class": "deterministic",
+      "proof_refs": "graph_execution.py:119-122 (print(f\"[approve] aprobación sin fila afectada...\")); backend/main.py:36 (setup_logging())",
+      "status": "open"
+    },
+    {
+      "id": "READABILITY-009",
+      "lens": "readability",
+      "location": "agency/backend/routers/graph_execution.py:15 y agency/agents/nodes/dm_response.py:10",
+      "severity": "SUGGESTION",
+      "claim": "Imports sin uso presentes en archivos modificados por el change: import asyncio (graph_execution.py) y import json (dm_response.py) son el único match de su símbolo en cada archivo - dead imports.",
+      "evidence_class": "deterministic",
+      "proof_refs": "grep asyncio en graph_execution.py -> solo :15; grep json en dm_response.py -> solo :10",
+      "status": "open"
+    },
+    {
+      "id": "READABILITY-010",
+      "lens": "readability",
+      "location": "agency/agents/nodes/publish.py:60-63",
+      "severity": "SUGGESTION",
+      "claim": "Naming que no refleja la rama real: el nodo ramifica tokens por platform (tiktok_access_token/youtube_access_token, líneas 54-57) pero el error de seguridad y la clave del payload nombran Instagram fijo ('Token o User ID de Instagram ausente', instagram_user_id) para cualquier platform; un operador con platform=tiktok recibe un mensaje que nombra la plataforma equivocada.",
+      "evidence_class": "deterministic",
+      "proof_refs": "publish.py:54-57 (rama por platform), :60-63 (mensaje fijo Instagram), :70 (\"instagram_user_id\": user_id)",
+      "status": "open"
+    },
+    {
+      "id": "READABILITY-011",
+      "lens": "readability",
+      "location": "agency/frontend/src/features/Pipeline/views/PipelineMonitorView.jsx:28",
+      "severity": "SUGGESTION",
+      "claim": "Parámetro muerto con valores inconsistentes entre call sites del mismo change: ambos views modificados por T-19 envían force_reideation (false en PipelineMonitorView:28, true en ProductIngestModal:58) pero GraphRunRequest (graph_execution.py:42-57) no declara el campo y ningún código backend lo lee (pydantic lo descarta por extra-ignore) - un lector del frontend creería que controla el comportamiento del grafo.",
+      "evidence_class": "deterministic",
+      "proof_refs": "PipelineMonitorView.jsx:28; ProductIngestModal.jsx:58; graph_execution.py:42-57 (sin el campo); grep force_reideation -> solo frontend (page.js:99 incluido)",
+      "status": "open"
+    },
+    {
+      "id": "RELIABILITY-001",
+      "lens": "reliability",
+      "location": "agency/workers/video_edit_task.py:117",
+      "severity": "CRITICAL",
+      "claim": "Cuando el render local y el fallback fallan, se asigna video_url = f\"http://localhost:9000/viralsync-media/{tenant_id}/products/default_rendered_output.mp4\" y se retorna status: \"completed\"; el nodo del change jamás ve edited_uri vacío: insert_video persiste esa URL fabricada como videos.edited_video_uri y node_publish la envía al publisher como video real. El check honesto que el change agrega (publish.py:39-43 'sin default s3://', y video_edit.py:44-46 RuntimeError) queda como código muerto en el flujo real, y el dev-sim fabricaría un post_id exitoso para un video inexistente.",
+      "evidence_class": "deterministic",
+      "proof_refs": "video_edit_task.py:107-125; tests/unit/test_node_writes.py:190-193; tests/e2e/test_full_pipeline.py:91-96",
+      "status": "verified"
+    },
+    {
+      "id": "RELIABILITY-002",
+      "lens": "reliability",
+      "location": "agency/agents/nodes/publish.py:32",
+      "severity": "CRITICAL",
+      "claim": "_PUBLISH_TIMEOUT = 15.0 vs el poll IG del micro (adapters.py:63-69, 12x time.sleep(5) + requests 10s ~ 60-120s worst case). Para el escenario principal del change PUBLISH-02-1 ('real token -> real Graph API publish'), el client del backend aborta a los 15s con RuntimeError mientras el micro continúa y publica: el grafo registra fallo, el micro publica (divergencia estado/DB), y sin idempotencia un retry duplica la publicación.",
+      "evidence_class": "deterministic",
+      "proof_refs": "agency/agents/nodes/publish.py:32,75-82; agency/microservices/publisher/adapters.py:65-67",
+      "status": "verified"
+    },
+    {
+      "id": "RELIABILITY-003",
+      "lens": "reliability",
+      "location": "agency/agents/crews/ideation_crew.py:63",
+      "severity": "CRITICAL",
+      "claim": "Los 4 call sites usan llm.complete síncrono (ideation_crew.py:63, scriptwriting_crew.py:66, video_prompt_crew.py:72, dm_response.py:77) dentro de nodos async def que corren en el event loop del backend vía ainvoke/BackgroundTasks. El seam async acomplete (llm.py:113-121, con asyncio.to_thread y docstring 'the caller's event loop is never blocked') existe pero no lo usa ningún call site. El router además reintenta hasta 4 proveedores secuenciales (llm.py:83-107), cada uno una llamada HTTP bloqueante - el change multiplica el worst-case de bloqueo del loop único (antes 1 llamada por sitio, ahora hasta proxy+3 con timeouts largos de litellm), congelando SSE live y requests de otros tenants.",
+      "evidence_class": "inferential",
+      "proof_refs": "agency/agents/llm.py:30-34,83-110,113-121; grep call sites (solo complete, cero acomplete fuera de su test)",
+      "status": "verified"
+    },
+    {
+      "id": "RELIABILITY-004",
+      "lens": "reliability",
+      "location": "agency/agents/graph.py:56-59",
+      "severity": "WARNING",
+      "claim": "Rechazo no detiene pipeline: las aristas son incondicionales. Command(resume={\"idea_approved\": False}) (graph_execution.py:129) y {\"publish_approved\": False} (graph_execution.py:166) reanudan hacia scriptwriting/publish igual. El spec del change (spec.md:136-140 PERSIST-03-2 'no idea is promoted to scriptwriting'; spec.md:256 API-06) no es alcanzable con esta topología; los tests solo verifican el flip del status en DB (test_api_ideas_scripts_brain.py:338-368), nunca que el pipeline se detenga.",
+      "evidence_class": "inferential",
+      "proof_refs": "agency/agents/graph.py:55-59; agency/backend/routers/graph_execution.py:129,166; openspec/changes/archive/2026-08-09-pipeline-production-gaps/spec.md:136-140,256",
+      "status": "open"
+    },
+    {
+      "id": "RELIABILITY-005",
+      "lens": "reliability",
+      "location": "agency/backend/routers/graph_execution.py:143-176",
+      "severity": "WARNING",
+      "claim": "approve_publish reanuda incondicionalmente sin verificar tokens; REQ-API-06 (spec.md:256) exige 'MUST only resume publish when valid tokens exist in state, and MUST surface an honest error otherwise'. El error honesto de node_publish queda tragado por print() en los background tasks (graph_execution.py:130-131, 167-168, 221-222) sin broadcast SSE de error: el caller recibe 202 y nunca ve el fallo (también aplica a resume sin checkpoint previo del thread).",
+      "evidence_class": "inferential",
+      "proof_refs": "agency/backend/routers/graph_execution.py:130-131,143-176,167-168,221-222; spec.md:256",
+      "status": "open"
+    },
+    {
+      "id": "RELIABILITY-006",
+      "lens": "reliability",
+      "location": "agency/backend/db/daos.py:189",
+      "severity": "WARNING",
+      "claim": "existing.description = product.get(\"description\", existing.description) con ideation.py:52 pasando \"description\": state.get(\"product_description\", \"\"): el key existe con \"\", así el default nunca se usa; un re-run vía /graph/run con product_image_url presente pero sin product_description (el único path del frontend, ProductIngestModal.jsx:57-60) sobreescribe con \"\" la description de una fila products existente del mismo name (además crea una fila espuria con name=niche, ideation.py:51).",
+      "evidence_class": "deterministic",
+      "proof_refs": "agency/backend/db/daos.py:189; agency/agents/nodes/ideation.py:51-52; agency/frontend/src/components/ProductIngestModal.jsx:57-60",
+      "status": "open"
+    },
+    {
+      "id": "RELIABILITY-007",
+      "lens": "reliability",
+      "location": "agency/agents/nodes/publish.py:96-98",
+      "severity": "WARNING",
+      "claim": "node_publish devuelve published_post_id a state (publish.py:96-98) pero ninguna ruta escribe el resultado en la fila videos (ningún update a publish_approval_status/instagram_post_id/published_at fuera del insert inicial con default \"pending\", daos.py:134). REQ-PERSIST-02 (spec.md:106) exige la fila 'capturing raw/edited URIs and publish status'; tras un publish exitoso la DB queda pending para siempre y el post id se pierde en restart - DB y grafo divergen.",
+      "evidence_class": "inferential",
+      "proof_refs": "agency/agents/nodes/publish.py:96-98; agency/backend/db/daos.py:134; agency/backend/db/models.py:157-159; grep: cero UPDATEs de ese set de columnas",
+      "status": "open"
+    },
+    {
+      "id": "RELIABILITY-008",
+      "lens": "reliability",
+      "location": "agency/agents/nodes/ideation.py:33",
+      "severity": "WARNING",
+      "claim": "Ideas vacías: si el LLM devuelve candidatas que no pasan el filtro 5/50 (ideation_crew.py:75-76,110-125), ideas=[] -> selected_idea={} (ideation.py:33), cero filas persistidas; tras el approve humano, insert_script(tenant_id, None, script) (scriptwriting.py:32) viola NOT NULL/FK (models.py:78) -> el run falla con IntegrityError en lugar de estado honesto 'sin candidatas'. Ningún test cubre ideas-vacías.",
+      "evidence_class": "inferential",
+      "proof_refs": "agency/agents/nodes/ideation.py:33; agency/agents/nodes/scriptwriting.py:32; agency/agents/crews/ideation_crew.py:75-76,110-125; agency/backend/db/models.py:78",
+      "status": "open"
+    },
+    {
+      "id": "RELIABILITY-009",
+      "lens": "reliability",
+      "location": "agency/backend/routers/graph_execution.py:117-122",
+      "severity": "SUGGESTION",
+      "claim": "approve_idea responde 202 'accepted' también cuando update_idea_approval afectó 0 filas (no-UUID -> False en daos.py:157-158, diseño T-08 documentado): el caller no puede distinguir un commit real de un no-op; además IdeaApproveRequest.status es str libre (graph_execution.py:66-68) y se persiste verbatim cualquier valor.",
+      "evidence_class": "deterministic",
+      "proof_refs": "agency/backend/routers/graph_execution.py:66-68,117-122; agency/backend/db/daos.py:157-158",
+      "status": "open"
+    },
+    {
+      "id": "RELIABILITY-010",
+      "lens": "reliability",
+      "location": "agency/frontend/src/components/ProductIngestModal.jsx:54-61",
+      "severity": "SUGGESTION",
+      "claim": "ProductIngestModal (CTA primario 'Generar Reel con IA') reenvía solo force_reideation + product_image_url; nunca ig_user_id/ig_access_token aunque la sesión los tenga (a diferencia de PipelineMonitorView.jsx:22-29). Todo run iniciado desde el modal cae siempre en el error de seguridad de publish (publish.py:59-63) - PUBLISH-03-2 lo permite, pero el flujo 'honesto publica-jamás' es inalcanzable desde ese entry point.",
+      "evidence_class": "deterministic",
+      "proof_refs": "agency/frontend/src/components/ProductIngestModal.jsx:54-61; agency/frontend/src/features/Pipeline/views/PipelineMonitorView.jsx:22-29; agency/agents/nodes/publish.py:59-63",
+      "status": "open"
+    },
+    {
+      "id": "RELIABILITY-011",
+      "lens": "reliability",
+      "location": "agency/agents/nodes/video_edit.py:48",
+      "severity": "SUGGESTION",
+      "claim": "raw_uri = state.get(\"raw_video_uri\", f\"s3://viralsync-media-dev/{tenant_id}/raw_input.mp4\") (drift pre-existente documentado en archive-report §Drift item 1) ahora se persiste tal cual en videos.raw_video_uri vía insert_video (video_edit.py:52): el cambio materializa una URI fabricada en datos persistidos.",
+      "evidence_class": "deterministic",
+      "proof_refs": "agency/agents/nodes/video_edit.py:48,52; openspec/changes/archive/2026-08-09-pipeline-production-gaps/archive-report.md §Drift item 1",
+      "status": "open"
+    },
+    {
+      "id": "RELIABILITY-012",
+      "lens": "reliability",
+      "location": "agency/backend/db/daos.py:178-204",
+      "severity": "SUGGESTION",
+      "claim": "upsert_product select-then-insert (daos.py:178-204) sin UNIQUE en el DDL 004: dos runs/ingests concurrentes del mismo (tenant, name) pueden duplicar filas; el read-back de 'no duplicar' (test_daos.py:207) solo cubre secuencial.",
+      "evidence_class": "inferential",
+      "proof_refs": "agency/backend/db/daos.py:178-204; agency/migrations/004_add_products.sql; agency/tests/unit/test_daos.py:207",
+      "status": "open"
+    },
+    {
+      "id": "RESILIENCE-001",
+      "lens": "resilience",
+      "location": "agency/agents/nodes/publish.py:32,75-76",
+      "severity": "CRITICAL",
+      "claim": "El timeout total de 15s del POST al publisher es menor a la cota inferior de duración del propio flujo del micro para tokens reales (adapters.py:65-67 hace poll de hasta 12x5s=60s + POST container 15s + media_publish 15s; mínimo ~5s+ antes del primer GET). Con un token IG real, el backend levanta httpx.ReadTimeout -> RuntimeError 'Publisher no disponible o falló' (falso negativo) mientras el publisher continúa y SÍ publica en IG. Como el payload (publish.py:65-72) no lleva idempotency key, un resume/reintento re-invoca publish -> posteo duplicado. No hay degradación con gracia: la excepción es el camino normal para tokens reales.",
+      "evidence_class": "deterministic",
+      "proof_refs": "publish.py:31-32 (_PUBLISH_TIMEOUT=15.0), publish.py:74-82 (AsyncClient(timeout=15.0), except solo httpx.HTTPError); microservices/publisher/adapters.py:58-76 (POST 15s + poll 12x5s + publish 15s); microservices/publisher/app.py:41-65",
+      "status": "verified"
+    },
+    {
+      "id": "RESILIENCE-002",
+      "lens": "resilience",
+      "location": "agency/backend/routers/graph_execution.py:127-133,164-170,206-224",
+      "severity": "CRITICAL",
+      "claim": "Ningún fallo del grafo en background se propaga al usuario ni a observabilidad: _run_graph_bg/_resume_graph/_resume_publish capturan Exception y solo hacen print() (stdout del proceso, no logger). El endpoint ya respondió 202 'accepted'; el frontend (PipelineMonitorView.jsx:25-29, fetch sin catch ni lectura de respuesta) espera un evento SSE que jamás llega (solo existen 'node_start'/'graph_complete'). Fallos esperados en producción por este mismo change (publisher caído, checkpointer PG caído, MinIO, LLM all-failed) quedan sin señal.",
+      "evidence_class": "deterministic",
+      "proof_refs": "graph_execution.py:221-222 (print de error), graph_execution.py:130-131, graph_execution.py:167-168 (idem resume); frontend/src/features/Pipeline/views/PipelineMonitorView.jsx:25-29; ausencia de evento graph_error en sse_manager/main.py",
+      "status": "verified"
+    },
+    {
+      "id": "RESILIENCE-003",
+      "lens": "resilience",
+      "location": "agency/backend/db/checkpointer.py:80-96,99-109",
+      "severity": "WARNING",
+      "claim": "El AsyncPostgresSaver depende de UNA conexión psycopg long-lived sin liveness check ni reconexión: si la conexión se cae en runtime (restart de PG, idle, blip de red), _pg_saver sigue seteado y build_checkpointer() (54-59) lo devuelve tal cual; el ainvoke falla, se imprime y no hay recuperación hasta reiniciar el proceso. A diferencia de init_db (session.py:78-97 con retry/backoff), el setup no reintenta; a nivel boot el fallo de setup_postgres_checkpointer() tira el startup completo (fail-fast correcto pero sin degradación alternativa en prod).",
+      "evidence_class": "inferential",
+      "proof_refs": "checkpointer.py:64-65 (conn única global), checkpointer.py:92-96 (sin retry), checkpointer.py:54-59 (devuelve saver sin verificar conn); session.py:27-28,78-97 (retry solo en init_db, no en el saver)",
+      "status": "open"
+    },
+    {
+      "id": "RESILIENCE-004",
+      "lens": "resilience",
+      "location": "agency/backend/db/checkpointer.py:49-52; agency/backend/db/session.py:47",
+      "severity": "WARNING",
+      "claim": "El fallback MemorySaver bajo FORCE_SQLITE es un seam de tests sin guard de entorno: si FORCE_SQLITE=true se filtra a prod (drift de env), el backend arranca con SQLite in-memory (StaticPool, una sola conexión, por-proceso) + MemorySaver: cero durabilidad, checkpoints e ideas/scripts/videos perdidos al restart, y estados inconsistentes entre workers. No existe validación tipo AGENCY_ENV=prod (session.py solo prohíbe la password postgres por defecto, línea 31-32). El fallback enmascara una caída de PG como 'funcionando' mientras no persiste nada.",
+      "evidence_class": "deterministic",
+      "proof_refs": "checkpointer.py:38,49-52; session.py:43-47,59-63; conftest.py:13 (único setter legítimo)",
+      "status": "open"
+    },
+    {
+      "id": "RESILIENCE-005",
+      "lens": "resilience",
+      "location": "agency/agents/nodes/ideation.py:38-55",
+      "severity": "WARNING",
+      "claim": "node_ideation ejecuta dos transacciones independientes (insert_ideas commit / upsert_product commit, daos.py:55-68) dentro de un mismo super-step del grafo; si la segunda falla, el nodo raisea, el super-step no queda checkpointeado, pero las filas ideas YA quedaron commiteadas. Un resume re-ejecuta node_ideation e inserta un set nuevo de ideas (duplicados, sin idempotency key). Persistencia parcial sin boundary transaccional node-level ni deduplicación.",
+      "evidence_class": "inferential",
+      "proof_refs": "ideation.py:39-55 (dos await de DAOs), daos.py:61-68 (commit por llamada), daos.py:81-94 y 171-206; contracto checkpoint de LangGraph (estado por super-step completado)",
+      "status": "open"
+    },
+    {
+      "id": "RESILIENCE-006",
+      "lens": "resilience",
+      "location": "agency/agents/llm.py:57-63,83-98",
+      "severity": "WARNING",
+      "claim": "La ruta proxy-first probablemente nunca autentica: _configured_providers() usa LITELLM_MASTER_KEY solo como gate y complete() jamás pasa api_key cuando api_base está seteado (call_kwargs=model/messages/temperature/max_tokens/api_base). litellm.completion contra un api_base propio sin api_key resuelve credenciales del ambiente (OPENAI_API_KEY) - sin esa var, el intento al proxy falla por auth, se registra como provider failure y la cadena directa responde. La degradación 'funciona' (texto OK por chain directa), pero el pool de fallback del proxy nunca se activa, cada request paga un intento fallido garantizado y el ruido de warning crece. Los tests lo enmascaran: monkeypatchean la seam _call_completion (test_llm_router.py:196-233).",
+      "evidence_class": "inferential",
+      "proof_refs": "llm.py:58-60 (master_key nunca usada como api_key), llm.py:83-98 (call_kwargs sin api_key); test_llm_router.py:196-233 (mock de la seam)",
+      "status": "open"
+    },
+    {
+      "id": "RESILIENCE-007",
+      "lens": "resilience",
+      "location": "agency/agents/llm.py:49-51,113-121",
+      "severity": "WARNING",
+      "claim": "No hay timeout por proveedor en el router: _call_completion llama litellm.completion sin timeout (timeout default de litellm ~600s). Un proveedor colgado/destino inalcanzable estanca complete(); en acomplete corre en asyncio.to_thread (no cancelable), así que un provider hung retrasa el pipeline minutos por llamada y filtra hilos; el graph run tampoco tiene timeout global.",
+      "evidence_class": "inferential",
+      "proof_refs": "llm.py:49-51, llm.py:113-121; ausencia de cualquier timeout en los crews (ideation_crew.py:63-70)",
+      "status": "open"
+    },
+    {
+      "id": "RESILIENCE-008",
+      "lens": "resilience",
+      "location": "agency/backend/storage/minio_client.py:121",
+      "severity": "WARNING",
+      "claim": "La URL que se persiste como referencia durable (products.product_image_url vía upsert_product, y la que consume el flujo IMAGE_TO_VIDEO posterior) es un presigned URL con expiración limitada (default del SDK minio, 7 días). El diseño D6 especificaba 'real public URL'; la implementación eligió presigned sin re-firmar en el read ni refresh en el pipeline: pasada la expiración, el render/publicación posteriores fallan con 401 y la fila en DB conserva una URL muerta permanentemente.",
+      "evidence_class": "inferential",
+      "proof_refs": "minio_client.py:121 (presigned_get_object), daos.py:171-206 (upsert persistente), design.md D6 línea 24 ('real public URL')",
+      "status": "open"
+    },
+    {
+      "id": "RESILIENCE-009",
+      "lens": "resilience",
+      "location": "agency/backend/routers/health.py:25-56",
+      "severity": "WARNING",
+      "claim": "/health declara verificar PostgreSQL ('Verifica activamente la conectividad con PostgreSQL', health.py:5) pero db_status está hardcodeado en 'healthy' (línea 30) y el endpoint no toca PG, ni el checkpointer, ni el publisher :8002, ni MinIO, ni el proxy LLM - ninguna de las dependencias nuevas de este change. La capacidad operativa de detectar una caída del pipeline (checkpointer PG muerto, publisher caído) es nula a nivel health check.",
+      "evidence_class": "deterministic",
+      "proof_refs": "health.py:30 (db_status=\"healthy\" sin llamada DB), health.py:25-56 (endpoint sin dependencias)",
+      "status": "open"
+    },
+    {
+      "id": "RESILIENCE-010",
+      "lens": "resilience",
+      "location": "agency/backend/storage/minio_client.py:174-182",
+      "severity": "SUGGESTION",
+      "claim": "delete_media/delete_tenant_media_item solo mutan el registro en memoria _MEDIA_REGISTRY, nunca el objeto del bucket; el endpoint DELETE reporta éxito (ingestion.py:213-219) mientras el objeto persiste en MinIO (leak). Además list_tenant_media siembra demo items con URLs fabricadas no presigned (minio_client.py:141-171).",
+      "evidence_class": "deterministic",
+      "proof_refs": "minio_client.py:174-182 (solo list comprehension sobre registro), minio_client.py:141-171, ingestion.py:213-219",
+      "status": "open"
+    }
+  ]
+}

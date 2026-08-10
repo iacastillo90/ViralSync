@@ -1,0 +1,39 @@
+{
+  "schema": "gentle-ai.review-gate-context/v1",
+  "transaction_id": "txn-2026-08-09-pipeline-production-gaps",
+  "lineage_id": "pipeline-production-gaps",
+  "expected_head": "f00f9be",
+  "genesis": "961edc3",
+  "base_tree": "bf7dd12696cd76c76d1818dc31773310d03d4a4e",
+  "candidate_tree": "022883a",
+  "final_candidate_tree": "f00f9be",
+  "chain_identity": {
+    "ordered_events": [
+      "review-start",
+      "lens-risk-sweep",
+      "lens-readability-sweep",
+      "lens-reliability-sweep",
+      "lens-resilience-sweep",
+      "ledger-freeze",
+      "refuter-batch-1",
+      "correction-transaction-1",
+      "scoped-validation-1",
+      "final-verification"
+    ]
+  },
+  "bundle_digest": "sha256:0120a17bb5d46e8979acf0497f2b85fee39aa970b0b1b7190e514482ef781649",
+  "path_scope": ["agency/", "requirements.txt", "requirements.lock"],
+  "policies": [
+    "pre-commit: validate receipt with review-validate, never start a reviewer",
+    "pre-push: validate same content-bound receipt",
+    "pre-pr: validate candidate tree, paths, policy, evidence, base relationship",
+    "release: validate immutable release tree, provenance, evidence, publication boundary",
+    "post-sdd-phase: reuse this receipt; do not reopen review"
+  ],
+  "gate_validation_notes": {
+    "native_validator": "gentle-ai review-validate could NOT be satisfied for this review.",
+    "reason": "This review was executed through the orchestrated sub-agent mechanism (4 lenses + refuter + correction + scoped validator) per the SDD orchestrator contract. The native CAS store (<git-common-dir>/gentle-ai/review-transactions/v1/) was never built because review-start only constructs targets from the current working tree (which contains unrelated MediaGalleryView.jsx changes), not from the committed base bf7dd12 -> final f00f9be of this review. A probe review-start created an incorrect empty transaction and was removed; no native chain exists to validate.",
+    "closest_fresh_context_audit": "Scoped fix-delta validator returned APPROVE in a fresh context; full suite re-verified by orchestrator and validator: 213 passed / 1 skipped / 0 failed; frozen ledger: 6 CRITICAL all verified after correction.",
+    "not_a_waiver": "Documented blocker per mandatory delegation rules; no equivalent native review budget exists or was created."
+  }
+}

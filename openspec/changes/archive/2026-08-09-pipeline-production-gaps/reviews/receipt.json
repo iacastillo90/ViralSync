@@ -1,0 +1,37 @@
+{
+  "schema": "gentle-ai.review-receipt/v1",
+  "receipt_id": "rcpt-2026-08-09-pipeline-production-gaps",
+  "transaction_id": "txn-2026-08-09-pipeline-production-gaps",
+  "lineage_id": "pipeline-production-gaps",
+  "mode": "4R",
+  "status": "approved",
+  "genesis": "961edc3",
+  "base_tree": "bf7dd12696cd76c76d1818dc31773310d03d4a4e",
+  "candidate_tree": "022883a",
+  "final_candidate_tree": "f00f9be",
+  "repository": "/home/ivan/Desktop/AgentMarketingIA",
+  "expected_head": "f00f9be",
+  "path_scope": ["agency/", "requirements.txt", "requirements.lock"],
+  "frozen_findings": {
+    "total": 44,
+    "critical": 6,
+    "warning": 24,
+    "suggestion": 14,
+    "verified_after_correction": ["RISK-01", "RELIABILITY-001", "RELIABILITY-002", "RELIABILITY-003", "RESILIENCE-001", "RESILIENCE-002"]
+  },
+  "correction_commits": [
+    "b2038af",
+    "2b9e15f",
+    "0db4c7b",
+    "908f627",
+    "f00f9be"
+  ],
+  "scoped_validation": "approve",
+  "suite_evidence": {
+    "command": "cd agency && AGENCY_ENV=dev ./.venv/bin/python -m pytest tests/ -q",
+    "result": "213 passed, 1 skipped (RUN_REAL_KEYS gate), 0 failed",
+    "verified_by": ["orchestrator", "scoped-fix-delta-validator"]
+  },
+  "content_bound": "base_tree bf7dd12 -> candidate_tree 022883a -> final_candidate_tree f00f9be; path_scope agency/+requirements",
+  "gates": "pre-commit/pre-push/pre-PR/release MUST validate this receipt via native review-validate; never create a new review budget"
+}
