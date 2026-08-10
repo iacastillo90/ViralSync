@@ -200,7 +200,7 @@ async def test_node_video_edit_persists_video_row(db_session, node_tenants, monk
     )
     monkeypatch.setattr(
         "agents.nodes.video_edit.trigger_video_render",
-        lambda tenant_id, script, idea: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
+        lambda tenant_id, script, idea, storyboard=None: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
     )
 
     result = await node_video_edit(
@@ -352,7 +352,7 @@ async def test_node_video_edit_failed_render_propagates_honestly(db_session, nod
     )
     monkeypatch.setattr(
         "agents.nodes.video_edit.trigger_video_render",
-        lambda tenant_id, script, idea: {
+        lambda tenant_id, script, idea, storyboard=None: {
             "status": "failed",
             "video_url": "",
             "message": "No real rendered video produced",

@@ -25,15 +25,49 @@ RENDERER_SERVICE_URL = os.getenv("RENDERER_SERVICE_URL", "http://video_renderer:
 FALLBACK_RENDERER_URL = "http://localhost:8001/render"
 
 
+def _storyboard_to_scenes(storyboard: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """Mapea un storyboard de video_prompt_crew a payloads ``RenderScene``
+    (REQ-VSR-01 worker side): ``block``/``text`` obligatorios; opcionales
+    ``tts_voice``/``visual_prompt``/``duration_s`` solo si están presentes.
+
+    Las escenas sin texto narrable (o entradas no-dict) se descartan para no
+    422 al renderer (VSR-06-1). Resultado vacío → el llamador mantiene el
+    camino flat (omitir ``scenes``).
+    """
+    if not storyboard:
+        return []
+    scenes: List[Dict[str, Any]] = []
+    for idx, sc in enumerate(storyboard):
+        if not isinstance(sc, dict):
+            continue
+        text = str(sc.get("audio_text", "")).strip()
+        if not text:
+            continue
+        block = str(sc.get("block_type") or f"scene_{sc.get('scene_index') or idx + 1}")
+        scene: Dict[str, Any] = {"block": block, "text": text}
+        if sc.get("tts_voice"):
+            scene["tts_voice"] = str(sc["tts_voice"])
+        if sc.get("visual_prompt"):
+            scene["visual_prompt"] = str(sc["visual_prompt"])
+        if sc.get("duration_s") is not None:
+            scene["duration_s"] = float(sc["duration_s"])
+        scenes.append(scene)
+    return scenes
+
+
 @celery_app.task(name="workers.video_edit_task.trigger_video_render")
 def trigger_video_render(
     tenant_id: str,
     script: Dict[str, Any],
     idea: Optional[Dict[str, Any]] = None,
+    storyboard: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Despacha el trabajo de renderizado al microservicio faceless independiente (Puerto 8001).
     Maneja timeouts largos (300 segundos) ya que la síntesis TTS y composición de video toman tiempo.
+
+    WU2: si se recibe ``storyboard``, se reenvía a ``render_payload["scenes"]``
+    (VSR-01 worker side); ausente → payload flat (VSR-02).
     """
     if not idea:
         idea = {"texto": "Video Marketing ViralSync", "niche": "B2B SaaS"}
@@ -54,6 +88,14 @@ def trigger_video_render(
 
     render_payload = director_result.get("render_payload", {})
     curated_metadata = director_result.get("metadata", {})
+
+    # WU2: reenviar el storyboard a scenes[] del payload de render (VSR-01
+    # worker side). Sin storyboard (o sin escenas válidas) → omitir scenes → flat.
+    if storyboard:
+        scenes = _storyboard_to_scenes(storyboard)
+        if scenes:
+            render_payload = {**render_payload, "scenes": scenes}
+            logger.info(f"[{tenant_id}] Reenviando {len(scenes)} escenas del storyboard al renderer.")
 
     video_url = ""
     video_renderer_provider = os.getenv("VIDEO_RENDERER_PROVIDER", "local")

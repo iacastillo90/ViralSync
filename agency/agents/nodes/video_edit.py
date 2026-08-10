@@ -32,7 +32,9 @@ async def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     # 2. Invocar renderizado real vía microservicio / Celery worker
-    render_res = trigger_video_render(tenant_id=tenant_id, script=script, idea=selected_idea)
+    render_res = trigger_video_render(
+        tenant_id=tenant_id, script=script, idea=selected_idea, storyboard=storyboard
+    )
     render_status = render_res.get("status")
 
     if render_status == "rejected_quality":
