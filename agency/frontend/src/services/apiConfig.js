@@ -33,8 +33,34 @@ export async function fetchWithTenant(endpoint, options = {}, tenantId) {
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
   if (!response.ok) {
-    throw new Error(`HTTP Error ${response.status} en endpoint ${endpoint}`);
+    const error = new Error(`HTTP Error ${response.status} en endpoint ${endpoint}`);
+    error.status = response.status;
+    if (response.status === 429) {
+      error.retryAfter = response.headers.get("Retry-After") || "60";
+    }
+    throw error;
   }
   return response.json();
 }
+
+export async function getPresignedUploadUrl(tenantId, filename) {
+  return fetchWithTenant(`/${tenantId}/ingestion/presigned-upload-url`, {
+    method: "POST",
+    body: JSON.stringify({ filename }),
+  }, tenantId);
+}
+
+export async function uploadFileWithPresignedUrl(tenantId, file) {
+  const { upload_url, object_key } = await getPresignedUploadUrl(tenantId, file.name);
+  const putResponse = await fetch(upload_url, {
+    method: "PUT",
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+    body: file,
+  });
+  if (!putResponse.ok) {
+    throw new Error(`Error al subir archivo a S3/MinIO (${putResponse.status})`);
+  }
+  return { object_key, filename: file.name };
+}
+
 
