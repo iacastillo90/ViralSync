@@ -175,11 +175,8 @@ export default function DashboardPage() {
   };
 
 
-  if (!mounted) {
-    return null;
-  }
-
   if (!tenantId || tenantId === "null") {
+
     return (
       <main suppressHydrationWarning className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-6">
         <div suppressHydrationWarning className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center space-y-6 shadow-xl shadow-indigo-950/20">

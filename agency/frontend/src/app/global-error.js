@@ -8,9 +8,9 @@ export default function GlobalError({ error, reset }) {
   }, [error]);
 
   return (
-    <html lang="es">
-      <body className="min-h-screen bg-[#080c14] text-slate-100 antialiased">
-        <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
+    <html lang="es" suppressHydrationWarning>
+      <body className="min-h-screen bg-[#080c14] text-slate-100 antialiased" suppressHydrationWarning>
+        <div suppressHydrationWarning className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
           <h1 className="text-2xl font-bold">Error crítico</h1>
           <p className="text-slate-400">
             Ocurrió un error crítico en la aplicación.
