@@ -1,0 +1,13 @@
+-- agency/migrations/005_add_products_object_key.sql
+-- Migración SQL 005 (ADD-only, REQ-PERSIST-05 / D-5): columna `object_key` en
+-- `products` — la key ESTABLE del objeto en MinIO (jamás la URL presignada).
+-- La URL presignada expira y cambia (SH-05-3); la key no: `{tenant_id}/products/...`
+-- es la identidad durable que el graph re-firma en cada lectura.
+-- ADD-only nullable: filas legacy quedan con NULL → fallback a la URL almacenada
+-- (SH-05-4). La migración SQL es la fuente de verdad del esquema (DDL-as-truth):
+-- el ORM `backend/db/models.py Product` debe mapear EXACTAMENTE este set de columnas.
+--
+-- Manual apply para dev DBs existentes (docker-entrypoint-initdb.d sólo corre en
+-- la primera subida del volumen):
+--   psql "$DATABASE_URL" -c "ALTER TABLE products ADD COLUMN IF NOT EXISTS object_key TEXT;"
+ALTER TABLE products ADD COLUMN IF NOT EXISTS object_key TEXT;

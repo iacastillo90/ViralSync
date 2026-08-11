@@ -30,6 +30,10 @@ class AgencyState(TypedDict, total=False):
     idea_rejected: bool
     script: Dict[str, Any]
     product_image_url: str
+    # PERSIST-05-1 / D-5: key estable del objeto en MinIO (no la URL presignada).
+    # Viaja del request → state → node_ideation (persiste) → node_video_edit
+    # (re-firma en cada lectura, SH-05-3; filas legacy NULL → fallback SH-05-4).
+    product_object_key: str
     business_type: str
     video_storyboard: List[Dict[str, Any]]
     raw_video_uri: str

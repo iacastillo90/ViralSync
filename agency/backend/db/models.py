@@ -126,11 +126,12 @@ class Lead(Base):
 
 
 class Product(Base):
-    # Alineada con migrations/004_add_products.sql (REQ-PERSIST-01): la migración
-    # SQL es la fuente de verdad — el ORM declara EXACTAMENTE las columnas del DDL
-    # 004 (id, tenant_id, name, description, product_image_url, created_at).
-    # create_all sólo crea la tabla si falta; sobre la tabla ya existente el ORM
-    # mapea exactamente las columnas que INSERT/UPDATE tocan.
+    # Alineada con migrations/005_add_products_object_key.sql (REQ-PERSIST-01/05):
+    # la migración SQL es la fuente de verdad — el ORM declara EXACTAMENTE las
+    # columnas del DDL 005 (id, tenant_id, name, description, product_image_url,
+    # object_key, created_at). `object_key` es la key ESTABLE del objeto en MinIO
+    # (D-5): la URL presignada expira; la key no — el graph la re-firma en cada
+    # lectura (SH-05-3) o cae a la URL almacenada en filas legacy NULL (SH-05-4).
     __tablename__ = "products"
 
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
@@ -138,6 +139,7 @@ class Product(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
     product_image_url: Mapped[Optional[str]] = mapped_column(Text)
+    object_key: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 

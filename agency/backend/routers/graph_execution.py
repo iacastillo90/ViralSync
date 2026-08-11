@@ -129,6 +129,11 @@ class GraphRunRequest(BaseModel):
     product_name: Optional[str] = None
     product_description: Optional[str] = None
     product_image_url: Optional[str] = None
+    # PERSIST-05-1 / D-5: la key ESTABLE del objeto en MinIO (nunca la URL
+    # presignada que expira). Node_ideation la persiste en `products.object_key`
+    # y node_video_edit la re-firma en cada lectura (SH-05-3) o cae a la URL
+    # almacenada en filas legacy (SH-05-4).
+    product_object_key: Optional[str] = None
 
 
 class ProgressReportRequest(BaseModel):
@@ -281,6 +286,7 @@ async def run_graph(tenant_id: str, req: GraphRunRequest, background_tasks: Back
         "product_name": req.product_name,
         "product_description": req.product_description,
         "product_image_url": req.product_image_url,
+        "product_object_key": req.product_object_key,
     }
     
     # Ejecutar el grafo en background (log + SSE graph_error ante fallo)

@@ -60,6 +60,9 @@ async def node_ideation(state: Dict[str, Any]) -> Dict[str, Any]:
                 "name": state.get("product_name") or state.get("niche", "General"),
                 "description": state.get("product_description", ""),
                 "product_image_url": product_image_url,
+                # PERSIST-05-1 / D-5: la key ESTABLE viaja al DAO (None-safe: si
+                # el run no la trae, la fila conserva la key ya almacenada).
+                "object_key": state.get("product_object_key"),
             },
         )
 

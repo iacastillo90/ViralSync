@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from backend.storage.minio_client import (
+    build_object_key,
     save_product_photo_to_minio,
     get_tenant_media_list,
     delete_tenant_media_item,
@@ -155,6 +156,10 @@ async def ingest_product_data(
 ):
     """Sube la foto del producto a MinIO y clasifica si es Producto Físico o Servicio Intangible."""
     product_image_url = ""
+    # PERSIST-05-1 / D-5: la key ESTABLE del objeto (nunca la URL presignada que
+    # expira). Se deriva con el MISMO helper del upload (sin drift) — la fila
+    # `products` guarda la key; el graph la re-firma en cada lectura (SH-05-3).
+    object_key = build_object_key(tenant_id, file.filename) if file else ""
     if file:
         content = await file.read()
         product_image_url = save_product_photo_to_minio(content, file.filename, tenant_id)
@@ -175,6 +180,7 @@ async def ingest_product_data(
                 "name": product_name,
                 "description": description,
                 "product_image_url": product_image_url,
+                "object_key": object_key or None,
             },
         )
     except Exception as exc:

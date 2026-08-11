@@ -202,6 +202,12 @@ async def upsert_product(tenant_id: str, product: Dict[str, Any]) -> Product:
     El product-ingest identifica al producto por su nombre: re-ingest con el mismo
     name actualiza description/product_image_url en vez de duplicar filas
     (no existe UNIQUE natural en el DDL 004; (tenant_id, name) es la clave lógica).
+
+    PERSIST-05-1 / D-5: la fila guarda `object_key` — la key ESTABLE del objeto
+    en MinIO, NUNCA la URL presignada (que expira). El write es None-safe: un
+    re-upsert sin `object_key` conserva la key ya almacenada (SH-05-4 legacy);
+    el INSERT inicial lo deja NULL si no viene (path TEXT_TO_VIDEO intacto,
+    PERSIST-05-2).
     """
     async def _work(session: AsyncSession) -> Product:
         name = product.get("name")
@@ -213,11 +219,14 @@ async def upsert_product(tenant_id: str, product: Dict[str, Any]) -> Product:
             )
         ).scalars().first()
 
+        new_object_key = product.get("object_key")
         if existing is not None:
             existing.description = product.get("description", existing.description)
             existing.product_image_url = product.get(
                 "product_image_url", existing.product_image_url
             )
+            if new_object_key is not None:  # None-safe: conserva la key ya guardada
+                existing.object_key = new_object_key
             row = existing
         else:
             row = Product(
@@ -226,6 +235,7 @@ async def upsert_product(tenant_id: str, product: Dict[str, Any]) -> Product:
                 name=name,
                 description=product.get("description"),
                 product_image_url=product.get("product_image_url"),
+                object_key=new_object_key,
             )
             session.add(row)
         await session.flush()

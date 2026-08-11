@@ -82,8 +82,9 @@ async def test_product_ingest_no_file_returns_honest_empty_url(init_test_db, db_
     ).scalars().first()
     assert row is not None
     assert row.product_image_url == ""
-    # PERSIST-05-1: sin upload tampoco hay object_key fabricado
-    assert row.object_key == ""
+    # PERSIST-05-1: sin upload tampoco hay object_key fabricado — la columna
+    # ADD-only nullable queda NULL (y un re-ingest sin archivo jamás borra la key).
+    assert row.object_key is None
 
 
 @pytest.mark.anyio
