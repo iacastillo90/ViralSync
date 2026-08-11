@@ -205,14 +205,20 @@ async def ingest_product_data(
 
 @ingestion_router.get("/{tenant_id}/media")
 async def list_media(tenant_id: str):
-    """Lista todos los recursos multimedia (imágenes y videos) almacenados en MinIO para el tenant."""
+    """Lista los objetos REALES del tenant en MinIO (SH-01-1/2) — 200 siempre,
+    lista vacía cuando no hay uploads (sin registry en memoria ni seeds demo)."""
     items = get_tenant_media_list(tenant_id)
     return items
 
 
-@ingestion_router.delete("/{tenant_id}/media/{media_id}")
+@ingestion_router.delete("/{tenant_id}/media/{media_id:path}")
 async def delete_media_item(tenant_id: str, media_id: str):
-    """Elimina un video o imagen de MinIO por su ID."""
+    """Elimina el objeto REAL de MinIO por object_key (REQ-SH-02).
+
+    `media_id` == object_key (converter `:path` para claves con '/'; D-3). Solo
+    se borra si pertenece al prefijo del tenant (guard SH-02-4, en el cliente);
+    claves fuera del prefijo o desconocidas → 404 (SH-02-3). El delete es
+    idempotente (S3 delete 204, SH-02-2)."""
     success = delete_tenant_media_item(tenant_id, media_id)
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recurso multimedia no encontrado en MinIO")
