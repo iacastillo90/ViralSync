@@ -85,15 +85,25 @@ async def setup_postgres_checkpointer() -> Any:
     tablas de checkpoint con `setup(conn)` sobre la misma conexión (PERSIST-04-1).
     """
     global _pg_conn, _pg_saver
+    env = os.getenv("AGENCY_ENV", "dev").lower()
 
-    from psycopg import AsyncConnection
-    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+    try:
+        from psycopg import AsyncConnection
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-    _pg_conn = await AsyncConnection.connect(_psycopg_conninfo(), autocommit=True)
-    _pg_saver = AsyncPostgresSaver(_pg_conn)
-    await _pg_saver.setup()
-    logger.info("[checkpointer] AsyncPostgresSaver inicializado sobre PostgreSQL")
-    return _pg_saver
+        _pg_conn = await AsyncConnection.connect(_psycopg_conninfo(), autocommit=True)
+        _pg_saver = AsyncPostgresSaver(_pg_conn)
+        await _pg_saver.setup()
+        logger.info("[checkpointer] AsyncPostgresSaver inicializado sobre PostgreSQL")
+        return _pg_saver
+    except Exception as exc:
+        if env in ["dev", "test"]:
+            logger.warning(f"[checkpointer] Postgres no disponible en {env} ({exc}). Fallback a MemorySaver en memoria...")
+            from langgraph.checkpoint.memory import MemorySaver
+            _pg_saver = MemorySaver()
+            return _pg_saver
+        raise exc
+
 
 
 async def close_postgres_checkpointer() -> None:
