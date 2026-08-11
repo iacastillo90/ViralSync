@@ -3,9 +3,10 @@ test_daos.py
 
 DAO layer tests for WU-02a (design D3/D4/D8, REQ-PERSIST-01/02/03/05):
 
-- `test_product_columns_match_migration_004_exact` — PERSIST-01-2 ORM/DDL column
+- `test_product_columns_match_migration_005_exact` — PERSIST-01-2 ORM/DDL column
   parity on the `Product` model (same drift-proof pattern as
-  `test_video_metric_orm_alignment.py`).
+  `test_video_metric_orm_alignment.py`). After migration 005 (PR #3) the DDL-as-truth
+  is the 005 column set (`object_key` added, REQ-PERSIST-05).
 - `test_daos_insert_ideas_returns_rows` — PERSIST-02-1 unit: one `ideas` row per
   candidate, with a real generated UUID usable as FK downstream.
 - `test_daos_insert_script_fks_selected_idea` — PERSIST-02-1 unit: `scripts` row
@@ -14,6 +15,9 @@ DAO layer tests for WU-02a (design D3/D4/D8, REQ-PERSIST-01/02/03/05):
   script with raw/edited URIs captured.
 - `test_daos_upsert_product` — REQ-PERSIST-05: `products` upsert by
   (tenant_id, name) persists `product_image_url`.
+- `test_upsert_product_persists_object_key` — PERSIST-05-1: the row stores
+  `object_key` (stable key), never the presigned URL; the update path is
+  None-safe (a re-upsert without `object_key` keeps the stored key).
 - `test_daos_update_idea_approval_changes_status` — PERSIST-03 unit: approval
   status is a real DB commit.
 - `test_daos_update_idea_approval_non_uuid_returns_false` — T-08 acceptance:
@@ -45,12 +49,13 @@ from backend.db.daos import (
 DAO_TENANT_ID = "cccc0001-1111-2222-3333-444444444444"
 DAO_TENANT_2_ID = "cccc0002-1111-2222-3333-444444444444"
 
-PRODUCT_004_COLUMNS = {
+PRODUCT_005_COLUMNS = {
     "id",
     "tenant_id",
     "name",
     "description",
     "product_image_url",
+    "object_key",
     "created_at",
 }
 
@@ -101,11 +106,11 @@ async def dao_tenants(db_session):
     await db_session.commit()
 
 
-def test_product_columns_match_migration_004_exact():
-    """PERSIST-01-2: `Product` MUST mirror migration 004 columns exactly (DDL-as-truth)."""
+def test_product_columns_match_migration_005_exact():
+    """PERSIST-01-2: `Product` MUST mirror migration 005 columns exactly (DDL-as-truth)."""
     cols = {c.name for c in Product.__table__.columns}
-    assert cols == PRODUCT_004_COLUMNS, (
-        f"Product drift: got {sorted(cols)} expected {sorted(PRODUCT_004_COLUMNS)}"
+    assert cols == PRODUCT_005_COLUMNS, (
+        f"Product drift: got {sorted(cols)} expected {sorted(PRODUCT_005_COLUMNS)}"
     )
 
 
@@ -224,6 +229,44 @@ async def test_daos_upsert_product(db_session, dao_tenants):
     ).scalars().all()
     assert len(rows) == 2
     assert {p.name for p in rows} == {"Suplemento Alpha Mind", "Plan Consultoría SaaS"}
+
+
+@pytest.mark.anyio
+async def test_upsert_product_persists_object_key(db_session, dao_tenants):
+    """PERSIST-05-1: la fila `products` guarda el object_key estable — NUNCA la URL presignada."""
+    object_key = f"{DAO_TENANT_ID}/products/alpha-object-key.png"
+    row = await upsert_product(
+        DAO_TENANT_ID,
+        {
+            "name": "Suplemento Object Key",
+            "description": "Nootrópico natural",
+            "product_image_url": (
+                "http://minio:9000/viralsync-media/alpha.png?X-Amz-Signature=expired"
+            ),
+            "object_key": object_key,
+        },
+    )
+    assert row.object_key == object_key
+    assert "X-Amz-Signature" not in row.object_key  # la key NO es la URL
+
+    persisted = (
+        await db_session.execute(
+            select(Product).where(
+                Product.tenant_id == DAO_TENANT_ID,
+                Product.name == "Suplemento Object Key",
+            )
+        )
+    ).scalars().one()
+    assert persisted.object_key == object_key
+    # La URL presignada sigue en su columna (product_image_url), la key en la suya
+    assert "X-Amz-Signature" in persisted.product_image_url
+
+    # Update path None-safe: re-upsert del mismo name SIN object_key conserva la key
+    updated = await upsert_product(
+        DAO_TENANT_ID,
+        {"name": "Suplemento Object Key", "description": "Nootrópico natural v2"},
+    )
+    assert updated.object_key == object_key
 
 
 @pytest.mark.anyio
