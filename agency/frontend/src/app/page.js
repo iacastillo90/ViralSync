@@ -54,28 +54,42 @@ export default function DashboardPage() {
   const pendingIdea = ideaItems[0] || null;
   const latestScript = scriptItems[scriptItems.length - 1] || scriptItems[0] || null;
 
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   // 1. Cargar la lista de tenants en el arranque
   useEffect(() => {
     const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
-    fetch(`${apiBase}/tenants`)
-      .then((res) => res.json())
-      .then((data) => {
+    async function loadTenants() {
+      try {
+        const res = await fetch(`${apiBase}/tenants`);
+        if (!res.ok) return;
+        const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
           setAvailableTenants(data);
           
           // Si no hay tenant seleccionado, intentar recuperar de localStorage o usar el primero
-          let savedTenantId = localStorage.getItem("tenantId");
+          let savedTenantId = typeof window !== "undefined" ? localStorage.getItem("tenantId") : null;
           let match = data.find((t) => t.id === savedTenantId && t.id !== "nuevo") || data[0];
           
           if (match) {
             setActiveTenant(match);
             setTenantId(match.id);
-            localStorage.setItem("tenantId", match.id);
+            if (typeof window !== "undefined") {
+              localStorage.setItem("tenantId", match.id);
+            }
           }
         }
-      })
-      .catch((err) => console.error("Error cargando tenants:", err));
+      } catch (err) {
+        console.warn("Servidor backend FastAPI no disponible temporalmente. Modo offline o esperando conexión.");
+      }
+    }
+    loadTenants();
   }, [setAvailableTenants, setActiveTenant, setTenantId]);
+
 
   // Iniciar conexión SSE en tiempo real (sólo si hay un tenantId válido)
   useSSEStream(tenantId && tenantId !== "null" && tenantId !== "nuevo" ? tenantId : null);
@@ -161,14 +175,18 @@ export default function DashboardPage() {
   };
 
 
+  if (!mounted) {
+    return null;
+  }
+
   if (!tenantId || tenantId === "null") {
     return (
-      <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-6">
-        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center space-y-6 shadow-xl shadow-indigo-950/20">
-          <div className="bg-indigo-600/10 border border-indigo-500/30 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto text-indigo-400">
+      <main suppressHydrationWarning className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-6">
+        <div suppressHydrationWarning className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center space-y-6 shadow-xl shadow-indigo-950/20">
+          <div suppressHydrationWarning className="bg-indigo-600/10 border border-indigo-500/30 p-4 rounded-full w-16 h-16 flex items-center justify-center mx-auto text-indigo-400">
             <Building2 className="w-8 h-8" />
           </div>
-          <div className="space-y-2">
+          <div suppressHydrationWarning className="space-y-2">
             <h1 className="text-2xl font-bold tracking-tight">Bienvenido a ViralSync</h1>
             <p className="text-sm text-slate-400">
               Para comenzar a generar tus videos de marketing con inteligencia artificial, necesitas configurar o registrar tu primer inquilino (tenant).
@@ -186,7 +204,8 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+    <div suppressHydrationWarning className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+
       <Header />
       <div className="flex flex-1">
         <Sidebar tenantId={tenantId} />
