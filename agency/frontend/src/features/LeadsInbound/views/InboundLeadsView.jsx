@@ -33,8 +33,10 @@ export function InboundLeadsView({ tenantId }) {
   useEffect(() => {
     if (!tenantId) return;
 
-    const sseUrl = `/realtime/sse/${tenantId}`;
+    const sseBaseUrl = process.env.NEXT_PUBLIC_SSE_URL || "http://localhost:8000/realtime/sse";
+    const sseUrl = `${sseBaseUrl}/${tenantId}`;
     const eventSource = new EventSource(sseUrl);
+
 
     eventSource.addEventListener("lead_captured", (e) => {
       try {

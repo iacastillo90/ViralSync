@@ -29,5 +29,16 @@ module.exports = (phase) => {
   }
   return {
     reactStrictMode: true,
+    async rewrites() {
+      const backendUrl = process.env.NEXT_PUBLIC_API_URL 
+        ? process.env.NEXT_PUBLIC_API_URL.replace(/\/api\/v1\/?$/, "")
+        : "http://localhost:8000";
+      return [
+        {
+          source: "/realtime/sse/:path*",
+          destination: `${backendUrl}/realtime/sse/:path*`,
+        },
+      ];
+    },
   };
 };
