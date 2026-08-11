@@ -36,6 +36,16 @@ def get_graph_app():
     return graph_app
 
 
+async def get_graph_app_async():
+    """Devuelve el grafo compilado garantizando la inicialización del checkpointer."""
+    global graph_app
+    if graph_app is None:
+        from backend.db.checkpointer import get_or_create_checkpointer
+        cp = await get_or_create_checkpointer()
+        graph_app = build_agency_graph(checkpointer=cp)
+    return graph_app
+
+
 def rebuild_graph_app():
     """Reconstruye el grafo con un checkpointer nuevo (lifespan, T-14)."""
     global graph_app
@@ -49,21 +59,11 @@ def _thread_config(tenant_id: str) -> dict:
 
 
 async def _resume_graph_background(tenant_id: str, resume_payload: dict) -> None:
-    """Reanuda un grafo pausado en background (RESILIENCE-002).
-
-    Logea el resultado y, ante un fallo, emite un evento SSE ``graph_error`` con
-    ``thread_id`` + mensaje para que el frontend no quede esperando eventos que
-    nunca llegarán (sólo se emitían node_start/graph_complete).
-    """
+    """Reanuda un grafo pausado en background (RESILIENCE-002)."""
     config = _thread_config(tenant_id)
     try:
-        # D-C/TCK-004: el checkpoint se reanuda con `Command(update=...)` (no
-        # `resume=`) para que las flags de aprobación/rechazo del payload se
-        # MERGEN en el estado del thread. Empíricamente (probe langgraph 1.2.10),
-        # `Command(resume=...)` soltaba el payload en el nodo interrupt y el grafo
-        # se re-pausaba para siempre sin entregar idea_approved/publish_rejected
-        # a la ruta condicional. `Command(update=...)` entrega el estado y resume.
-        await get_graph_app().ainvoke(Command(update=resume_payload), config=config)
+        app = await get_graph_app_async()
+        await app.ainvoke(Command(update=resume_payload), config=config)
         logger.info("Graph resumed for tenant %s (update payload: %s)", tenant_id, resume_payload)
     except Exception as exc:  # noqa: BLE001 - absence of logging means silent hang
         logger.error("Graph resume failed for tenant %s: %s", tenant_id, exc, exc_info=True)
@@ -71,14 +71,12 @@ async def _resume_graph_background(tenant_id: str, resume_payload: dict) -> None
 
 
 async def _run_graph_background(tenant_id: str, initial_state: dict) -> None:
-    """Ejecuta el grafo multi-agente en background (RESILIENCE-002).
-
-    Idem ``_resume_graph_background``: broadcast de graph_complete en éxito o
-    gráfica de error SSE en fallo.
-    """
+    """Ejecuta el grafo multi-agente en background (RESILIENCE-002)."""
     config = _thread_config(tenant_id)
     try:
-        final_state = await get_graph_app().ainvoke(initial_state, config=config)
+        app = await get_graph_app_async()
+        final_state = await app.ainvoke(initial_state, config=config)
+
         # D-C/TCK-005: guard isinstance — un final_state None (fake o caso raro)
         # NO crashea: sin broadcast y sin graph_error (acuerdo del test).
         if not isinstance(final_state, dict):

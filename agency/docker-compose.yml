@@ -127,12 +127,21 @@ services:
     container_name: viralsync_celery_worker
     command: celery -A workers.celery_app worker --loglevel=info --concurrency=1 -Q rendering,webhooks,default
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://agency:agency@postgres:5432/agency
       - POSTGRES_HOST=postgres
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=qdrant:6333
+      - MINIO_ENDPOINT=minio:9000
       - AGENCY_ENV=${AGENCY_ENV:-dev}
+
+    volumes:
+      - ./backend:/app/backend
+      - ./agents:/app/agents
+      - ./workers:/app/workers
     env_file:
       - path: ../.env
         required: false
+
     restart: unless-stopped
     depends_on:
       postgres:

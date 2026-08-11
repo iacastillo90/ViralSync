@@ -33,12 +33,7 @@ DIRECT_CHAIN = (
     ("openrouter/openrouter/free", "OPENROUTER_API_KEY"),
 )
 
-# Proxy-first model id, defined in the gateway config pool (design D1).
 PROXY_MODEL = "motor-agencia"
-
-# Default provider fixed by real-key evidence (REQ-LLM-03-2). Probe 2026-08-09:
-# GEMINI 429 RateLimitError; GROQ OK; OPENROUTER OK. Never pre-claimed; the
-# tagged real-key test enforces this value.
 DEFAULT_PROVIDER = "groq"
 
 
@@ -48,7 +43,12 @@ class AllProvidersFailedError(RuntimeError):
 
 def _call_completion(**kwargs):
     """Single LLM completion call. Seam mocked by unit tests."""
-    return litellm.completion(**kwargs)
+    call_kwargs = dict(kwargs)
+    if call_kwargs.get("model") == "motor-agencia":
+        call_kwargs["model"] = "openai/motor-agencia"
+    return litellm.completion(**call_kwargs)
+
+
 
 
 def _configured_providers():

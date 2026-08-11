@@ -19,8 +19,9 @@ AGENCY_ENV = os.getenv("AGENCY_ENV", "dev").lower()
 POSTGRES_USER = os.getenv("POSTGRES_USER", "agency")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "agency")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "agency")
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres" if os.path.exists("/.dockerenv") else "localhost")
 POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+
 
 
 # Retry de init_db(): tolera un blip transitorio de Postgres en el primer boot

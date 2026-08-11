@@ -38,25 +38,29 @@ def is_force_sqlite() -> bool:
     return os.getenv("FORCE_SQLITE", "false").lower() in ("true", "1")
 
 
-def build_checkpointer() -> Any:
-    """Factory del checkpointer activo (D2/T-13):
-
-    - `FORCE_SQLITE=true` → `MemorySaver` (tests unitarios, PERSIST-04-2).
-    - resto → el `AsyncPostgresSaver` que el lifespan inicializó con
-      `setup_postgres_checkpointer()`; si el lifespan aún no corrió, falla con
-      un error claro en lugar de degradar silenciosamente a memoria.
-    """
+async def get_or_create_checkpointer() -> Any:
+    """Devuelve el checkpointer activo, auto-inicializando Postgres si aún no ha sido cargado."""
+    global _pg_saver
     if is_force_sqlite():
         from langgraph.checkpoint.memory import MemorySaver
-
         return MemorySaver()
 
     if _pg_saver is None:
-        raise RuntimeError(
-            "Checkpointer Postgres no inicializado: el lifespan debe ejecutar "
-            "setup_postgres_checkpointer() antes de servir requests (D2/T-14)."
-        )
+        await setup_postgres_checkpointer()
     return _pg_saver
+
+
+def build_checkpointer() -> Any:
+    """Factory del checkpointer activo (D2/T-13)."""
+    if is_force_sqlite():
+        from langgraph.checkpoint.memory import MemorySaver
+        return MemorySaver()
+
+    if _pg_saver is None:
+        from langgraph.checkpoint.memory import MemorySaver
+        return MemorySaver()
+    return _pg_saver
+
 
 
 # Conexión async psycopg de larga vida + saver Postgres, gestionados por el
