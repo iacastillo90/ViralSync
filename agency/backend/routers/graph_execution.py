@@ -266,6 +266,17 @@ async def approve_publish(tenant_id: str, req: PublishApproveRequest, background
 @router.post("/{tenant_id}/graph/run")
 async def run_graph(tenant_id: str, req: GraphRunRequest, background_tasks: BackgroundTasks):
     """Ejecuta el grafo multi-agente asíncronamente."""
+    # RISK-001 (SH-02-4 invariant on the read/persist path): a client-supplied
+    # product_object_key outside this tenant's prefix is rejected BEFORE it can
+    # be persisted (node_ideation) or re-signed (node_video_edit) — otherwise
+    # the graph would mint a valid presigned GET URL for another tenant's object
+    # and leak it into the LLM prompt text.
+    if req.product_object_key and not req.product_object_key.startswith(f"{tenant_id}/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="product_object_key outside tenant prefix",
+        )
+
     await sse_manager.broadcast(
         tenant_id,
         "node_start",

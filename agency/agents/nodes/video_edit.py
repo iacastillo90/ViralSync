@@ -25,11 +25,14 @@ async def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
     selected_idea = state.get("selected_idea", {})
     product_image_url = state.get("product_image_url", "")
 
-    # PERSIST-05-1 / D-5 (SH-05-3/4): si el state trae la key ESTABLE del objeto,
-    # re-firmar en CADA lectura (presigned_get_object) — la URL almacenada expiró.
-    # Filas legacy sin key (NULL) → fallback a la URL guardada tal cual (SH-05-4).
+    # PERSIST-05-1 / D-5 (SH-05-3/4) + RISK-001 defense-in-depth: si el state
+    # trae la key ESTABLE del objeto DENTRO del prefijo del tenant, re-firmar en
+    # CADA lectura (presigned_get_object) — la URL almacenada expiró. Filas
+    # legacy sin key (NULL) o keys FUERA del prefijo (cross-tenant, RISK-001)
+    # → fallback a la URL guardada tal cual (SH-05-4): nunca se re-firma ni se
+    # filtra una URL presignada de un objeto ajeno al tenant.
     product_object_key = state.get("product_object_key")
-    if product_object_key:
+    if product_object_key and product_object_key.startswith(f"{tenant_id}/"):
         product_image_url = presign_public_url(product_object_key)
 
     logger.info(f"[{tenant_id}] Ejecutando nodo 'video_edit' con Agente de Prompting Visual")

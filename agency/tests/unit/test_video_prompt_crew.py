@@ -157,6 +157,7 @@ VIDEO_PATH_T_IDS = {
     "persist_key": "eeee0001-1111-2222-3333-444444444444",
     "resign": "eeee0002-1111-2222-3333-444444444444",
     "fallback": "eeee0003-1111-2222-3333-444444444444",
+    "foreign_key": "eeee0004-1111-2222-3333-444444444444",
 }
 
 IDEA_PAYLOAD = {
@@ -358,3 +359,125 @@ def test_run_video_prompt_crew_signature_unchanged():
     params = list(sig.parameters)
     assert params == ["script", "idea", "product_image_url"]
     assert sig.parameters["product_image_url"].default == ""
+
+
+# --------------------------------------------------------------------------- #
+# RISK-001 (correction fix) — invariante SH-02-4 en el path de LECTURA/persist:
+# un `product_object_key` provisto por el cliente que NO empiece con
+# `{tenant_id}/` se rechaza en la API (400) antes de persistirse/re-firmarse, y
+# node_video_edit NUNCA re-firma una key foránea (fallback SH-05-4).
+# --------------------------------------------------------------------------- #
+
+class _NoopGraphApp:
+    """Grafo no-op rápido para tests de API: si el guard faltara (estado RED),
+    el background correría el grafo — con esto corre en milisegundos, sin LLM."""
+
+    async def ainvoke(self, state, config=None):
+        return {"ideas": []}
+
+
+@pytest.mark.anyio
+async def test_run_graph_rejects_out_of_tenant_product_object_key(init_test_db, monkeypatch):
+    """RISK-001 (graph path): `POST /graph/run` con product_object_key de OTRO
+    tenant → 400. El request se rechaza ANTES de construir el state, programar
+    el grafo o re-firmar — la key foránea jamás llega a persiste ni a presign."""
+    from backend.main import app
+    from httpx import AsyncClient, ASGITransport
+
+    tenant_id = VIDEO_PATH_T_IDS["persist_key"]
+    foreign_key = "victim-tenant-0001/products/stolen.png"
+
+    monkeypatch.setattr(
+        "backend.routers.graph_execution.get_graph_app",
+        lambda: _NoopGraphApp(),
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.post(
+            f"/api/v1/tenants/{tenant_id}/graph/run",
+            json={"product_object_key": foreign_key},
+        )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_run_graph_accepts_in_tenant_product_object_key(init_test_db, monkeypatch):
+    """Triangulación: la key DENTRO del prefijo del tenant sigue siendo aceptada
+    (200) — el guard no rompe el flujo legítimo (REQ-PERSIST-05 / SH-05-3)."""
+    from backend.main import app
+    from httpx import AsyncClient, ASGITransport
+
+    tenant_id = VIDEO_PATH_T_IDS["persist_key"]
+    in_tenant_key = f"{tenant_id}/products/legit.png"
+
+    monkeypatch.setattr(
+        "backend.routers.graph_execution.get_graph_app",
+        lambda: _NoopGraphApp(),
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.post(
+            f"/api/v1/tenants/{tenant_id}/graph/run",
+            json={"product_object_key": in_tenant_key},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "accepted"
+
+
+@pytest.mark.anyio
+async def test_node_video_edit_out_of_tenant_key_falls_back_without_presign(db_session, video_path_tenants, monkeypatch):
+    """RISK-001 defense-in-depth (node): con `product_object_key` FUERA del
+    prefijo del tenant, node_video_edit NO re-firma (presign_public_url NUNCA
+    se llama con la key foránea) y la crew recibe la `product_image_url`
+    almacenada (semántica SH-05-4) — nunca una URL presignada de un objeto
+    ajeno."""
+    from agents.nodes.video_edit import node_video_edit
+    import agents.nodes.video_edit as video_edit_module
+
+    tenant_id = VIDEO_PATH_T_IDS["foreign_key"]
+    idea_row = (await insert_ideas(tenant_id, [IDEA_PAYLOAD]))[0]
+    script_row = await insert_script(tenant_id, idea_row.id, SCRIPT_PAYLOAD)
+
+    crew_calls = {}
+    presign_calls = []
+
+    async def _tracking_video_prompt_crew(script, idea, product_image_url=""):
+        crew_calls["product_image_url"] = product_image_url
+        return list(STORYBOARD_PAYLOAD)
+
+    def _tracking_presign(object_key):
+        presign_calls.append(object_key)
+        return (
+            f"http://127.0.0.1:9000/viralsync-media/{object_key}"
+            "?X-Amz-Signature=should-not-happen"
+        )
+
+    monkeypatch.setattr(
+        "agents.nodes.video_edit.run_video_prompt_crew",
+        _tracking_video_prompt_crew,
+    )
+    monkeypatch.setattr(
+        "agents.nodes.video_edit.trigger_video_render",
+        lambda tenant_id, script, idea, storyboard=None: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
+    )
+    monkeypatch.setattr(video_edit_module, "presign_public_url", _tracking_presign)
+
+    stored_url = "http://minio:9000/viralsync-media/legacy.png?X-Amz-Signature=old"
+    foreign_key = "victim-tenant-0001/products/stolen.png"
+    await node_video_edit(
+        {
+            "tenant_id": tenant_id,
+            "script": {"id": script_row.id},
+            "selected_idea": {"id": idea_row.id},
+            "product_image_url": stored_url,
+            "product_object_key": foreign_key,
+            "raw_video_uri": f"s3://viralsync-media-dev/{tenant_id}/raw_input.mp4",
+            "logs": [],
+        }
+    )
+
+    # La key foránea NUNCA se re-firma; se usa la URL almacenada (SH-05-4).
+    assert presign_calls == []
+    assert crew_calls["product_image_url"] == stored_url

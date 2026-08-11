@@ -206,3 +206,38 @@ async def test_delete_media_out_of_prefix_refused_remove_object_never_called(
     assert media_env.remove_object_calls == []
     # El objeto del otro tenant sigue intacto en el bucket
     assert other_key in media_env.objects
+
+
+@pytest.mark.anyio
+async def test_run_graph_out_of_tenant_object_key_rejected_no_presign(init_test_db, media_env, monkeypatch):
+    """RISK-001 (API level): `POST /graph/run` con product_object_key de OTRO
+    tenant → 400 y NUNCA se presigna la key foránea (presigned_calls vacío) —
+    el objeto de la víctima permanece intacto. Espejo del guard SH-02-4 del
+    DELETE, ahora en el path de lectura/persist del grafo."""
+    from backend.main import app
+
+    victim_key = f"{MEDIA_OTHER_TENANT_ID}/products/victim.png"
+    media_env.objects[victim_key] = {
+        "size": 50,
+        "last_modified": datetime.now(timezone.utc),
+    }
+
+    class _NoopGraphApp:
+        async def ainvoke(self, state, config=None):
+            return {"ideas": []}
+
+    # Si el guard faltara (RED), el background correría el grafo: no-op rápido.
+    monkeypatch.setattr(
+        "backend.routers.graph_execution.get_graph_app",
+        lambda: _NoopGraphApp(),
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.post(
+            f"/api/v1/tenants/{MEDIA_TENANT_ID}/graph/run",
+            json={"product_object_key": victim_key},
+        )
+
+    assert response.status_code == 400
+    assert media_env.presigned_calls == []  # jamás se mintió una URL para la key ajena
+    assert victim_key in media_env.objects  # objeto de la víctima intacto
