@@ -438,3 +438,92 @@ async def test_realtime_sse_query_token_auth(monkeypatch):
 
     await middleware.dispatch(request, dummy_call_next)
     assert captured_request.state.tenant_id == TENANT_A
+
+
+# --------------------------------------------------------------------------- #
+# SSE honesty (REQ-PTT-03 / D-D, TCK-005): `graph_error` lleva `code` cuando el
+# error tiene `.code` (NoCandidatesError) y `graph_complete` lleva `terminal`
+# cuando final_state trae `terminal_state` — guardado por isinstance
+# (final_state None de un fake no crashea).
+# --------------------------------------------------------------------------- #
+
+
+class _SseCapture:
+    """Captura broadcasts + graph_errors del router (patrón de
+    test_graph_execution_resilience._FakeSSE, + código opcional)."""
+
+    def __init__(self):
+        self.broadcasts = []
+        self.errors = []  # (tenant_id, message, code)
+
+    async def broadcast(self, tenant_id, event_type, data):
+        self.broadcasts.append((tenant_id, event_type, data))
+
+    async def emit_graph_error(self, tenant_id, message, code=None):
+        self.errors.append((tenant_id, message, code))
+
+
+class _FakeGraph:
+    def __init__(self, result=None, error=None):
+        self.result = result
+        self.error = error
+
+    async def ainvoke(self, state, config=None):
+        if self.error:
+            raise self.error
+        return self.result
+
+
+@pytest.mark.anyio
+async def test_graph_error_emits_code_for_coded_error(monkeypatch):
+    """D-D/TCK-005: un error con `.code` (NoCandidatesError) en background →
+    `graph_error` incluye `code="no_candidates"` (aditivo, nunca un mensaje
+    genérico que borre la causa)."""
+    from agents.errors import NoCandidatesError
+    from backend.routers import graph_execution
+    from backend.routers.graph_execution import _run_graph_background
+
+    fake_sse = _SseCapture()
+    monkeypatch.setattr(graph_execution, "sse_manager", fake_sse)
+    monkeypatch.setattr(
+        graph_execution,
+        "get_graph_app",
+        lambda: _FakeGraph(error=NoCandidatesError("sin candidatas RUM")),
+    )
+
+    await _run_graph_background("tenant-slice2-code", {"tenant_id": "tenant-slice2-code"})
+
+    assert len(fake_sse.errors) == 1
+    assert fake_sse.errors[0][2] == "no_candidates"
+
+
+@pytest.mark.anyio
+async def test_graph_complete_emits_terminal_when_present(monkeypatch):
+    """D-C/TCK-005: `graph_complete` lleva `terminal` cuando final_state trae
+    `terminal_state`; y un final_state `None` (fake) NO crashea gracias al guard
+    isinstance — sin broadcast y sin graph_error."""
+    from backend.routers import graph_execution
+    from backend.routers.graph_execution import _run_graph_background
+
+    # Escenario 1: terminal presente → graph_complete con `terminal`
+    fake_sse = _SseCapture()
+    monkeypatch.setattr(graph_execution, "sse_manager", fake_sse)
+    monkeypatch.setattr(
+        graph_execution,
+        "get_graph_app",
+        lambda: _FakeGraph(result={"tenant_id": "t", "ideas": ["i1"], "terminal_state": "term_rejected"}),
+    )
+    await _run_graph_background("tenant-slice2-term", {"tenant_id": "tenant-slice2-term"})
+
+    events = [e for e in fake_sse.broadcasts if e[1] == "graph_complete"]
+    assert len(events) == 1
+    assert events[0][2]["terminal"] == "term_rejected"
+
+    # Escenario 2: final_state None (fake) → guard isinstance, sin crash ni emisión
+    fake_sse2 = _SseCapture()
+    monkeypatch.setattr(graph_execution, "sse_manager", fake_sse2)
+    monkeypatch.setattr(graph_execution, "get_graph_app", lambda: _FakeGraph(result=None))
+    await _run_graph_background("tenant-slice2-none", {"tenant_id": "tenant-slice2-none"})
+
+    assert fake_sse2.broadcasts == []
+    assert fake_sse2.errors == []

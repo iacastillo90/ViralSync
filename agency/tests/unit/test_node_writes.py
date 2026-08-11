@@ -58,6 +58,12 @@ T_IDS = {
     "get": "dddd0008-1111-2222-3333-444444444444",
     "video_id": "dddd0010-1111-2222-3333-444444444444",
     "publish_wb": "dddd0011-1111-2222-3333-444444444444",
+    "rej_idea": "dddd0012-1111-2222-3333-444444444444",
+    "rej_pub": "dddd0013-1111-2222-3333-444444444444",
+    "rej_approve": "dddd0014-1111-2222-3333-444444444444",
+    "rej_pending": "dddd0015-1111-2222-3333-444444444444",
+    "ideation_empty": "dddd0016-1111-2222-3333-444444444444",
+    "script_guard": "dddd0017-1111-2222-3333-444444444444",
 }
 
 IDEA_PAYLOAD = {
@@ -561,3 +567,271 @@ async def test_get_ideas_and_scripts_return_node_written_rows(db_session, node_t
     }
     assert scripts_body[0]["keyword"] == SCRIPT_PAYLOAD["keyword"]
     assert scripts_body[0]["idea_id"] == selected.id
+
+
+# --------------------------------------------------------------------------- #
+# Terminal topology (REQ-PTT-02 / D-B/D-C, TCK-004): rejection routes to the
+# distinct terminal `term_rejected` (END) — FINAL per run; legal approval keeps
+# the scriptwriting path unchanged (PTT-02-3); malformed resume re-pauses (D-C).
+# --------------------------------------------------------------------------- #
+
+
+async def _boom_scriptwriting_crew(idea, niche_ppp=""):
+    """Crew que EXPLOTA si se invoca: tras un rechazo, scriptwriting jamás corre."""
+    raise AssertionError("scriptwriting crew NO debe invocarse tras un rechazo (D-C)")
+
+
+async def _boom_video_prompt_crew(script, idea, product_image_url=""):
+    """Crew que EXPLOTA si se invoca: tras un rechazo de idea, video_edit jamás corre."""
+    raise AssertionError("video_edit crew NO debe invocarse tras un rechazo (D-C)")
+
+
+async def _tracking_scriptwriting_crew(idea, niche_ppp=""):
+    """Crew mockeada que registra las invocaciones (para probar que el camino
+    legal `approved` SI llega a scriptwriting, PTT-02-3)."""
+    idea["_scriptwriting_invoked"] = True
+    return dict(SCRIPT_PAYLOAD)
+
+
+@pytest.mark.anyio
+async def test_resume_rejected_idea_ends_term_rejected_no_script(db_session, node_tenants, monkeypatch):
+    """PTT-02-1: resume con `idea_rejected=True` → el run termina en
+    `term_rejected` (END), NO se crea fila `scripts`/`videos` y la crew de
+    guionismo NUNCA se invoca (rechazo FINAL por run, PERSIST-03-2 reachable)."""
+    from agents.graph import build_agency_graph
+    from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.types import Command
+
+    tenant_id = T_IDS["rej_idea"]
+    monkeypatch.setattr("agents.nodes.ideation.run_ideation_crew", _fake_ideation_crew)
+    monkeypatch.setattr("agents.nodes.scriptwriting.run_scriptwriting_crew", _boom_scriptwriting_crew)
+    monkeypatch.setattr("agents.nodes.video_edit.run_video_prompt_crew", _boom_video_prompt_crew)
+
+    app = build_agency_graph(checkpointer=MemorySaver())
+    cfg = {"configurable": {"thread_id": tenant_id}}
+
+    # Run inicial: ideation persiste 2 ideas y el grafo se pausa en human_approval_idea
+    await app.ainvoke(
+        {"tenant_id": tenant_id, "niche": "Fitness B2B", "market_map": {}, "logs": []},
+        config=cfg,
+    )
+
+    # Resume con señal POSITIVA de rechazo (D-B: nunca `idea_approved: False` = "not yet")
+    result = await app.ainvoke(Command(update={"idea_rejected": True}), config=cfg)
+
+    assert result.get("terminal_state") == "term_rejected"
+    snapshot = await app.aget_state(cfg)
+    assert snapshot.next == ()  # END alcanzado: sin nodos pendientes
+    scripts = (
+        await db_session.execute(select(Script).where(Script.tenant_id == tenant_id))
+    ).scalars().all()
+    videos = (
+        await db_session.execute(select(Video).where(Video.tenant_id == tenant_id))
+    ).scalars().all()
+    assert scripts == []  # PERSIST-03-2 reachable: rechazo no crea guion
+    assert videos == []  # y ningún video (el run cortó antes de scriptwriting)
+
+
+@pytest.mark.anyio
+async def test_resume_rejected_publish_ends_terminal_no_publish(db_session, node_tenants, monkeypatch):
+    """PTT-02-2: resume con `publish_rejected=True` → term_rejected; el publisher
+    NUNCA se invoca y NO hay write-back (REQ-PTT-01 no disparado)."""
+    from agents.graph import build_agency_graph
+    from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.types import Command
+    import agents.nodes.publish as publish_module
+
+    tenant_id = T_IDS["rej_pub"]
+    monkeypatch.setattr("agents.nodes.ideation.run_ideation_crew", _fake_ideation_crew)
+    monkeypatch.setattr("agents.nodes.scriptwriting.run_scriptwriting_crew", _fake_scriptwriting_crew)
+    monkeypatch.setattr("agents.nodes.video_edit.run_video_prompt_crew", _fake_video_prompt_crew)
+    monkeypatch.setattr(
+        "agents.nodes.video_edit.trigger_video_render",
+        lambda tenant_id, script, idea, storyboard=None: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
+    )
+
+    # Write-back y publisher: si node_publish corre, estos fakes explotan/registran
+    wb_calls = []
+
+    async def _fake_update_video_publish(*args, **kwargs):
+        wb_calls.append(args)
+        return True
+
+    class _BoomPublishClient:
+        def __init__(self, *, timeout=None):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            raise AssertionError("publisher NO debe invocarse tras rechazo de publicación (PTT-02-2)")
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+    monkeypatch.setattr(publish_module, "AsyncClient", _BoomPublishClient)
+    monkeypatch.setattr(publish_module, "update_video_publish", _fake_update_video_publish, raising=False)
+
+    app = build_agency_graph(checkpointer=MemorySaver())
+    cfg = {"configurable": {"thread_id": tenant_id}}
+
+    await app.ainvoke(
+        {"tenant_id": tenant_id, "niche": "Fitness B2B", "market_map": {}, "logs": []},
+        config=cfg,
+    )
+    # Primer resume: aprobación legal de idea → scriptwriting + video_edit → pausa en publish
+    await app.ainvoke(Command(update={"idea_approved": True, "idea_rejected": False}), config=cfg)
+    snapshot = await app.aget_state(cfg)
+    assert snapshot.next == ("human_approval_publish",)  # pausado en el checkpoint de publicación
+
+    # Segundo resume: rechazo de publicación → terminal
+    result = await app.ainvoke(Command(update={"publish_rejected": True}), config=cfg)
+
+    assert result.get("terminal_state") == "term_rejected"
+    assert wb_calls == []  # sin write-back (REQ-PTT-01 nunca disparado)
+    scripts = (
+        await db_session.execute(select(Script).where(Script.tenant_id == tenant_id))
+    ).scalars().all()
+    assert len(scripts) == 1  # el guion aprobado existe, pero nada se publicó
+
+
+@pytest.mark.anyio
+async def test_resume_approved_idea_reaches_scriptwriting(db_session, node_tenants, monkeypatch):
+    """PTT-02-3: resume legal `idea_approved=True` → el run avanza a scriptwriting
+    y persiste el guion — la vía approved queda INTACTA (guard de regresión: si la
+    topología rompe el camino legal, este test falla)."""
+    from agents.graph import build_agency_graph
+    from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.types import Command
+
+    tenant_id = T_IDS["rej_approve"]
+    monkeypatch.setattr("agents.nodes.ideation.run_ideation_crew", _fake_ideation_crew)
+    monkeypatch.setattr("agents.nodes.scriptwriting.run_scriptwriting_crew", _tracking_scriptwriting_crew)
+    monkeypatch.setattr("agents.nodes.video_edit.run_video_prompt_crew", _fake_video_prompt_crew)
+    monkeypatch.setattr(
+        "agents.nodes.video_edit.trigger_video_render",
+        lambda tenant_id, script, idea, storyboard=None: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
+    )
+
+    app = build_agency_graph(checkpointer=MemorySaver())
+    cfg = {"configurable": {"thread_id": tenant_id}}
+
+    await app.ainvoke(
+        {"tenant_id": tenant_id, "niche": "Fitness B2B", "market_map": {}, "logs": []},
+        config=cfg,
+    )
+    await app.ainvoke(Command(update={"idea_approved": True, "idea_rejected": False}), config=cfg)
+
+    snapshot = await app.aget_state(cfg)
+    assert snapshot.next == ("human_approval_publish",)  # avanzó más allá de scriptwriting
+
+    scripts = (
+        await db_session.execute(select(Script).where(Script.tenant_id == tenant_id))
+    ).scalars().all()
+    assert len(scripts) == 1  # scriptwriting corrió y persistió el guion (aprobado)
+    persisted_idea = (
+        await db_session.execute(select(Idea).where(Idea.tenant_id == tenant_id))
+    ).scalars().first()
+    assert scripts[0].idea_id == persisted_idea.id  # FK real a la idea aprobada
+
+
+@pytest.mark.anyio
+async def test_resume_pending_self_repauses(db_session, node_tenants, monkeypatch):
+    """D-C fallback: resume malformado SIN flags positivos (`idea_approved: False` +
+    `idea_rejected: False`) → el grafo se re-pausa en el MISMO checkpoint
+    (pending→self), sin terminal y sin escribir guion. NOTA: este caso sólo es
+    alcanzable vía payloads malformados — los endpoints siempre envían UNA señal."""
+    from agents.graph import build_agency_graph
+    from langgraph.checkpoint.memory import MemorySaver
+    from langgraph.types import Command
+
+    tenant_id = T_IDS["rej_pending"]
+    monkeypatch.setattr("agents.nodes.ideation.run_ideation_crew", _fake_ideation_crew)
+    monkeypatch.setattr("agents.nodes.scriptwriting.run_scriptwriting_crew", _boom_scriptwriting_crew)
+
+    app = build_agency_graph(checkpointer=MemorySaver())
+    cfg = {"configurable": {"thread_id": tenant_id}}
+
+    await app.ainvoke(
+        {"tenant_id": tenant_id, "niche": "Fitness B2B", "market_map": {}, "logs": []},
+        config=cfg,
+    )
+    result = await app.ainvoke(Command(update={"idea_approved": False, "idea_rejected": False}), config=cfg)
+
+    snapshot = await app.aget_state(cfg)
+    assert snapshot.next == ("human_approval_idea",)  # re-pausado en el mismo checkpoint
+    assert "terminal_state" not in result  # nunca terminal por un payload sin señal
+    scripts = (
+        await db_session.execute(select(Script).where(Script.tenant_id == tenant_id))
+    ).scalars().all()
+    assert scripts == []
+
+
+# --------------------------------------------------------------------------- #
+# Empty-candidates honesty (REQ-PTT-03 / D-D, TCK-005): cero candidatas → error
+# honesto NoCandidatesError ANTES de cualquier write (nunca IntegrityError).
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.anyio
+async def test_node_ideation_empty_candidates_raises_no_candidates_no_rows(db_session, node_tenants, monkeypatch):
+    """PTT-03-1: la crew devuelve [] (cero ideas que pasan el filtro 5/50) →
+    `NoCandidatesError(code='no_candidates')` se lanza ANTES de cualquier write;
+    cero filas ideas/scripts/videos para el run; NUNCA IntegrityError."""
+    from agents.nodes.ideation import node_ideation
+    from agents.errors import NoCandidatesError
+
+    tenant_id = T_IDS["ideation_empty"]
+
+    async def _empty_ideation_crew(niche, market_map):
+        return []
+
+    monkeypatch.setattr("agents.nodes.ideation.run_ideation_crew", _empty_ideation_crew)
+
+    with pytest.raises(NoCandidatesError) as exc_info:
+        await node_ideation(
+            {
+                "tenant_id": tenant_id,
+                "niche": "Negocios B2B y SaaS",
+                "market_map": {},
+                "logs": [],
+            }
+        )
+    assert exc_info.value.code == "no_candidates"
+
+    rows = (
+        await db_session.execute(select(Idea).where(Idea.tenant_id == tenant_id))
+    ).scalars().all()
+    assert rows == []  # cero filas escritas para ese run (PTT-03-1)
+    scripts = (
+        await db_session.execute(select(Script).where(Script.tenant_id == tenant_id))
+    ).scalars().all()
+    videos = (
+        await db_session.execute(select(Video).where(Video.tenant_id == tenant_id))
+    ).scalars().all()
+    assert scripts == []
+    assert videos == []
+
+
+@pytest.mark.anyio
+async def test_node_scriptwriting_missing_idea_id_raises(db_session, node_tenants, monkeypatch):
+    """D-D (defensa en profundidad): `selected_idea` sin `id` → error honesto ANTES
+    de llamar a `insert_script` (nunca IntegrityError por FK NULL), cero filas
+    `scripts` escritas."""
+    from agents.nodes.scriptwriting import node_scriptwriting
+
+    tenant_id = T_IDS["script_guard"]
+    monkeypatch.setattr("agents.nodes.scriptwriting.run_scriptwriting_crew", _fake_scriptwriting_crew)
+
+    with pytest.raises(ValueError, match="selected_idea"):
+        await node_scriptwriting(
+            {
+                "tenant_id": tenant_id,
+                "niche_ppp": "Escalar conversiones SaaS en 90 días",
+                "selected_idea": {},  # sin 'id' → no puede FK a una idea aprobada
+                "logs": [],
+            }
+        )
+
+    rows = (
+        await db_session.execute(select(Script).where(Script.tenant_id == tenant_id))
+    ).scalars().all()
+    assert rows == []
