@@ -30,6 +30,37 @@ export function InboundLeadsView({ tenantId }) {
     return () => c.abort();
   }, [tenantId]);
 
+  useEffect(() => {
+    if (!tenantId) return;
+
+    const sseUrl = `/realtime/sse/${tenantId}`;
+    const eventSource = new EventSource(sseUrl);
+
+    eventSource.addEventListener("lead_captured", (e) => {
+      try {
+        const newLead = JSON.parse(e.data);
+        addLog(`⚡ Evento SSE lead_captured recibido: ${newLead.keyword || "Lead"}`);
+        setLeads((prev) => [
+          {
+            id: newLead.id || `lead_${Date.now()}`,
+            ig_user_id: newLead.ig_user_id || "Lead SSE",
+            keyword: newLead.keyword || "CONSULTA",
+            mensaje_original: newLead.mensaje_original || newLead.message || "Lead en vivo",
+            created_at: new Date().toISOString(),
+          },
+          ...prev,
+        ]);
+      } catch (err) {
+        console.error("Error al procesar SSE lead_captured", err);
+      }
+    });
+
+    return () => {
+      eventSource.close();
+    };
+  }, [tenantId, addLog]);
+
+
   const handleTakeover = async (leadId) => {
     const apiBase =
       process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";

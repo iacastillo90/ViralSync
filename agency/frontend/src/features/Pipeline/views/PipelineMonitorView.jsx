@@ -74,11 +74,11 @@ export function PipelineMonitorView({ tenantId }) {
           </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-          <h2 className="text-sm font-semibold mb-4 text-slate-300 uppercase tracking-wider">
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+          <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
             Consola SSE en Tiempo Real
           </h2>
-          <div className="h-80 overflow-y-auto font-mono text-xs bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1.5">
+          <div className="h-48 overflow-y-auto font-mono text-xs bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1.5">
             {logs.map((log, idx) => (
               <div key={idx} className="text-slate-300 leading-relaxed">
                 {log}
@@ -90,3 +90,4 @@ export function PipelineMonitorView({ tenantId }) {
     </div>
   );
 }
+
