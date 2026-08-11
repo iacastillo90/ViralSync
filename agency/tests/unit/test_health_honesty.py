@@ -21,7 +21,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend import __version__ as backend_version
-from backend import backend as backend_pkg
+import backend as backend_pkg
 from backend.routers import health
 from backend.main import app
 

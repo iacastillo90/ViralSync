@@ -21,6 +21,7 @@ from backend.webhooks.instagram_inbound import process_instagram_webhook_payload
 
 from backend.logging_config import setup_logging
 from backend.db.session import init_db
+from backend import __version__
 
 # Importación de Routers Modularizados
 from backend.routers.health import router as health_router
@@ -58,7 +59,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="ViralSync Platform API Enterprise",
-    version="1.0.0",
+    version=__version__,
     description="SaaS B2B Multi-Tenant para Agencias de Marketing de Contenido IA",
     lifespan=lifespan,
 )
