@@ -89,3 +89,26 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  postgres_backup:
+    image: postgres:16-alpine
+    container_name: viralsync_postgres_backup
+    restart: always
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=viralsync
+      - POSTGRES_PASSWORD=prod_pass
+      - POSTGRES_DB=viralsync_db
+      - RETENTION_DAYS=7
+    volumes:
+      - ./scripts/postgres_backup.sh:/postgres_backup.sh:ro
+      - pg_backups:/backups
+    command: ["sh", "-c", "chmod +x /postgres_backup.sh && while true; do /postgres_backup.sh; sleep 86400; done"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pg_backups:
+
+
