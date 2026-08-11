@@ -217,9 +217,11 @@ def compose_video_moviepy(audio_path: str, video_paths: List[str], output_path: 
         fps=24,
         codec="libx264",
         audio_codec="aac",
-        preset="ultrafast",
+        preset="fast",
+        threads=os.cpu_count() or 2,
         logger=None,
     )
+
 
     audio_clip.close()
     final_video.close()
@@ -275,9 +277,11 @@ def compose_scenes_video_moviepy(segments: List[dict], output_path: str, total_d
         fps=24,
         codec="libx264",
         audio_codec="aac",
-        preset="ultrafast",
+        preset="fast",
+        threads=os.cpu_count() or 2,
         logger=None,
     )
+
 
     for clip in audio_clips + video_clips:
         try:

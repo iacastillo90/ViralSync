@@ -9,7 +9,7 @@ Crew de Ideación de ViralSync (CrewAI):
 import json
 import logging
 from typing import List, Dict, Any
-from agents.mcp_servers.searxng_mcp_server import searxng_search_sanitized
+from agents.mcp_servers.searxng_mcp_server import asearxng_search_sanitized
 from agents.criterion.rum_calculator import calculate_rum_score
 from agents.criterion.filter_5_50 import passes_5_50_filter
 import agents.llm as llm
@@ -25,9 +25,10 @@ async def run_ideation_crew(niche: str, market_map: Dict[str, Any]) -> List[Dict
     :param market_map: Mapa de mercado con errores, deseos, objeciones y creencias.
     :return: Lista de diccionarios de ideas candidatas con scoring RUM.
     """
-    # 1. Investigación de tendencias vía MCP SearXNG
+    # 1. Investigación de tendencias vía MCP SearXNG (async non-blocking)
     search_query = f"tendencias contenido corto {niche}"
-    trends = searxng_search_sanitized(search_query, num_results=3)
+    trends = await asearxng_search_sanitized(search_query, num_results=3)
+
 
     candidate_ideas = []
 

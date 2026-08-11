@@ -30,6 +30,58 @@ def sanitize_html_content(raw_text: str) -> str:
     return clean
 
 
+async def asearxng_search_sanitized(query: str, num_results: int = 3) -> List[Dict[str, str]]:
+    """
+    Realiza una búsqueda asíncrona en SearXNG sin bloquear el event loop.
+    
+    :param query: Término de búsqueda.
+    :param num_results: Cantidad máxima de resultados a retornar.
+    :return: Lista de diccionarios con 'title', 'snippet' y 'url'.
+    """
+    clean_query = sanitize_html_content(query)
+    if not clean_query:
+        return []
+
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            resp = await client.get(
+                f"{SEARXNG_URL}/search",
+                params={"q": clean_query, "format": "json"},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                results = data.get("results", [])
+                sanitized_results = []
+                for item in results[:num_results]:
+                    title = sanitize_html_content(item.get("title", ""))
+                    snippet = sanitize_html_content(item.get("content", ""))[:400]
+                    url = item.get("url", "")
+                    sanitized_results.append(
+                        {"title": title, "snippet": snippet, "url": url}
+                    )
+                if sanitized_results:
+                    return sanitized_results
+    except Exception as exc:
+        logger.warning(f"SearXNG no disponible en llamada asíncrona ({exc}). Aplicando fallback sintético.")
+
+    return _get_synthetic_fallback(clean_query)
+
+
+def _get_synthetic_fallback(clean_query: str) -> List[Dict[str, str]]:
+    return [
+        {
+            "title": f"Tendencia Viral en {clean_query}",
+            "snippet": f"Estrategia probada de contenido corto sobre {clean_query} enfocada en retención inicial.",
+            "url": "https://viralsync.io/insights/trend-1",
+        },
+        {
+            "title": f"Patrón de Crecimiento Organico en {clean_query}",
+            "snippet": f"Caso de éxito en Reels optimizando el bloque de contexto sin adelantar la solución.",
+            "url": "https://viralsync.io/insights/trend-2",
+        },
+    ]
+
+
 def searxng_search_sanitized(query: str, num_results: int = 3) -> List[Dict[str, str]]:
     """
     Realiza una búsqueda en SearXNG y retorna resultados sanitizados y recortados.
@@ -64,16 +116,5 @@ def searxng_search_sanitized(query: str, num_results: int = 3) -> List[Dict[str,
     except Exception as exc:
         logger.warning(f"SearXNG no disponible ({exc}). Aplicando fallback sintético.")
 
-    # Fallback determinista en modo local/offline sin SearXNG activo
-    return [
-        {
-            "title": f"Tendencia Viral en {clean_query}",
-            "snippet": f"Estrategia probada de contenido corto sobre {clean_query} enfocada en retención inicial.",
-            "url": "https://viralsync.io/insights/trend-1",
-        },
-        {
-            "title": f"Patrón de Crecimiento Organico en {clean_query}",
-            "snippet": f"Caso de éxito en Reels optimizando el bloque de contexto sin adelantar la solución.",
-            "url": "https://viralsync.io/insights/trend-2",
-        },
-    ]
+    return _get_synthetic_fallback(clean_query)
+

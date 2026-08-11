@@ -37,5 +37,9 @@ router_settings:
     - groq-llama: ["gemini-flash", "openrouter-free"]
     - motor-agencia: ["groq-llama", "gemini-flash", "openrouter-free"]
 
+litellm_settings:
+  cache: true
+  cache_type: redis
+
 general_settings:
   master_key: "os.environ/LITELLM_MASTER_KEY"

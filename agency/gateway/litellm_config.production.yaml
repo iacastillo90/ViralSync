@@ -36,6 +36,8 @@ router_settings:
 litellm_settings:
   callbacks: ["prometheus"]
   track_cost_per_user: true
+  cache: true
+  cache_type: redis
 
 general_settings:
   master_key: "os.environ/LITELLM_MASTER_KEY"

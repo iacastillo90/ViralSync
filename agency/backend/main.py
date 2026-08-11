@@ -132,18 +132,15 @@ async def sse_endpoint(tenant_id: str, request: Request):
             while True:
                 if await request.is_disconnected():
                     break
-                try:
-                    payload = await asyncio.wait_for(queue.get(), timeout=1.0)
-                    yield payload
-                except asyncio.TimeoutError:
-                    if await request.is_disconnected():
-                        break
-        except asyncio.CancelledError:
+                payload = await queue.get()
+                yield payload
+        except (asyncio.CancelledError, Exception):
             pass
         finally:
             sse_manager.unsubscribe(tenant_id, queue)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
 
 
 # --------------------------------------------------------------------- #

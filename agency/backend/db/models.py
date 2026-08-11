@@ -13,8 +13,9 @@ migraciones.
 
 from datetime import datetime
 from typing import Optional, Any
-from sqlalchemy import String, Text, Float, Integer, DateTime, Boolean, JSON, ForeignKey, Uuid, Numeric
+from sqlalchemy import String, Text, Float, Integer, DateTime, Boolean, JSON, ForeignKey, Uuid, Numeric, Index
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
 
 
 class Base(DeclarativeBase):
@@ -37,13 +38,11 @@ class Tenant(Base):
 
 
 class Idea(Base):
-    # Alineada con migrations/001_init_schema.sql (70-100): la migración SQL es la
-    # fuente de verdad para el esquema de producción, de modo que el ORM NO debe
-    # declarar columnas ausentes del DDL SQL (p. ej. niche/score_rum/status no
-    # existen; el DDL declara niche_id/rum_score/approval_status). create_all
-    # sólo crea las tablas que faltan, y sobre las tablas ya existentes el ORM
-    # debe mapear exactamente las columnas que SELECT/UPDATE tocan.
     __tablename__ = "ideas"
+    __table_args__ = (
+        Index("idx_ideas_tenant_approval_created", "tenant_id", "approval_status", "created_at"),
+    )
+
 
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
@@ -102,6 +101,10 @@ class Niche(Base):
 
 class Lead(Base):
     __tablename__ = "leads"
+    __table_args__ = (
+        Index("idx_leads_tenant_status_calificado", "tenant_id", "status", "calificado_at"),
+    )
+
 
     # Alineada con migrations/001_init_schema.sql (169-182) + 002 (23-26):
     # la migración SQL es la fuente de verdad para el esquema de producción, de
@@ -144,12 +147,10 @@ class Product(Base):
 
 
 class Video(Base):
-    # Alineada con migrations/001_init_schema.sql (124-146): la migración SQL es
-    # la fuente de verdad. Necesario como tipo de retorno de insert_video
-    # (daos.py, design D3) — no existía modelo ORM para la tabla videos.
-    # create_all crea la tabla si falta; sobre la ya existente mapea exactamente
-    # las columnas que INSERT/UPDATE tocan.
     __tablename__ = "videos"
+    __table_args__ = (
+        Index("idx_videos_tenant_script_published", "tenant_id", "script_id", "published_at"),
+    )
 
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
@@ -167,16 +168,11 @@ class Video(Base):
 
 
 class VideoMetric(Base):
-    """Métricas de rendimiento de video por tenant en ventana de 72 horas.
-
-    Alineada con migrations/002_add_video_metrics_and_fix_leads.sql (5-18): la
-    migración SQL es la fuente de verdad para el esquema de producción, de modo
-    que el ORM NO debe declarar columnas ausentes del DDL SQL (p. ej. published_at/
-    views/followers_at_posting/leads_generated/completion_rate/engagement_rate/
-    created_at no existen en la tabla video_metrics). Cualquier SELECT que use
-    columnas fantasma produce UndefinedColumn y el endpoint responde 503.
-    """
     __tablename__ = "video_metrics"
+    __table_args__ = (
+        Index("idx_video_metrics_tenant_captured", "tenant_id", "captured_at"),
+    )
+
 
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
