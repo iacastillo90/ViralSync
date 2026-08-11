@@ -55,6 +55,7 @@ NICHE_TEST_ID = "aaaa0003-5555-6666-7777-888888888888"
 APPROVE_TENANT_ID = "eeee0001-1111-2222-3333-444444444444"
 APPROVED_IDEA_ID = "eeee0002-1111-2222-3333-444444444444"
 REJECTED_IDEA_ID = "eeee0003-1111-2222-3333-444444444444"
+INVALID_STATUS_IDEA_ID = "eeee0004-1111-2222-3333-444444444444"
 
 
 @pytest.mark.anyio
@@ -383,6 +384,105 @@ async def test_publish_approve_returns_202_no_fabricated_post_id(db_session):
     assert body["queued"] is True
     assert "published_post_id" not in body
     assert "ig_reel_" not in response.text
+
+
+# --------------------------------------------------------------------------- #
+# Approve honesty — 0-row 404 + status allowlist (REQ-PTT-04 / D-E, TCK-007)
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.anyio
+async def test_ideas_approve_unknown_id_returns_404_no_resume(monkeypatch, approve_tenant):
+    """PTT-04-2 / D-E (TCK-007): approve con idea_id desconocido (UUID válido,
+    0 filas) → 404 HONESTO (nunca 202), y el grafo NO se reanuda ni se emite
+    evento SSE.
+
+    El orden importa: el chequeo del DAO (bool) ocurre ANTES del broadcast +
+    resume — un no-op no puede parecer progreso ante el frontend.
+    """
+    from backend.routers import graph_execution
+
+    resume_calls = []
+    fake_sse = _SseCapture()
+
+    async def _counting_resume(tenant_id, resume_payload):
+        resume_calls.append((tenant_id, resume_payload))
+
+    monkeypatch.setattr(graph_execution, "_resume_graph_background", _counting_resume)
+    monkeypatch.setattr(graph_execution, "sse_manager", fake_sse)
+
+    unknown_id = str(uuid.uuid4())  # formato UUID válido que no matchea ninguna fila
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.post(
+            f"/api/v1/tenants/{APPROVE_TENANT_ID}/ideas/approve",
+            json={"idea_id": unknown_id, "status": "approved"},
+        )
+    assert response.status_code == 404, f"0-row approve debe ser 404, recibió {response.status_code}"
+    assert response.json()["detail"] == "idea not found or stale"
+    assert resume_calls == [], "un approve 0-row NO debe reanudar el grafo"
+    assert fake_sse.broadcasts == [], "un approve 0-row NO debe emitir idea_checkpoint"
+
+
+@pytest.mark.anyio
+async def test_ideas_approve_invalid_status_returns_422(monkeypatch, db_session, approve_tenant):
+    """PTT-04-3 / D-E (TCK-007): status fuera del allowlist {approved, rejected}
+    → 422 validation (FastAPI), SIN commit y SIN resume del grafo."""
+    from backend.routers import graph_execution
+
+    db_session.add(
+        Idea(
+            id=INVALID_STATUS_IDEA_ID,
+            tenant_id=APPROVE_TENANT_ID,
+            texto="Idea pendiente para status inválido",
+            approval_status="pending",
+        )
+    )
+    await db_session.commit()
+
+    resume_calls = []
+
+    async def _counting_resume(tenant_id, resume_payload):
+        resume_calls.append((tenant_id, resume_payload))
+
+    monkeypatch.setattr(graph_execution, "_resume_graph_background", _counting_resume)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.post(
+            f"/api/v1/tenants/{APPROVE_TENANT_ID}/ideas/approve",
+            json={"idea_id": INVALID_STATUS_IDEA_ID, "status": "published"},
+        )
+    assert response.status_code == 422, f"status inválido debe ser 422, recibió {response.status_code}"
+    assert resume_calls == [], "un status inválido NO debe reanudar el grafo"
+
+    row = (
+        await db_session.execute(
+            select(Idea)
+            .where(Idea.id == INVALID_STATUS_IDEA_ID)
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    assert row.approval_status == "pending", "un status inválido NO debe commitear nada"
+
+
+@pytest.mark.anyio
+async def test_publish_approve_invalid_status_returns_422(monkeypatch):
+    """D-E (TCK-007): el modelo de publish/approve también allowlista status
+    {approved, rejected} → 422, sin resume."""
+    from backend.routers import graph_execution
+
+    resume_calls = []
+
+    async def _counting_resume(tenant_id, resume_payload):
+        resume_calls.append((tenant_id, resume_payload))
+
+    monkeypatch.setattr(graph_execution, "_resume_graph_background", _counting_resume)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        response = await ac.post(
+            f"/api/v1/tenants/{APPROVE_TENANT_ID}/publish/approve",
+            json={"status": "published"},
+        )
+    assert response.status_code == 422, f"publish status inválido debe ser 422, recibió {response.status_code}"
+    assert resume_calls == [], "un status inválido NO debe reanudar el grafo"
 
 
 @pytest.mark.anyio

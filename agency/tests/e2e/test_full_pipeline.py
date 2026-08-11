@@ -10,7 +10,9 @@ from workers.video_edit_task import process_video_postproduction
 from workers.metrics_loop_task import audit_72h_metrics
 from backend.webhooks.instagram_inbound import process_instagram_webhook_payload
 from backend.security.hmac_validator import verify_meta_hmac_signature
-from backend.db.models import Lead
+from backend.db.models import Lead, Idea
+from backend.db.daos import insert_ideas
+from sqlalchemy import select
 
 
 @pytest.mark.anyio
@@ -65,19 +67,42 @@ async def test_complete_viral_sync_lifecycle(db_session):
         selected_idea = ideas[0]
         assert selected_idea["rum_score"] > 0.0
 
-        # Step 3: Checkpoint Humano — Aprobar Idea
-        res_idea_app = await ac.post(
+        # Step 3: Checkpoint Humano — Aprobar Idea (REQ-PTT-04 honestidad)
+        # (a) id 0-row/no-UUID ("idea-e2e-001") → 404 honesto: un no-op NO puede
+        #     parecer progreso. Nunca 202 para un approve sin fila que actualizar.
+        res_idea_unknown = await ac.post(
             f"/api/v1/tenants/{tenant_id}/ideas/approve",
             json={"idea_id": "idea-e2e-001", "status": "approved"},
             headers=auth_headers,
         )
-        assert res_idea_app.status_code == 202  # checkpoint honesto: aceptado y encolado, sin escritura
+        assert res_idea_unknown.status_code == 404  # PTT-04-2: 0-row → error, no 202
+
+        # (b) persistir la idea REAL del crew y aprobar su UUID → 202 + commit
+        #     real de approval_status (PTT-04-1: el happy path queda cubierto).
+        persisted_ideas = await insert_ideas(tenant_id, [selected_idea])
+        real_idea_id = persisted_ideas[0].id
+        res_idea_app = await ac.post(
+            f"/api/v1/tenants/{tenant_id}/ideas/approve",
+            json={"idea_id": real_idea_id, "status": "approved"},
+            headers=auth_headers,
+        )
+        assert res_idea_app.status_code == 202  # id real: aceptado y encolado + commit
         idea_body = res_idea_app.json()
         assert idea_body["status"] == "accepted"
         assert idea_body["kind"] == "idea_approval"
         assert idea_body["queued"] is True
-        # No debe existir ningún ID de idea fabricado; el echo es el real del request
-        assert idea_body["idea_id"] == "idea-e2e-001"
+        # El echo es el id real del request, nunca un id fabricado
+        assert idea_body["idea_id"] == real_idea_id
+        # El commit real quedó persistido en la DB (verificable vía la sesión
+        # compartida SQLite StaticPool, como en tests unitarios de approve)
+        idea_row = (
+            await db_session.execute(
+                select(Idea)
+                .where(Idea.id == real_idea_id)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        assert idea_row.approval_status == "approved"
 
         # Step 4: Guionismo en 4 Bloques (crew async tras RELIABILITY-003)
         script = await run_scriptwriting_crew(
