@@ -16,11 +16,12 @@ from backend.db.models import Base
 logger = logging.getLogger(__name__)
 
 AGENCY_ENV = os.getenv("AGENCY_ENV", "dev").lower()
-POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
-POSTGRES_DB = os.getenv("POSTGRES_DB", "viralsync_db")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "agency")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "agency")
+POSTGRES_DB = os.getenv("POSTGRES_DB", "agency")
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
 POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+
 
 # Retry de init_db(): tolera un blip transitorio de Postgres en el primer boot
 # (ej. el servidor todavía está arrancando schema) en lugar de matar a uvicorn.
