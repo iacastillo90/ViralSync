@@ -58,7 +58,8 @@ services:
       - ./searxng-settings:/etc/searxng
     environment:
       - SEARXNG_BASE_URL=http://localhost:8080
-      - SEARXNG_SECRET=${SEARXNG_SECRET:?Set SEARXNG_SECRET in .env}
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-viralsync_searxng_secret_key_123}
+
     restart: unless-stopped
 
   ollama:
