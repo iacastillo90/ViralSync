@@ -33,12 +33,28 @@ app = FastAPI(
     description="Motor de renderizado autónomo de video a costo cero con Edge-TTS, Pexels y MoviePy",
 )
 
-MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://minio:9000").replace("http://", "").replace("https://", "")
+# Endpoint RAW (con esquema): se conserva para derivar `secure` del scheme
+# (SH-03-2/3) ANTES de extraer host:puerto para el SDK (D-4).
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://minio:9000")
 MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER", "minioadmin")
 MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "viralsync-media")
+# Host público browser-reachable para URLs presignadas (D-4, SH-01-3): vacío por
+# default → se firma contra el endpoint del contenedor.
+MINIO_PUBLIC_ENDPOINT = os.getenv("MINIO_PUBLIC_ENDPOINT", "")
+MINIO_SECURE = os.getenv("MINIO_SECURE", "").lower() in ["true", "1", "yes"]
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "")
 DEFAULT_VOICE = os.getenv("DEFAULT_VOICE", "es-MX-JorgeNeural")
+
+
+def _derive_secure() -> bool:
+    """secure = True si el endpoint es https:// o MINIO_SECURE es truthy (SH-03-2/3)."""
+    return MINIO_SECURE or "https://" in MINIO_ENDPOINT
+
+
+def _host_port(endpoint: str) -> str:
+    """Extrae host:puerto limpio de un endpoint (http[s]:// opcional)."""
+    return endpoint.replace("http://", "").replace("https://", "").split("/")[0]
 
 
 class RenderScene(BaseModel):
@@ -311,14 +327,31 @@ async def _render_scene_pipeline(req: RenderRequest, temp_dir: str, output_mp4_p
 
 
 def upload_to_minio(file_path: str, tenant_id: str) -> str:
-    """Sube el archivo final .mp4 a MinIO y retorna la URL pública del objeto."""
+    """Sube el archivo final .mp4 a MinIO y retorna la URL PRESIGNADA del objeto.
+
+    REQ-SH-04: el bucket es PRIVADO → la URL devuelta es un presigned_get_object
+    real (SH-04-1), NUNCA una raíz pública fabricada que 403 en prod (SH-04-2).
+    Si MINIO_PUBLIC_ENDPOINT está seteado, la firma se hace contra ese host
+    (browser-reachable) vía un signer client; si no, contra el endpoint del
+    contenedor (D-4).
+    """
     logger.info(f"Conectando a MinIO en {MINIO_ENDPOINT}...")
     minio_client = Minio(
-        endpoint=MINIO_ENDPOINT,
+        endpoint=_host_port(MINIO_ENDPOINT),
         access_key=MINIO_ROOT_USER,
         secret_key=MINIO_ROOT_PASSWORD,
-        secure=False,
+        secure=_derive_secure(),
     )
+    # Signer "público" opcional: MINIO_PUBLIC_ENDPOINT → firmar contra ese host
+    # (native signing, sin string-surgery — D-4, SH-01-3).
+    signer_client = minio_client
+    if MINIO_PUBLIC_ENDPOINT:
+        signer_client = Minio(
+            endpoint=_host_port(MINIO_PUBLIC_ENDPOINT),
+            access_key=MINIO_ROOT_USER,
+            secret_key=MINIO_ROOT_PASSWORD,
+            secure=_derive_secure(),
+        )
 
     if not minio_client.bucket_exists(MINIO_BUCKET):
         minio_client.make_bucket(MINIO_BUCKET)
@@ -326,7 +359,7 @@ def upload_to_minio(file_path: str, tenant_id: str) -> str:
     object_name = f"{tenant_id}/faceless_output_{os.path.basename(file_path)}"
     minio_client.fput_object(MINIO_BUCKET, object_name, file_path, content_type="video/mp4")
 
-    public_url = f"http://{MINIO_ENDPOINT}/{MINIO_BUCKET}/{object_name}"
+    public_url = signer_client.presigned_get_object(MINIO_BUCKET, object_name)
     logger.info(f"Video subido exitosamente a MinIO: {public_url}")
     return public_url
 
