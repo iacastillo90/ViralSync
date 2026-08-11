@@ -63,18 +63,19 @@ else:
     engine_kwargs.update({"poolclass": StaticPool})
 
 async_engine = create_async_engine(TARGET_DB_URL, **engine_kwargs)
-AsyncSessionLocal = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+_session_maker = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+
+
+def AsyncSessionLocal():
+    """Retorna una sesión asíncrona usando la fábrica activa (dinámica ante fallbacks)."""
+    return _session_maker()
 
 
 async def init_db():
-    """Inicializa la base de datos creando las tablas registradas en la metadata.
-
-    Resiliente a un blip transitorio de Postgres al arrancar (create_all contra un
-    cluster/healtcheck aún no listo): reintenta hasta DB_INIT_MAX_ATTEMPTS con
-    backoff de DB_INIT_BACKOFF_SECONDS. Si se agotan los intentos, re-lanza para
-    que el fallo sea visible en logs en lugar de silencioso.
-    """
-    global async_engine, AsyncSessionLocal
+    """Inicializa la base de datos creando las tablas registradas en la metadata."""
+    global async_engine, _session_maker
     last_exc: Exception | None = None
     for attempt in range(1, DB_INIT_MAX_ATTEMPTS + 1):
         try:
@@ -93,7 +94,7 @@ async def init_db():
                 if AGENCY_ENV in ["dev", "test"]:
                     logger.warning(f"[DB] Postgres no disponible en {AGENCY_ENV} ({exc}). Fallback automático a SQLite en memoria...")
                     async_engine = create_async_engine(SQLITE_FALLBACK_URL, poolclass=StaticPool)
-                    AsyncSessionLocal = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+                    _session_maker = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
                     async with async_engine.begin() as conn:
                         await conn.run_sync(Base.metadata.create_all)
                     return
@@ -103,6 +104,7 @@ async def init_db():
                 )
     if last_exc is not None and AGENCY_ENV not in ["dev", "test"]:
         raise last_exc
+
 
 
 

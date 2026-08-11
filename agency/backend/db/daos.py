@@ -196,20 +196,33 @@ async def update_video_publish(
     return await _run_with_commit(_work)
 
 
+from backend.db.models import Idea, Product, Script, Video, Tenant
+
+
 async def upsert_product(tenant_id: str, product: Dict[str, Any]) -> Product:
     """Upsert de la fila `products` por (tenant_id, name) — REQ-PERSIST-05 / D8.
 
     El product-ingest identifica al producto por su nombre: re-ingest con el mismo
-    name actualiza description/product_image_url en vez de duplicar filas
-    (no existe UNIQUE natural en el DDL 004; (tenant_id, name) es la clave lógica).
-
-    PERSIST-05-1 / D-5: la fila guarda `object_key` — la key ESTABLE del objeto
-    en MinIO, NUNCA la URL presignada (que expira). El write es None-safe: un
-    re-upsert sin `object_key` conserva la key ya almacenada (SH-05-4 legacy);
-    el INSERT inicial lo deja NULL si no viene (path TEXT_TO_VIDEO intacto,
-    PERSIST-05-2).
+    name actualiza description/product_image_url en vez de duplicar filas.
+    Garantiza la presencia del tenant en la tabla `tenants` para evitar violaciones de clave foránea.
     """
     async def _work(session: AsyncSession) -> Product:
+        # 1. Asegurar que el tenant exista en DB (evitar FK IntegrityError)
+        tenant_row = (
+            await session.execute(select(Tenant).where(Tenant.id == tenant_id))
+        ).scalars().first()
+        if tenant_row is None:
+            import secrets
+            tenant_row = Tenant(
+                id=tenant_id,
+                name=f"Tenant {tenant_id[:8]}",
+                niche="Marketing General",
+                litellm_virtual_key=f"sk-vs-{secrets.token_urlsafe(24)}",
+                monthly_llm_budget_usd=20.00,
+            )
+            session.add(tenant_row)
+            await session.flush()
+
         name = product.get("name")
         existing = (
             await session.execute(
