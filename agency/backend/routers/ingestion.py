@@ -209,6 +209,51 @@ async def ingest_product_data(
     }
 
 
+class BatchProductItem(BaseModel):
+    product_name: str
+    description: str
+    product_image_url: Optional[str] = None
+    object_key: Optional[str] = None
+
+
+class BatchProductIngestRequest(BaseModel):
+    products: List[BatchProductItem]
+
+
+@ingestion_router.post("/{tenant_id}/products/batch", status_code=status.HTTP_201_CREATED)
+async def batch_ingest_products(tenant_id: str, req: BatchProductIngestRequest):
+    """Ingesta masiva de productos por tenant emitiendo el evento product_media_ingested."""
+    if not req.products:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="products array no puede estar vacío.")
+
+    ingested = []
+    for item in req.products:
+        row = await upsert_product(
+            tenant_id,
+            {
+                "name": item.product_name,
+                "description": item.description,
+                "product_image_url": item.product_image_url or "",
+                "object_key": item.object_key,
+            },
+        )
+        ingested.append({"id": row.id, "name": row.name})
+
+    sse_manager.publish_event(
+        tenant_id,
+        "product_media_ingested",
+        {"tenant_id": tenant_id, "ingested_count": len(ingested), "products": ingested},
+    )
+
+    return {
+        "status": "success",
+        "tenant_id": tenant_id,
+        "ingested_count": len(ingested),
+        "products": ingested,
+    }
+
+
+
 @ingestion_router.get("/{tenant_id}/media")
 async def list_media(tenant_id: str):
     """Lista los objetos REALES del tenant en MinIO (SH-01-1/2) — 200 siempre,

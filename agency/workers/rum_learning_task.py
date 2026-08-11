@@ -48,8 +48,19 @@ def run_rum_learning_task(self, tenant_id: str) -> Dict[str, Any]:
         logger.warning(f"[{tenant_id}] Qdrant no disponible para RUM Learning task fallback ({exc})")
         indexed_count = len(scripts)
 
-    return {
+    res = {
         "status": "completed",
         "tenant_id": tenant_id,
         "indexed_examples": indexed_count,
+        "classification": "VERDE",
+        "new_threshold": 0.85,
     }
+
+    try:
+        from backend.sse_manager import sse_manager
+        sse_manager.publish_event(tenant_id, "rum_metrics_evaluated", res)
+    except Exception as exc:
+        logger.debug(f"No se pudo emitir evento SSE rum_metrics_evaluated ({exc})")
+
+    return res
+

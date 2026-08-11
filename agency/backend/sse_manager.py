@@ -120,8 +120,20 @@ class SSEManager:
             for queue in list(self._listeners[tenant_id]):
                 await queue.put(payload)
 
+    def publish_event(self, tenant_id: str, event: str, data: Dict[str, Any]) -> None:
+        """Helper universal síncrono/asíncrono para publicar eventos SSE desde webhooks, workers o routers."""
+        async def _pub():
+            await self.publish(tenant_id, event, data)
+
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_pub())
+        except RuntimeError:
+            asyncio.run(_pub())
+
 
 sse_manager = SSEManager()
+
 
 
 def _format_sse(event: str, data: Dict[str, Any]) -> str:
