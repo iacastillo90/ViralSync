@@ -4,7 +4,7 @@
 
 Backend tenant-scoped GET endpoints for ideas/scripts/brain, real metrics shape, dev auth guard, real idea-approval commits, honest publish approval.
 
-Adds three tenant-scoped GET endpoints (`/ideas`, `/scripts`, `/brain`) with honest 200-empty behavior; defines the real metrics GET shape (which previously 503'd); fixes the dev auth guard so real tenant UUIDs work without a JWT in dev while production stays fail-closed; and makes approve/publish POSTs honest — `ideas/approve` performs a real `approval_status` UPDATE (reversing the earlier 202 no-op), `publish/approve` never fabricates identities, and neither endpoint invents DB writes it did not perform.
+Adds three tenant-scoped GET endpoints (`/ideas`, `/scripts`, `/brain`) with honest 200-empty behavior; defines the real metrics GET shape (which previously 503'd); fixes the dev auth guard so real tenant UUIDs work without a JWT in dev while production stays fail-closed; and makes approve/publish POSTs honest — `ideas/approve` performs a real `approval_status` UPDATE (reversing the earlier 202 no-op), a 0-row approve (unknown or stale `idea_id`) returns a distinct non-202 error (404) without resuming the graph, `status` is restricted to the allowlist `approved|rejected` (422 otherwise), `publish/approve` never fabricates identities, and neither endpoint invents DB writes it did not perform.
 
 - All routers mount under `_TENANT_GUARD = [Depends(verify_tenant_access)]` via `include_router` (`main.py:70-77`); new GET routers follow the same pattern.
 - `verify_tenant_access` (`security/auth.py:114-137`) 403s unless `current_user["tenant_id"] == url tenant`. `get_current_user` (`auth.py:91-98`) with no Bearer token returns a hardcoded `{"tenant_id": "default_tenant"}` in dev — the source of the 403 on real UUIDs. `TenantContextMiddleware` already resolves the dev tenant (X-Tenant-ID header, else URL path) into `request.state.tenant_id`.
@@ -121,7 +121,7 @@ The system MUST, when `AGENCY_ENV` is `dev`/`development` and no JWT is present,
 
 (Previously: both approve endpoints returned `202` queued-intent no-ops writing nothing — the semantic this change reverses for idea approval, per `pipeline-persistence-writes` REQ-PERSIST-03.)
 
-`POST /api/v1/tenants/{tid}/ideas/approve` MUST perform a real `ideas.approval_status` UPDATE (per REQ-PERSIST-03) and return `202 Accepted` with the existing SSE checkpoint/resume contract. `POST /api/v1/tenants/{tid}/publish/approve` MUST NOT fabricate `published_post_id`/`ig_reel_*`; it MUST only resume publish when valid tokens exist in state, and MUST surface an honest error otherwise. Neither endpoint MAY invent identifiers.
+`POST /api/v1/tenants/{tid}/ideas/approve` MUST perform a real `ideas.approval_status` UPDATE (per REQ-PERSIST-03) and return `202 Accepted` with the existing SSE checkpoint/resume contract. When the UPDATE matches no row (unknown or stale `idea_id`), the endpoint MUST return a distinct non-`202` error (404) and MUST NOT resume the graph for a 0-row approve. A valid `idea_id` MUST keep returning 202 and committing (`approval_status`) as today. `status` MUST be restricted to the allowlist `approved|rejected`; anything else MUST be rejected (422) without commit or resume. `POST /api/v1/tenants/{tid}/publish/approve` MUST NOT fabricate `published_post_id`/`ig_reel_*`; it MUST only resume publish when valid tokens exist in state, and MUST surface an honest error otherwise. Neither endpoint MAY invent identifiers.
 
 #### Scenario: API-06-1 — approve commits for real
 
@@ -136,6 +136,24 @@ The system MUST, when `AGENCY_ENV` is `dev`/`development` and no JWT is present,
 - WHEN `POST /api/v1/tenants/{tid}/publish/approve`
 - THEN the response contains no `published_post_id`, `ig_reel_*`, or any fabricated resource
 - AND publish does not pretend to run (honest queued/error state)
+
+#### Scenario: PTT-04-1 — valid id keeps 202/commit
+
+- GIVEN an existing pending `ideas` row
+- WHEN `POST ideas/approve {idea_id, status: "approved"}` resolves
+- THEN the response is 202 and the row's `approval_status` becomes `approved` (unchanged contract)
+
+#### Scenario: PTT-04-2 — unknown/stale id is a distinct non-202
+
+- GIVEN a valid-format `idea_id` matching no row (or a stale id)
+- WHEN `POST ideas/approve` resolves
+- THEN the response is 404 (never 202) and the graph is NOT resumed
+
+#### Scenario: PTT-04-3 — invalid status rejected
+
+- GIVEN `status` outside `{approved, rejected}`
+- WHEN `POST ideas/approve` resolves
+- THEN the request is rejected (422 validation), no commit and no resume occur
 
 ## Acceptance Criteria
 

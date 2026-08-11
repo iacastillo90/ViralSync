@@ -4,7 +4,7 @@
 
 Real pipeline persistence: every graph run writes real ideas/scripts/videos rows via async DAOs, `approve_idea` performs a real DB commit, graph state survives backend restarts through a Postgres checkpointer, and product data (including `product_image_url`) flows ingest → state → DB.
 
-The tables and async ORM already existed (migrations 001-003); the hole was that nothing wrote (8 tenants, 0 rows). Adds migration 004 (`products` table + `Product` ORM, DDL-as-truth), async write DAOs, async graph nodes that persist, a real approve UPDATE, and a Postgres-backed checkpointer (`thread_id = tenant_id`). MemorySaver sessions are deliberately not migrated (non-goal).
+The tables and async ORM already existed (migrations 001-003); the hole was that nothing wrote (8 tenants, 0 rows). Adds migration 004 (`products` table + `Product` ORM, DDL-as-truth), async write DAOs, async graph nodes that persist, a real approve UPDATE, and a Postgres-backed checkpointer (`thread_id = tenant_id`). Rejections now terminate the run at the distinct terminal state `term_rejected` (never re-entering scriptwriting/publish), and empty ideation candidates surface an honest, visible "no candidates" error instead of an `IntegrityError`. MemorySaver sessions are deliberately not migrated (non-goal).
 
 ## Requirements
 
@@ -57,6 +57,8 @@ The system MUST write, via async DAOs on the existing session: an `ideas` row pe
 
 The system MUST, on `POST /{tenant_id}/ideas/approve` with `status=approved|rejected`, update the matching `ideas.approval_status` row and resume the graph from its checkpoint.
 
+When idea approval is `rejected` or publish approval is `rejected`, the system MUST route the run to the distinct terminal state `term_rejected` (END, EstadoV3-compatible) instead of the next node. Rejection MUST be final for that run — no checkpoint resume may re-enter scriptwriting/publish; a re-approval requires a new run. The rejected candidate MUST remain visible in the DB (`approval_status='rejected'`) for a future run. A legal `approved` resume MUST reach scriptwriting unchanged.
+
 #### Scenario: PERSIST-03-1 — approval commits
 
 - GIVEN a pending `ideas` row with a real UUID
@@ -68,7 +70,47 @@ The system MUST, on `POST /{tenant_id}/ideas/approve` with `status=approved|reje
 
 - GIVEN the same endpoint with `status: "rejected"`
 - WHEN it runs
-- THEN the row's `approval_status` becomes `rejected` and no idea is promoted to scriptwriting
+- THEN the row's `approval_status` becomes `rejected` and the run ends at `term_rejected` — no idea is promoted to scriptwriting (now reachable)
+
+#### Scenario: PTT-02-1 — rejected idea: terminal, no script, no LLM spend
+
+- GIVEN a run paused at `human_approval_idea` and `POST ideas/approve {status: "rejected"}`
+- WHEN the resume resolves
+- THEN the run ends at `term_rejected` and no `scripts` row is created (PERSIST-03-2 now reachable)
+- AND the scriptwriting crew is never invoked and the idea's `approval_status` is `rejected` in the DB
+
+#### Scenario: PTT-02-2 — rejected publish: terminal, no write-back
+
+- GIVEN a run paused at `human_approval_publish` and `POST publish/approve {status: "rejected"}`
+- WHEN the resume resolves
+- THEN the run ends at `term_rejected`, the publisher is never invoked, and no write-back occurs (REQ-PTT-01 not fired)
+
+#### Scenario: PTT-02-3 — legal approval still reaches scriptwriting
+
+- GIVEN an existing pending `ideas` row approved with `status: "approved"` (real id)
+- WHEN the resume resolves
+- THEN the run proceeds to scriptwriting as today — the approved path is unchanged
+
+### Requirement: REQ-PTT-03 — Empty-candidates honesty
+
+**User Story**: As an operator, I want zero viable candidates to be a visible, actionable error — not a crash — so I can retry with another niche.
+
+**Motivo**: `selected_idea={}` when `ideas` is empty (`ideation.py:33`) feeds a NULL FK into `insert_script` (`scriptwriting.py:32`) → `IntegrityError` (`models.py` FK), invisible to the frontend.
+
+The system MUST, when no idea passes the 5/50 filter (empty candidates), terminate the run with an honest, visible "no candidates" error state — MUST NOT raise `IntegrityError` and MUST NOT pause for approval. The error state MUST be distinguishable (defined, uniform API behavior) so the frontend can surface it and force a retry with another niche. The valid path MUST be unaffected.
+
+#### Scenario: PTT-03-1 — empty set surfaces an honest no-candidates error
+
+- GIVEN the ideation crew returns zero ideas passing the 5/50 filter
+- WHEN `node_ideation` runs
+- THEN the run terminates in a visible "no candidates" error state (never `IntegrityError`, never paused)
+- AND no `ideas`/`scripts`/`videos` rows are written for that run
+
+#### Scenario: PTT-03-2 — valid candidates proceed unchanged
+
+- GIVEN at least one idea passes the 5/50 filter
+- WHEN `node_ideation` runs
+- THEN the pipeline proceeds to `human_approval_idea` exactly as today
 
 ### Requirement: REQ-PERSIST-04 — Postgres checkpointer (state survives restart)
 

@@ -1,0 +1,41 @@
+{
+  "operation": "review/start",
+  "target": "pipeline-terminal-truth",
+  "lineage_id": "pipeline-terminal-truth-review-001",
+  "snapshot": {
+    "repo": "/home/ivan/Desktop/AgentMarketingIA",
+    "base_commit": "be3e903",
+    "head_commit": "58c424f",
+    "commits": ["8f5e824", "b2ce5e3", "72be04f", "10bea8b", "967c22c", "58c424f"],
+    "authored_changed_lines": 1158
+  },
+  "risk_classification": { "tier": "High", "lenses": ["review-risk", "review-resilience", "review-readability", "review-reliability"] },
+  "ledger_summary": {
+    "total_findings": 22,
+    "blockers": 0,
+    "critical": 0,
+    "warnings": 11,
+    "suggestions": 10,
+    "insufficient": 1,
+    "info_rows": 21,
+    "inconclusive_rows": 1,
+    "refuter_launched": false,
+    "correction_launched": false,
+    "scoped_validator_launched": false
+  },
+  "final_verification": {
+    "verdict": "approved",
+    "evidence": "271 passed / 0 failed / 1 skipped full suite; 66 passed deterministic suite; all 4 REQ-PTT have named tests; TCK-001..009 [x]; snapshot identity matches; counter coherence PASS",
+    "escalation": false
+  },
+  "transaction_state": "approved",
+  "terminal": true,
+  "follow_up_non_blocking": [
+    "REL-002: Doc/API_CONTRACTS.md:81-124 still documents 200 OK + fabricated published_post_id — drift from implemented 202/404/422",
+    "REL-003: baseline claims unverifiable from .pytest_cache (predates change) — inconclusive",
+    "RES-002: SSE terminal/code signals have no frontend consumer; UI may show paused card indefinitely",
+    "READ-006: 1158 authored lines in one transaction vs ~525 forecast; per-slice review isolation absent",
+    "RISK-002/READ-002/REL-001/RES-001: node_publish discards update_video_publish bool — silent 0-row write-back",
+    "REL-004/REL-005: e2e and test_run_scriptwriting_crew_4_blocks exercise real LLM/SearXNG with no mock (pre-existing flake potential)"
+  ]
+}

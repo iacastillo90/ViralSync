@@ -4,7 +4,7 @@
 
 Honest Instagram publish wiring: `/graph/run` injects the tenant's IG credentials (`ig_user_id`/`ig_access_token`) into graph state, `node_publish` calls the real publisher path (`:8002` HTTP or direct adapters), and the frontend forwards tokens + `product_image_url` in the graph-run body.
 
-Credentials are request-scoped only — never persisted server-side. Real non-`token_` tokens drive the real Graph API flow; dev keeps the honest `token_` simulation; missing tokens raise the existing security error and MUST NOT fabricate a `published_post_id`. OAuth connect is explicitly out of scope (wiring only — real tokens come from a later OAuth change).
+Credentials are request-scoped only — never persisted server-side. Real non-`token_` tokens drive the real Graph API flow; dev keeps the honest `token_` simulation; missing tokens raise the existing security error and MUST NOT fabricate a `published_post_id`. A successful publish also persists `instagram_post_id`/`published_at` on the `videos` row (write-back), so the DB is the source of truth and the post id survives a backend restart; `publish_approval_status` stays `approved` (existing CHECK value — no new status, no migration). OAuth connect is explicitly out of scope (wiring only — real tokens come from a later OAuth change).
 
 ## Requirements
 
@@ -36,6 +36,8 @@ The system MUST accept `ig_user_id`/`ig_access_token` on `POST /{tenant_id}/grap
 
 The system MUST connect `node_publish` to the publisher contract when `ig_user_id`/`ig_access_token` are present: real non-`token_` tokens MUST drive the real Graph API flow; in dev, tokens starting with `token_` MAY keep the existing honest simulation; missing tokens MUST raise the existing security error and MUST NOT fabricate a `published_post_id`.
 
+On a successful publish (a real post id obtained), the system MUST persist `instagram_post_id` and `published_at` on the `videos` row identified by `video_id` in state, leaving `publish_approval_status` as `approved` (existing CHECK value — no new status value, no migration). On publish failure the row MUST remain unchanged (never a partial write). When `video_id` is absent from state (replay/resume), `node_publish` MUST NOT crash and MUST NOT perform any write-back (no fabricated post id ever persisted).
+
 #### Scenario: PUBLISH-02-1 — valid real token publishes for real
 
 - GIVEN `ig_user_id` and a real (non-`token_`) `ig_access_token` in state
@@ -53,6 +55,25 @@ The system MUST connect `node_publish` to the publisher contract when `ig_user_i
 - GIVEN no `ig_user_id` or no `ig_access_token`
 - WHEN `node_publish` runs
 - THEN the security error is raised and no `published_post_id` is invented
+
+#### Scenario: PTT-01-1 — success persists both fields
+
+- GIVEN a `videos` row for the tenant and `video_id` + `published_post_id` in state, publisher returns a real post id
+- WHEN `node_publish` succeeds
+- THEN the row's `instagram_post_id` equals the returned id and `published_at` is set
+- AND `publish_approval_status` is `approved`, verifiable via psql/SQLite read-back
+
+#### Scenario: PTT-01-2 — publish failure leaves the row untouched
+
+- GIVEN a publisher failure or missing token (existing honest errors)
+- WHEN `node_publish` raises
+- THEN the row keeps NULL `instagram_post_id`/`published_at` and prior status — no partial write
+
+#### Scenario: PTT-01-3 — no video_id on replay/resume is safe
+
+- GIVEN state without `video_id` (replay/legacy checkpoint)
+- WHEN `node_publish` runs and succeeds
+- THEN no UPDATE is issued and no crash occurs — no false write-back
 
 ### Requirement: REQ-PUBLISH-03 — Frontend sends tokens + product_image_url
 

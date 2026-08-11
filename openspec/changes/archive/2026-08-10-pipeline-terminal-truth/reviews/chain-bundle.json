@@ -1,0 +1,26 @@
+{
+  "operation": "review/start",
+  "target": "pipeline-terminal-truth",
+  "lineage_id": "pipeline-terminal-truth-review-001",
+  "chain": [
+    { "event": "review_start", "commit": "be3e903", "hash": "be3e903" },
+    { "event": "lens_sweep", "lens": "review-risk", "result": "4 findings, 0 severe", "hash": "RISK-001..004" },
+    { "event": "lens_sweep", "lens": "review-readability", "result": "6 findings, 0 severe", "hash": "READ-001..006" },
+    { "event": "lens_sweep", "lens": "review-reliability", "result": "6 findings, 0 severe", "hash": "REL-001..006" },
+    { "event": "lens_sweep", "lens": "review-resilience", "result": "6 findings, 0 severe", "hash": "RES-001..006" },
+    { "event": "ledger_freeze", "result": "22 findings, 0 BLOCKER/CRITICAL, 21 info, 1 inconclusive", "hash": "ledger-v1" },
+    { "event": "refuter", "launched": false, "reason": "no inferential severe findings" },
+    { "event": "correction", "launched": false, "reason": "no accepted/blocking severe findings" },
+    { "event": "scoped_validator", "launched": false, "reason": "no correction" },
+    { "event": "final_verification", "verdict": "approved", "hash": "271p-0f-1s;66p-deterministic" },
+    { "event": "terminal_state", "state": "approved" }
+  ],
+  "semantic_invariants": {
+    "frozen_severe_findings": 0,
+    "pending_refuter_ids": [],
+    "corroborated_ids_equal_correction_ids": true,
+    "corrected_candidates_require_scoped_validation": false,
+    "mode": "4R",
+    "lens_count": 4
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "operation": "review/start",
+  "target": "pipeline-terminal-truth",
+  "lineage_id": "pipeline-terminal-truth-review-001",
+  "snapshot": {
+    "repo": "/home/ivan/Desktop/AgentMarketingIA",
+    "base_commit": "be3e903",
+    "head_commit": "58c424f",
+    "commits": ["8f5e824", "b2ce5e3", "72be04f", "10bea8b", "967c22c", "58c424f"],
+    "diff_stat": "15 files changed, 1095 insertions(+), 63 deletions(-)",
+    "authored_changed_lines": 1158
+  },
+  "risk_classification": {
+    "tier": "High",
+    "signals": [
+      "authored changed lines > 400",
+      "update/approve paths (0-row approve, status allowlist)",
+      "data persistence (publish write-back)",
+      "behavior/state topology (rejection terminal)"
+    ],
+    "lenses": ["review-risk", "review-resilience", "review-readability", "review-reliability"]
+  },
+  "status": "started",
+  "started_at": "2026-08-10"
+}

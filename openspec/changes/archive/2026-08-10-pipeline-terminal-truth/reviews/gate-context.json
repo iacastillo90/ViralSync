@@ -1,0 +1,14 @@
+{
+  "operation": "review/start",
+  "target": "pipeline-terminal-truth",
+  "lineage_id": "pipeline-terminal-truth-review-001",
+  "expected_head": "58c424f3338e5061b191d5d8294f7740c31a5896",
+  "genesis": { "base_commit": "be3e903", "operation": "review/start(target=pipeline-terminal-truth)" },
+  "chain_identity": "pipeline-terminal-truth-review-001",
+  "bundle_digest": "ledger-v1+chain-v1+receipt-v1",
+  "mode": "4R",
+  "lens_count": 4,
+  "terminal_state": "approved",
+  "validated_at": "2026-08-10",
+  "notes": "Lifecycle gates (pre-commit/pre-push/pre-pr/release) must call native review-validate with this gate context before any publication; missing/scope-changed/invalidated/escalated fail closed."
+}

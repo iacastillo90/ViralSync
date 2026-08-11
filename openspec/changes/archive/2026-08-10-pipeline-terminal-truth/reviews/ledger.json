@@ -1,0 +1,183 @@
+{
+  "operation": "review/start",
+  "target": "pipeline-terminal-truth",
+  "lineage_id": "pipeline-terminal-truth-review-001",
+  "snapshot": {
+    "repo": "/home/ivan/Desktop/AgentMarketingIA",
+    "base_commit": "be3e903",
+    "head_commit": "58c424f",
+    "commits": ["8f5e824", "b2ce5e3", "72be04f", "10bea8b", "967c22c", "58c424f"],
+    "authored_changed_lines": 1158
+  },
+  "lenses_ran": ["review-risk", "review-resilience", "review-readability", "review-reliability"],
+  "status": "frozen",
+  "findings": [
+    {
+      "id": "RISK-001", "lens": "risk", "location": "agency/backend/routers/graph_execution.py:50-70",
+      "severity": "WARNING", "evidence_class": "inferential",
+      "claim": "The additive SSE terminal signal for term_rejected is unreachable in production: _resume_graph_background never broadcasts graph_complete/terminal on success; only _run_graph_background emits terminal and cannot produce terminal_state.",
+      "proof_refs": "graph_execution.py:50-70, graph_execution.py:99-102, graph.py:95-112, test_api_ideas_scripts_brain.py:601-620, design.md:110",
+      "status": "info"
+    },
+    {
+      "id": "RISK-002", "lens": "risk", "location": "agency/agents/nodes/publish.py:120-124, agency/backend/db/daos.py:172-196",
+      "severity": "WARNING", "evidence_class": "inferential",
+      "claim": "node_publish ignores the bool returned by update_video_publish; a 0-row write-back silently leaves the row pending with no log/error while the node reports success, re-creating the RELIABILITY-007 stuck-pending state.",
+      "proof_refs": "publish.py:120-124, daos.py:188-194, spec.md:11-17",
+      "status": "info"
+    },
+    {
+      "id": "RISK-003", "lens": "risk", "location": "agency/agents/nodes/publish.py:96-124",
+      "severity": "WARNING", "evidence_class": "inferential",
+      "claim": "Post-then-write-back ordering creates an inconsistency window: publisher POST executes before update_video_publish; if the DAO raises after 2xx, the Instagram post is live while the videos row remains pending and the run ends in graph_error. Cross-boundary atomicity limit, not partial DB write.",
+      "proof_refs": "publish.py:96-124, daos.py:188-194, spec.md:26-30, design.md:16",
+      "status": "info"
+    },
+    {
+      "id": "RISK-004", "lens": "risk", "location": "agency/backend/routers/graph_execution.py:270-284, agency/backend/db/checkpointer.py:80-96",
+      "severity": "SUGGESTION", "evidence_class": "deterministic",
+      "claim": "OAuth access tokens are placed in graph state and langgraph checkpoints persist full thread state at rest; pre-existing, not introduced by this diff. design.md:43 claim credentials never persisted is inaccurate for checkpointer-enabled environments.",
+      "proof_refs": "graph_execution.py:270-284, checkpointer.py:92-94, design.md:43",
+      "status": "info"
+    },
+    {
+      "id": "READ-001", "lens": "readability", "location": "agency/agents/graph.py:44-67,95-112; agency/backend/routers/graph_execution.py:204-214,243-252",
+      "severity": "SUGGESTION", "evidence_class": "deterministic",
+      "claim": "The approved/rejected decision is implemented as three near-identical structural pairs (_route_after_idea_approval/_route_after_publish_approval, two add_conditional_edges mappings, two resume-payload builders) differing only in flag names.",
+      "proof_refs": "graph.py:44-58, graph.py:61-67, graph.py:95-112, graph_execution.py:207-214, graph_execution.py:245-252",
+      "status": "info"
+    },
+    {
+      "id": "READ-002", "lens": "readability", "location": "agency/agents/nodes/publish.py:120-124",
+      "severity": "WARNING", "evidence_class": "deterministic",
+      "claim": "node_publish discards the bool returned by update_video_publish; a failed (0-row) write-back is indistinguishable from a persisted one in the node's return contract.",
+      "proof_refs": "publish.py:120-124, daos.py:185-196, test_daos.py:316-339",
+      "status": "info"
+    },
+    {
+      "id": "READ-003", "lens": "readability", "location": "agency/agents/nodes/terminal.py:25; agency/agents/graph.py:83,100,109; agency/backend/routers/graph_execution.py:99-101",
+      "severity": "SUGGESTION", "evidence_class": "deterministic",
+      "claim": "The terminal state value term_rejected is a bare string literal duplicated across three modules with no shared constant; a rename in one module does not propagate.",
+      "proof_refs": "terminal.py:25, graph.py:83,100,109, graph_execution.py:99-101",
+      "status": "info"
+    },
+    {
+      "id": "READ-004", "lens": "readability", "location": "agency/agents/graph.py:44-58; agency/backend/routers/graph_execution.py:59-64,81-82,96-98,106-108,170-192",
+      "severity": "SUGGESTION", "evidence_class": "inferential",
+      "claim": "Production comments/docstrings reference ephemeral process IDs (TCK-004/005, D-A..D-F, REQ-PTT-xx) that resolve only against openspec artifacts; approve_idea repeats the same D-E rationale three times around a five-line logic block.",
+      "proof_refs": "graph.py:45-52, graph_execution.py:59-64,96-98,106-108,170-192",
+      "status": "info"
+    },
+    {
+      "id": "READ-005", "lens": "readability", "location": "agency/tests/unit/test_node_writes.py:131-156 vs agency/tests/unit/test_publish_wiring.py:41-99",
+      "severity": "SUGGESTION", "evidence_class": "deterministic",
+      "claim": "This snapshot introduces a second httpx.AsyncClient fake implementation for node_publish that duplicates the existing FakeResponse/FakeAsyncClient + fake_http fixture in test_publish_wiring.py.",
+      "proof_refs": "test_node_writes.py:131-156, test_publish_wiring.py:41-99",
+      "status": "info"
+    },
+    {
+      "id": "READ-006", "lens": "readability", "location": "whole diff (transaction scope)",
+      "severity": "WARNING", "evidence_class": "inferential",
+      "claim": "The snapshot delivers 1158 authored changed lines across 15 files in one transaction vs ~525 forecast with a 3-PR stacked split (each slice < 400); ~2.2x the forecast on which size:exception approval was based, and per-slice review isolation is not present in the reviewed snapshot.",
+      "proof_refs": "reviews/transaction.json:10-11, design.md:91-99, tasks.md:7-15",
+      "status": "info"
+    },
+    {
+      "id": "REL-001", "lens": "reliability", "location": "agency/agents/nodes/publish.py:120-124",
+      "severity": "WARNING", "evidence_class": "deterministic",
+      "claim": "node_publish discards the return value of update_video_publish; when the DAO reports 0 rows, the node returns success and the graph completes with the videos row silently un-updated — a no-op that looks like progress, contradicting the change's own honesty contract. No test covers the DAO-False path inside the node.",
+      "proof_refs": "publish.py:120-124, test_daos.py:316-321,336-339, graph_execution.py:187-192",
+      "status": "info"
+    },
+    {
+      "id": "REL-002", "lens": "reliability", "location": "Doc/API_CONTRACTS.md:81-124",
+      "severity": "WARNING", "evidence_class": "deterministic",
+      "claim": "The API contract doc of record contradicts the implemented externally-visible contract: 3.3 documents ideas/approve as 200 OK; 3.4 documents publish/approve returning the fabricated published_post_id this change removed; neither documents the new 202/404/422 semantics.",
+      "proof_refs": "Doc/API_CONTRACTS.md:81-103,107-124 vs graph_execution.py:168-258, test_full_pipeline.py:142",
+      "status": "info"
+    },
+    {
+      "id": "REL-003", "lens": "reliability", "location": "agency/tests (baseline claim)",
+      "severity": "WARNING", "evidence_class": "insufficient",
+      "claim": "The baseline claims (252->270 passed; single failure = test_scriptwriting_crew_4_blocks green standalone) cannot be verified from local artifacts; .pytest_cache predates the change and lastfailed names a different test.",
+      "proof_refs": ".pytest_cache/v/cache/nodeids, .pytest_cache/v/cache/lastfailed",
+      "status": "inconclusive"
+    },
+    {
+      "id": "REL-004", "lens": "reliability", "location": "agency/tests/e2e/test_full_pipeline.py:62-65,108-113",
+      "severity": "WARNING", "evidence_class": "deterministic",
+      "claim": "The e2e lifecycle test invokes the REAL run_ideation_crew and run_scriptwriting_crew with no monkeypatching; both hit live external dependencies; determinism depends on each dependency's offline fallback.",
+      "proof_refs": "test_full_pipeline.py:62-65,108-113, ideation_crew.py:64,81-109, scriptwriting_crew.py:81-113, searxng_mcp_server.py:45-79",
+      "status": "info"
+    },
+    {
+      "id": "REL-005", "lens": "reliability", "location": "agency/tests/unit/test_scriptwriting_crew.py:22-38",
+      "severity": "WARNING", "evidence_class": "deterministic",
+      "claim": "test_run_scriptwriting_crew_4_blocks calls the real run_scriptwriting_crew with NO mock of agents.llm.acomplete (sibling tests do monkeypatch it); with an LLM reachable, output is nondeterministic. Mechanism for a pre-existing environment-dependent flake confirmed by code inspection.",
+      "proof_refs": "test_scriptwriting_crew.py:22-38 vs 46-50,77-81, scriptwriting_crew.py:80-113",
+      "status": "info"
+    },
+    {
+      "id": "REL-006", "lens": "reliability", "location": ".github/workflows/ci.yml:13,19",
+      "severity": "SUGGESTION", "evidence_class": "deterministic",
+      "claim": "Dead config: env key literally named AGENCY_ENV=dev: (contains = in key) set twice; harmless because correct AGENCY_ENV: dev is also set at line 14. CI pytest runs from repo root with no pytest.ini/pyproject.toml and no working-directory.",
+      "proof_refs": ".github/workflows/ci.yml:12-14,18-24",
+      "status": "info"
+    },
+    {
+      "id": "RES-001", "lens": "resilience", "location": "agency/agents/nodes/publish.py:120-124",
+      "severity": "WARNING", "evidence_class": "deterministic",
+      "claim": "After POST 2xx with real published_post_id (irreversible external effect), update_video_publish runs with bare await: if the DAO raises, the run fails with generic graph_error and the videos row stays without instagram_post_id; if the DAO returns False, skip is fully silent. No retry/backoff or compensating action; recovery is manual re-approve (idempotency key dedupes re-POST).",
+      "proof_refs": "publish.py:96-124, test_publish_wiring.py:398-407,355",
+      "status": "info"
+    },
+    {
+      "id": "RES-002", "lens": "resilience", "location": "agency/backend/routers/graph_execution.py:99-113; agency/frontend/src/hooks/useSSEStream.js:33-74",
+      "severity": "WARNING", "evidence_class": "deterministic",
+      "claim": "New SSE signals graph_complete.terminal=term_rejected and graph_error.code=no_candidates have no consumer: useSSEStream.js registers only node_change/log_entry/checkpoint_paused/onerror; grep of terminal in frontend src gives 0 matches. A rejection ends the graph without visible feedback; checkpoint_paused stays true forever so UI shows paused card indefinitely.",
+      "proof_refs": "useSSEStream.js:1-84, sse_manager.py:66-68",
+      "status": "info"
+    },
+    {
+      "id": "RES-003", "lens": "resilience", "location": "agency/backend/routers/graph_execution.py:187-192",
+      "severity": "SUGGESTION", "evidence_class": "inferential",
+      "claim": "The 404 path of approve_idea (0 rows) occurs before broadcast+resume: the langgraph thread stays paused at human_approval_idea without SSE signal, timeout, or cleanup; with thread_id=tenant_id, a later /graph/run resumes that checkpoint instead of starting fresh. Recovery manual only.",
+      "proof_refs": "graph_execution.py:168-221 vs 45-47",
+      "status": "info"
+    },
+    {
+      "id": "RES-004", "lens": "resilience", "location": "agency/backend/routers/graph_execution.py:224-258; agency/backend/db/daos.py:135",
+      "severity": "WARNING", "evidence_class": "deterministic",
+      "claim": "approve_publish does NOT persist the decision: publish_approval_status is written only as 'pending' in insert_video; no DAO/route transitions it to approved/rejected. The publish decision lives only in checkpointer state — asymmetric with approve_idea which commits (update_idea_approval). Thread state loss reverts approval to pending without DB trace.",
+      "proof_refs": "grep publish_approval_status: 14 matches, transitions only 'pending' (daos.py:135, video_edit.py:7); test_daos.py:312, test_node_writes.py:519",
+      "status": "info"
+    },
+    {
+      "id": "RES-005", "lens": "resilience", "location": "agency/backend/routers/graph_execution.py:50-69,72-113",
+      "severity": "SUGGESTION", "evidence_class": "inferential",
+      "claim": "_resume_graph_background/_run_graph_background: single ainvoke, single try/except to graph_error. No retry/backoff for transient DB/saver blips; run lost (manual recovery). Degradation not silent (log + SSE error) and PG checkpointer saves progressively.",
+      "proof_refs": "graph_execution.py:50-69,72-113, test_graph_execution_resilience.py:41-79",
+      "status": "info"
+    },
+    {
+      "id": "RES-006", "lens": "resilience", "location": "agency/agents/nodes/human_approval.py:31-37",
+      "severity": "SUGGESTION", "evidence_class": "deterministic",
+      "claim": "On resume with publish_rejected=True, node_human_approval_publish logs the waiting message ('Esperando aprobacion humana...') which the client consumes as log_entry, describing the opposite of the real state (rejection). Misleading diagnostics in the visible stream.",
+      "proof_refs": "human_approval.py:31-37 vs terminal.py:7",
+      "status": "info"
+    }
+  ],
+  "summary": {
+    "total_findings": 22,
+    "blockers": 0,
+    "critical": 0,
+    "warnings": 11,
+    "suggestions": 10,
+    "insufficient": 1,
+    "refuter_launched": false,
+    "correction_launched": false,
+    "scoped_validator_launched": false,
+    "info_rows": 21,
+    "inconclusive_rows": 1
+  }
+}
