@@ -37,7 +37,42 @@ class SSEManager:
         queue = asyncio.Queue()
         self._listeners[tenant_id].append(queue)
         logger.info(f"SSE Cliente suscrito a tenant '{tenant_id}'. Total: {len(self._listeners[tenant_id])}")
+        self.start_redis_listener(tenant_id)
         return queue
+
+    def start_redis_listener(self, tenant_id: str):
+        """Inicia el listener de Redis Pub/Sub para retransmitir a colas locales (multi-replica)."""
+        if self._redis_client:
+            if not hasattr(self, "_active_subscribers"):
+                self._active_subscribers = set()
+            if tenant_id not in self._active_subscribers:
+                self._active_subscribers.add(tenant_id)
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._listen_redis_channel(tenant_id))
+                except RuntimeError:
+                    pass
+
+    async def _listen_redis_channel(self, tenant_id: str):
+        """Escucha redis.pubsub() en background para el canal sse:{tenant_id}."""
+        try:
+            import redis.asyncio as aioredis
+            async_redis = aioredis.from_url(REDIS_URL, socket_timeout=1.0)
+            pubsub = async_redis.pubsub()
+            await pubsub.subscribe(f"sse:{tenant_id}")
+            async for message in pubsub.listen():
+                if message and message.get("type") == "message":
+                    raw_data = message.get("data")
+                    if raw_data:
+                        parsed = json.loads(raw_data)
+                        event = parsed.get("event", "message")
+                        data = parsed.get("data", {})
+                        payload = f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
+                        if tenant_id in self._listeners:
+                            for q in list(self._listeners[tenant_id]):
+                                await q.put(payload)
+        except Exception as exc:
+            logger.debug(f"Redis PubSub listener finished for {tenant_id}: {exc}")
 
     def unsubscribe(self, tenant_id: str, queue: asyncio.Queue):
         """Desconecta al cliente de la cola de eventos del tenant."""
@@ -45,6 +80,8 @@ class SSEManager:
             self._listeners[tenant_id].remove(queue)
             if not self._listeners[tenant_id]:
                 del self._listeners[tenant_id]
+                if hasattr(self, "_active_subscribers") and tenant_id in self._active_subscribers:
+                    self._active_subscribers.remove(tenant_id)
         logger.info(f"SSE Cliente desconectado de tenant '{tenant_id}'")
 
     async def broadcast(self, tenant_id: str, event_type: str, data: dict):

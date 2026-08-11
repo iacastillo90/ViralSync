@@ -119,11 +119,20 @@ async def node_publish(state: Dict[str, Any]) -> Dict[str, Any]:
     # el publisher raise, nunca llegamos acá → no write parcial (PTT-01-2).
     video_id = state.get("video_id")
     if video_id:
-        await update_video_publish(
+        updated = await update_video_publish(
             tenant_id, video_id, post_id, datetime.now(timezone.utc)
         )
+        if not updated:
+            logger.error(
+                f"[{tenant_id}] Write-back fallido: update_video_publish afectó 0 filas "
+                f"para video_id {video_id} (tenant_id mismatch o id inexistente)"
+            )
 
     logs = state.get("logs", [])
+    if video_id and not updated:
+        logs.append(
+            f"[publish] ADVERTENCIA: Write-back fallido en BD para video_id '{video_id}' (0 filas actualizadas)"
+        )
     logs.append(f"[publish] Video publicado en {platform.capitalize()} con Post ID '{post_id}'")
 
     return {

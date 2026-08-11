@@ -6,7 +6,7 @@ Router para la Ejecución Asíncrona del Grafo LangGraph y Reportes SSE en Vivo.
 
 from typing import Optional, Dict, Any, Literal
 from fastapi import APIRouter, status, BackgroundTasks, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from backend.sse_manager import sse_manager
 from agents.graph import build_agency_graph
 from backend.db.daos import update_idea_approval
@@ -18,6 +18,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["Graph Execution"])
+
 
 # Checkpointer (design D2 / T-14): reemplazó el global MemorySaver. La factory
 # decide — MemorySaver bajo FORCE_SQLITE=true (tests, PERSIST-04-2) o
@@ -117,23 +118,26 @@ class GraphRunRequest(BaseModel):
     niche: Optional[str] = "B2B Software"
     niche_ppp: Optional[str] = "Escalar conversiones SaaS en 90 días"
     target_platform: Optional[str] = "instagram"
-    # Credenciales OAuth del tenant para publicación. El frontend las pasa desde
-    # la sesión del usuario. No se persisten en memoria del servidor.
     ig_user_id: Optional[str] = None
     ig_access_token: Optional[str] = None
     tiktok_access_token: Optional[str] = None
     youtube_access_token: Optional[str] = None
-    # Datos de producto capturados en product-ingest (REQ-PERSIST-05 / D8): el
-    # backend acepta product_image_url (y name/description opcionales) y
-    # node_ideation persiste la fila `products` cuando la imagen viaja en state.
     product_name: Optional[str] = None
     product_description: Optional[str] = None
     product_image_url: Optional[str] = None
-    # PERSIST-05-1 / D-5: la key ESTABLE del objeto en MinIO (nunca la URL
-    # presignada que expira). Node_ideation la persiste en `products.object_key`
-    # y node_video_edit la re-firma en cada lectura (SH-05-3) o cae a la URL
-    # almacenada en filas legacy (SH-05-4).
     product_object_key: Optional[str] = None
+
+    @field_validator("ig_access_token", "tiktok_access_token", "youtube_access_token", mode="after")
+    @classmethod
+    def validate_oauth_tokens(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            stripped = v.strip()
+            if not stripped:
+                raise ValueError("El token de acceso OAuth no puede estar vacío o contener solo espacios.")
+            if len(stripped) < 5:
+                raise ValueError("El token de acceso OAuth debe tener al menos 5 caracteres.")
+            return stripped
+        return v
 
 
 class ProgressReportRequest(BaseModel):
@@ -209,14 +213,16 @@ async def approve_idea(tenant_id: str, req: IdeaApproveRequest, background_tasks
     # D-B: payload con AMBAS señales positivas (idea_approved / idea_rejected)
     # para que la ruta condicional del grafo distinga "decidido" de "no
     # decidido" — nunca conflaciona rejected con not-yet (D-B).
-    background_tasks.add_task(
-        _resume_graph_background,
-        tenant_id,
-        {
-            "idea_approved": req.status == "approved",
-            "idea_rejected": req.status == "rejected",
-        },
-    )
+    payload = {
+        "idea_approved": req.status == "approved",
+        "idea_rejected": req.status == "rejected",
+    }
+    try:
+        from workers.graph_execution_task import resume_graph_task
+        resume_graph_task.delay(tenant_id, payload)
+    except Exception as exc:
+        logger.warning("Celery dispatch failed for resume_graph (%s), falling back to background_tasks", exc)
+        background_tasks.add_task(_resume_graph_background, tenant_id, payload)
 
     return {
         "status": "accepted",
@@ -228,13 +234,7 @@ async def approve_idea(tenant_id: str, req: IdeaApproveRequest, background_tasks
 
 @router.post("/{tenant_id}/publish/approve", status_code=status.HTTP_202_ACCEPTED)
 async def approve_publish(tenant_id: str, req: PublishApproveRequest, background_tasks: BackgroundTasks):
-    """Checkpoint Humano: Aprobar o Rechazar Publicación de Video y reanudar grafo.
-
-    No-op honesto (D6, REQ-API-06): se eliminó el post_id fabricado
-    `ig_reel_…_99812`. Devuelve 202 `{"status":"accepted","kind":"publish_approval",
-    "queued":true}`; la tarjeta de aprobación de publicación se alimenta de la
-    proveniencia real vía GET /scripts (no /videos existe).
-    """
+    """Checkpoint Humano: Aprobar o Rechazar Publicación de Video y reanudar grafo."""
     await sse_manager.broadcast(
         tenant_id,
         "publish_checkpoint",
@@ -244,17 +244,16 @@ async def approve_publish(tenant_id: str, req: PublishApproveRequest, background
         },
     )
     
-    # Reanudar el grafo en background (log + SSE graph_error ante fallo)
-    # D-B: AMBAS señales positivas (publish_approved / publish_rejected) — la
-    # ruta condicional distingue decisión de no-decisión (D-C).
-    background_tasks.add_task(
-        _resume_graph_background,
-        tenant_id,
-        {
-            "publish_approved": req.status == "approved",
-            "publish_rejected": req.status == "rejected",
-        },
-    )
+    payload = {
+        "publish_approved": req.status == "approved",
+        "publish_rejected": req.status == "rejected",
+    }
+    try:
+        from workers.graph_execution_task import resume_graph_task
+        resume_graph_task.delay(tenant_id, payload)
+    except Exception as exc:
+        logger.warning("Celery dispatch failed for resume_publish (%s), falling back to background_tasks", exc)
+        background_tasks.add_task(_resume_graph_background, tenant_id, payload)
 
     return {
         "status": "accepted",
@@ -266,12 +265,16 @@ async def approve_publish(tenant_id: str, req: PublishApproveRequest, background
 @router.post("/{tenant_id}/graph/run")
 async def run_graph(tenant_id: str, req: GraphRunRequest, background_tasks: BackgroundTasks):
     """Ejecuta el grafo multi-agente asíncronamente."""
-    # RISK-001 (SH-02-4 invariant on the read/persist path): a client-supplied
-    # product_object_key outside this tenant's prefix is rejected BEFORE it can
-    # be persisted (node_ideation) or re-signed (node_video_edit) — otherwise
-    # the graph would mint a valid presigned GET URL for another tenant's object
-    # and leak it into the LLM prompt text.
+    from backend.security.rate_limiter import check_rate_limit
+    if not check_rate_limit(tenant_id, limit=30, window_seconds=60):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit excedido para este tenant. Intente nuevamente en 60 segundos.",
+            headers={"Retry-After": "60"},
+        )
+
     if req.product_object_key and not req.product_object_key.startswith(f"{tenant_id}/"):
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="product_object_key outside tenant prefix",
@@ -288,8 +291,6 @@ async def run_graph(tenant_id: str, req: GraphRunRequest, background_tasks: Back
         "niche": req.niche,
         "niche_ppp": req.niche_ppp,
         "target_platform": req.target_platform,
-        # Credenciales OAuth necesarias para que node_publish no falle en producción.
-        # Provienen directamente del request, nunca se almacenan en el servidor.
         "ig_user_id": req.ig_user_id,
         "ig_access_token": req.ig_access_token,
         "tiktok_access_token": req.tiktok_access_token,
@@ -300,12 +301,17 @@ async def run_graph(tenant_id: str, req: GraphRunRequest, background_tasks: Back
         "product_object_key": req.product_object_key,
     }
     
-    # Ejecutar el grafo en background (log + SSE graph_error ante fallo)
-    background_tasks.add_task(_run_graph_background, tenant_id, initial_state)
+    try:
+        from workers.graph_execution_task import run_graph_task
+        run_graph_task.delay(tenant_id, initial_state)
+    except Exception as exc:
+        logger.warning("Celery dispatch failed for run_graph (%s), falling back to background_tasks", exc)
+        background_tasks.add_task(_run_graph_background, tenant_id, initial_state)
 
     return {
         "status": "accepted",
         "message": "Graph execution started in background",
         "tenant_id": tenant_id,
     }
+
 

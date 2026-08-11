@@ -19,6 +19,8 @@ celery_app = Celery(
         "workers.metrics_loop_task",
         "workers.webhook_dlq_task",
         "workers.trend_scraper_task",
+        "workers.graph_execution_task",
+        "workers.rum_learning_task",
     ],
 )
 
@@ -35,6 +37,8 @@ celery_app.conf.update(
         "workers.webhook_dlq_task.*": {"queue": "webhooks"},
         "workers.metrics_loop_task.*": {"queue": "default"},
         "workers.trend_scraper_task.*": {"queue": "default"},
+        "workers.graph_execution_task.*": {"queue": "default"},
+        "workers.rum_learning_task.*": {"queue": "default"},
     },
 )
 

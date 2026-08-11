@@ -33,5 +33,10 @@ router_settings:
     - groq-llama: ["gemini-flash", "fallback-pagado"]
     - motor-agencia: ["fallback-pagado"]
 
+litellm_settings:
+  callbacks: ["prometheus"]
+  track_cost_per_user: true
+
 general_settings:
   master_key: "os.environ/LITELLM_MASTER_KEY"
+

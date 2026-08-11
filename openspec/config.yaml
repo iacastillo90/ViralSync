@@ -1,0 +1,16 @@
+# OpenSpec Configuration — ViralSync Enterprise
+schema: "1.0"
+project: "ViralSync"
+
+rules:
+  require_proposal: true
+  require_spec: true
+  require_design: true
+  require_tasks: true
+  require_verify_report: true
+  require_reviews_ledger: true
+
+paths:
+  specs: "openspec/specs"
+  changes: "openspec/changes"
+  archive: "openspec/changes/archive"

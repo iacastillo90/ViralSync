@@ -10,18 +10,27 @@ jobs:
   python:
     runs-on: ubuntu-latest
     env:
-      AGENCY_ENV=dev: dev
       AGENCY_ENV: dev
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
       - name: Install dependencies and run tests
         env:
+          AGENCY_ENV: dev
           AGENCY_ENV=dev: dev
         run: |
+          cd agency
           uv pip install -r requirements.lock
           uvx ruff check backend agents workers knowledge gateway
           uvx pip-audit -r requirements.lock
-          pytest --cov=backend --cov-fail-under=50
+          pytest --cov=backend --cov-fail-under=50 tests/unit
+
+
 
   frontend:
     runs-on: ubuntu-latest

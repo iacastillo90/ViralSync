@@ -152,6 +152,22 @@ class MinIOStorageClient:
         signer = self._signer_client or self.minio_client
         return signer.presigned_get_object(self.bucket, object_key)
 
+    def get_presigned_upload_url(self, tenant_id: str, filename: str, expires_in_seconds: int = 3600) -> Dict[str, Any]:
+        """Genera una URL presignada de subida (PUT) directamente para el navegador (REQ-PSI-01)."""
+        self._ensure_bucket()
+        safe_filename = filename.replace(" ", "_")
+        object_key = build_object_key(tenant_id, safe_filename)
+        signer = self._signer_client or self.minio_client
+        from datetime import timedelta
+        url = signer.presigned_put_object(self.bucket, object_key, expires=timedelta(seconds=expires_in_seconds))
+        return {
+            "upload_url": url,
+            "object_key": object_key,
+            "tenant_id": tenant_id,
+            "expires_in": expires_in_seconds,
+        }
+
+
     # ── List (honesto: MinIO es la única fuente de verdad) ───────────────────
 
     def list_tenant_media(self, tenant_id: str) -> List[Dict[str, Any]]:

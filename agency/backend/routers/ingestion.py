@@ -219,13 +219,29 @@ async def list_media(tenant_id: str):
 
 @ingestion_router.delete("/{tenant_id}/media/{media_id:path}")
 async def delete_media_item(tenant_id: str, media_id: str):
-    """Elimina el objeto REAL de MinIO por object_key (REQ-SH-02).
-
-    `media_id` == object_key (converter `:path` para claves con '/'; D-3). Solo
-    se borra si pertenece al prefijo del tenant (guard SH-02-4, en el cliente);
-    claves fuera del prefijo o desconocidas → 404 (SH-02-3). El delete es
-    idempotente (S3 delete 204, SH-02-2)."""
+    """Elimina el objeto REAL de MinIO por object_key (REQ-SH-02)."""
     success = delete_tenant_media_item(tenant_id, media_id)
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recurso multimedia no encontrado en MinIO")
     return {"status": "success", "deleted_media_id": media_id}
+
+
+class PresignedUploadUrlRequest(BaseModel):
+    filename: str
+    expires_in_seconds: Optional[int] = 3600
+
+
+@ingestion_router.post("/{tenant_id}/ingestion/presigned-upload-url", status_code=status.HTTP_200_OK)
+async def get_presigned_upload_url_endpoint(tenant_id: str, req: PresignedUploadUrlRequest):
+    """Genera una URL presignada (PUT) para que el navegador suba directamente el archivo a MinIO/S3 (REQ-PSI-01)."""
+    if not req.filename or not req.filename.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="filename es requerido")
+    
+    from backend.storage.minio_client import get_client
+    try:
+        data = get_client().get_presigned_upload_url(tenant_id, req.filename.strip(), req.expires_in_seconds or 3600)
+        return data
+    except Exception as exc:
+        logger.error(f"[{tenant_id}] Error generando presigned upload URL: {exc}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="No se pudo generar la URL presignada.")
+

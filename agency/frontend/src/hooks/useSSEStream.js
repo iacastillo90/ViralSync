@@ -59,6 +59,33 @@ export function useSSEStream(tenantId) {
         }
       });
 
+      eventSource.addEventListener("graph_error", (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          const errorMsg = data.code
+            ? `[ERROR ${data.code}] ${data.message}`
+            : `[ERROR] ${data.message}`;
+          addLog(errorMsg);
+          setCheckpointPaused(null, false);
+        } catch (err) {
+          console.error("Error parseando evento SSE graph_error", err);
+        }
+      });
+
+      eventSource.addEventListener("graph_complete", (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.terminal === "term_rejected") {
+            addLog("[RECHAZADO] Flujo finalizado por rechazo.");
+          } else {
+            addLog(`[COMPLETADO] ${data.message || "Grafo finalizado con éxito."}`);
+          }
+          setCheckpointPaused(null, false);
+        } catch (err) {
+          console.error("Error parseando evento SSE graph_complete", err);
+        }
+      });
+
       eventSource.onerror = (err) => {
         console.warn("Parpadeo de red en SSE. Reconectando...", err);
         if (eventSource) eventSource.close();

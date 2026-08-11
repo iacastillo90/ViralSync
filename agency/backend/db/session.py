@@ -97,7 +97,15 @@ async def init_db():
         raise last_exc
 
 
+async def set_tenant_session_context(session: AsyncSession, tenant_id: str) -> None:
+    """Configura la variable de sesión app.current_tenant_id para aplicar Row Level Security (RLS)."""
+    if "sqlite" not in TARGET_DB_URL:
+        from sqlalchemy import text
+        await session.execute(text("SET LOCAL app.current_tenant_id = :tenant_id"), {"tenant_id": tenant_id})
+
+
 async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependencia FastAPI para inyectar la sesión asíncrona de base de datos."""
     async with AsyncSessionLocal() as session:
         yield session
+

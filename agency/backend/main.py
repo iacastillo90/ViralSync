@@ -57,12 +57,17 @@ async def lifespan(_app: FastAPI):
         await close_postgres_checkpointer()
 
 
+from backend.observability import setup_observability
+
 app = FastAPI(
     title="ViralSync Platform API Enterprise",
     version=__version__,
     description="SaaS B2B Multi-Tenant para Agencias de Marketing de Contenido IA",
     lifespan=lifespan,
 )
+
+setup_observability(app)
+
 
 
 
