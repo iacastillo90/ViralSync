@@ -33,9 +33,6 @@ def _patch_probes(monkeypatch, db="healthy", redis="healthy", qdrant="healthy"):
     monkeypatch.setattr(health, "check_qdrant", lambda: _probe(qdrant))
 
 
-# --------------------------------------------------------------------------- #
-# REQ-PH-01 — honest per-dependency probes
-# --------------------------------------------------------------------------- #
 def test_all_dependencies_healthy_reports_healthy(monkeypatch):
     """PH-01-1: every probe is actually invoked and reports healthy."""
     called = {"db": 0, "redis": 0, "qdrant": 0}
@@ -145,9 +142,6 @@ async def test_timeout_caps_probe_no_hang(monkeypatch):
     assert db_t < 5.0 and redis_t < 3.5 and qdrant_t < 6.5  # caps: 2s/1s/3s
 
 
-# --------------------------------------------------------------------------- #
-# REQ-PH-02 — honest aggregation + HTTP semantics
-# --------------------------------------------------------------------------- #
 def test_healthy_returns_200_with_all_keys_and_latency(monkeypatch):
     """PH-02-1: healthy returns 200 with all contract keys plus latency info."""
     _patch_probes(monkeypatch)
@@ -180,9 +174,6 @@ def test_only_noncritical_down_returns_200_degraded(monkeypatch):
     assert data["redis"] == "degraded" and data["qdrant"] == "degraded"
 
 
-# --------------------------------------------------------------------------- #
-# REQ-PH-03 — version from a single source
-# --------------------------------------------------------------------------- #
 def test_health_version_matches_app_and_backend_version():
     """PH-03-1: health version == app version == backend.__version__."""
     data = client.get("/health").json()
@@ -199,9 +190,6 @@ def test_version_change_propagates_without_hardcode(monkeypatch):
     assert client.get("/health").json()["version"] == "9.9.9"
 
 
-# --------------------------------------------------------------------------- #
-# REQ-PH-04 — compose honesty: probe reachability in-container
-# --------------------------------------------------------------------------- #
 def test_compose_qdrant_url_reaches_service():
     """PH-04-1: compose backend env points the Qdrant probe at qdrant:6333."""
     text = (Path(__file__).resolve().parents[2] / "docker-compose.yml").read_text()
