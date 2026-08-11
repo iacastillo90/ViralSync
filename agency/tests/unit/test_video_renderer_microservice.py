@@ -32,8 +32,33 @@ class _StubCommunicate:
 
 
 class _StubMinio:
+    """Stub zero-token del SDK minio (TSH-007/008, REQ-SH-04).
+
+    Registra los kwargs del constructor (endpoint/secure) y las llamadas de
+    bucket/upload/presign para aserciones. presigned_get_object devuelve una
+    URL firmada (contiene X-Amz-Signature=) construida desde el endpoint bound
+    al constructor — igual que el SDK real.
+    """
+
     def __init__(self, *args, **kwargs):
-        pass
+        self.args = args
+        self.kwargs = kwargs
+        self.calls = []
+
+    def bucket_exists(self, bucket):
+        self.calls.append(("bucket_exists", bucket))
+        return True
+
+    def make_bucket(self, bucket):
+        self.calls.append(("make_bucket", bucket))
+
+    def fput_object(self, bucket, object_name, file_path, content_type=None):
+        self.calls.append(("fput_object", bucket, object_name, file_path, content_type))
+
+    def presigned_get_object(self, bucket, object_name):
+        self.calls.append(("presigned_get_object", bucket, object_name))
+        endpoint = self.kwargs.get("endpoint", "minio:9000")
+        return f"https://{endpoint}/{bucket}/{object_name}?X-Amz-Signature=stub-signature"
 
 
 _EDGE_TTS_STUB.Communicate = _StubCommunicate
@@ -430,3 +455,94 @@ def test_renderer_scene_duration_falls_back_to_audio_length(monkeypatch):
 
     assert renderer_app._scene_duration_seconds(scene, "/tmp/scene_0.mp3") == 7.5
     assert seen == ["/tmp/scene_0.mp3"]  # VSR-05-2: duración natural del TTS
+
+
+# ===========================================================================
+# REQ-SH-04 — upload_to_minio devuelve una URL PRESIGNADA real (WU-2 / PR #2)
+# Zero-token: _StubMinio en sys.modules + llamada directa a upload_to_minio.
+# ===========================================================================
+
+def _run_upload_to_minio(monkeypatch, tmp_path, **env_overrides):
+    """Ejecuta upload_to_minio con el stub Minio registrando instancias/kwargs.
+
+    Parchea los globales de configuración del módulo renderer (no env reales)
+    para derivar `secure` y el signer público de forma determinista (SH-03-2/3,
+    D-4). Devuelve (url, instancias_stub) para aserciones.
+    """
+    instances = []
+
+    def factory(*args, **kwargs):
+        stub = _StubMinio(*args, **kwargs)
+        instances.append(stub)
+        return stub
+
+    monkeypatch.setattr(renderer_app, "Minio", factory, raising=False)
+    monkeypatch.setattr(
+        renderer_app, "MINIO_ENDPOINT", env_overrides.get("MINIO_ENDPOINT", "http://minio:9000"), raising=False
+    )
+    monkeypatch.setattr(
+        renderer_app, "MINIO_PUBLIC_ENDPOINT", env_overrides.get("MINIO_PUBLIC_ENDPOINT", ""), raising=False
+    )
+    monkeypatch.setattr(
+        renderer_app, "MINIO_SECURE", env_overrides.get("MINIO_SECURE", False), raising=False
+    )
+
+    mp4 = tmp_path / "final_output.mp4"
+    mp4.write_bytes(b"fake-mp4-bytes")
+    url = renderer_app.upload_to_minio(str(mp4), "tenant-renderer-test")
+    return url, instances
+
+
+def test_upload_to_minio_returns_signed_url(monkeypatch, tmp_path):
+    """SH-04-1: la URL devuelta es un presigned_get_object real (X-Amz-Signature=)."""
+    url, _ = _run_upload_to_minio(monkeypatch, tmp_path)
+
+    assert "X-Amz-Signature=" in url
+
+
+def test_upload_to_minio_never_fabricates_public_root(monkeypatch, tmp_path):
+    """SH-04-2: NUNCA la raíz pública fabricada http://{endpoint}/{bucket}/{key}."""
+    url, _ = _run_upload_to_minio(monkeypatch, tmp_path)
+    object_name = "tenant-renderer-test/faceless_output_final_output.mp4"
+    fabricated_root = (
+        f"http://{renderer_app.MINIO_ENDPOINT}/{renderer_app.MINIO_BUCKET}/{object_name}"
+    )
+
+    assert url != fabricated_root
+    assert not url.startswith(f"http://{renderer_app.MINIO_ENDPOINT}/")
+    assert "X-Amz-Signature=" in url
+
+
+def test_upload_to_minio_secure_derivation_from_scheme(monkeypatch, tmp_path):
+    """SH-03-2: endpoint https:// → secure=True."""
+    _, instances = _run_upload_to_minio(
+        monkeypatch, tmp_path, MINIO_ENDPOINT="https://minio.example.com:9000"
+    )
+
+    assert instances[0].kwargs["secure"] is True
+
+
+def test_upload_to_minio_plain_http_stays_insecure(monkeypatch, tmp_path):
+    """SH-03-3: http plano sin MINIO_SECURE → secure=False."""
+    _, instances = _run_upload_to_minio(monkeypatch, tmp_path)
+
+    assert instances[0].kwargs["secure"] is False
+
+
+def test_upload_to_minio_secure_from_env_flag(monkeypatch, tmp_path):
+    """SH-03-2: MINIO_SECURE truthy → secure=True aunque el endpoint sea http."""
+    _, instances = _run_upload_to_minio(monkeypatch, tmp_path, MINIO_SECURE=True)
+
+    assert instances[0].kwargs["secure"] is True
+
+
+def test_upload_to_minio_presign_honors_public_endpoint(monkeypatch, tmp_path):
+    """D-4: MINIO_PUBLIC_ENDPOINT seteado → la URL se firma contra ese host
+    (signer client), no contra el endpoint del contenedor."""
+    url, instances = _run_upload_to_minio(
+        monkeypatch, tmp_path, MINIO_PUBLIC_ENDPOINT="https://media.public.example"
+    )
+
+    assert len(instances) == 2  # client principal + signer público
+    assert url.startswith("https://media.public.example/")
+    assert "X-Amz-Signature=" in url
