@@ -12,6 +12,7 @@ Pruebas unitarias integrales para validar la cobertura al 100% de las Fases 0 a 
 
 import pytest
 from fastapi.testclient import TestClient
+from backend import __version__
 from backend.main import app
 from backend.security.auth import create_access_token, decode_access_token
 from backend.services.llm_budget_service import calculate_llm_cost, track_llm_token_usage, check_tenant_llm_budget
@@ -29,6 +30,11 @@ def test_fase_0_unified_health_check_endpoint():
     assert "database" in data
     assert "redis" in data
     assert "qdrant" in data
+    # health-honesty (REQ-PH-03): version comes from backend.__version__.
+    assert data["version"] == __version__
+    # Default test env: SQLite db healthy, redis/qdrant refused -> degraded.
+    assert data["status"] in ("healthy", "degraded")
+    assert response.status_code == 200
 
 
 def test_fase_1_jwt_auth_and_rbac():
