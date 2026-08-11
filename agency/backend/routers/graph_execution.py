@@ -4,8 +4,8 @@ graph_execution.py
 Router para la Ejecución Asíncrona del Grafo LangGraph y Reportes SSE en Vivo.
 """
 
-from typing import Optional, Dict, Any
-from fastapi import APIRouter, status, BackgroundTasks
+from typing import Optional, Dict, Any, Literal
+from fastapi import APIRouter, status, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 from backend.sse_manager import sse_manager
 from agents.graph import build_agency_graph
@@ -139,11 +139,14 @@ class ProgressReportRequest(BaseModel):
 
 class IdeaApproveRequest(BaseModel):
     idea_id: str
-    status: str = "approved"
+    # D-E (REQ-PTT-04): allowlist — status libre era una puerta abierta; fuera
+    # de {approved, rejected} FastAPI responde 422 y el handler jamás corre
+    # (ni commit ni resume).
+    status: Literal["approved", "rejected"] = "approved"
 
 
 class PublishApproveRequest(BaseModel):
-    status: str = "approved"
+    status: Literal["approved", "rejected"] = "approved"
 
 
 @router.post("/{tenant_id}/progress")
@@ -169,12 +172,25 @@ async def approve_idea(tenant_id: str, req: IdeaApproveRequest, background_tasks
     Commit real (REQ-PERSIST-03, design D4): además de transmitir el checkpoint
     via SSE y reanudar el grafo en background, ejecuta `UPDATE ideas SET
     approval_status=:st WHERE id=:idea_id AND tenant_id=:tenant_id` mediante el
-    DAO — la DB, el grafo y la UI quedan de acuerdo (REQ-API-06 MODIFIED). Un
-    idea_id no-UUID (p. ej. el id de e2e `"idea-e2e-001"`) actualiza 0 filas
-    (no-op inofensivo, T-08 acceptance). El body devuelve
-    `{"status":"accepted","kind":"idea_approval","queued":true}` con echo del
-    idea_id real del request — nunca un id inventado.
+    DAO — la DB, el grafo y la UI quedan de acuerdo (REQ-API-06 MODIFIED).
+
+    D-E (REQ-PTT-04): el UPDATE va PRIMERO y su bool decide. 0 filas (id
+    unknown/stale/no-UUID) → 404 HONESTO antes de broadcast + resume: un
+    no-op nunca puede parecer progreso. `status` está allowlisteado en el
+    modelo ({approved, rejected}) → cualquier otra cosa es 422 sin efectos.
+    El body devuelve `{"status":"accepted","kind":"idea_approval",
+    "queued":true}` con echo del idea_id real del request — nunca un id
+    inventado.
     """
+    # D-E: UPDATE antes de transmitir — el DAO devuelve True sólo si actualizó
+    # exactamente 1 fila de ESTE tenant (precedente: update_video_publish).
+    updated = await update_idea_approval(tenant_id, req.idea_id, req.status)
+    if not updated:
+        raise HTTPException(
+            status_code=404,
+            detail="idea not found or stale",
+        )
+
     await sse_manager.broadcast(
         tenant_id,
         "idea_checkpoint",
@@ -185,22 +201,16 @@ async def approve_idea(tenant_id: str, req: IdeaApproveRequest, background_tasks
         },
     )
 
-    # REQ-PERSIST-03 / T-12: UPDATE real de approval_status en la fila ideas.
-    # si el id no matchea ninguna fila (no-UUID o de otro tenant) el DAO devuelve
-    # False y el resume sigue igual: la UI ya no miente sobre el commit.
-    updated = await update_idea_approval(tenant_id, req.idea_id, req.status)
-    if not updated:
-        logger.info(
-            "approval affected 0 rows: idea_id=%s tenant=%s (id no-UUID or nonexistent)",
-            req.idea_id,
-            tenant_id,
-        )
-
-    # Reanudar el grafo en background (log + SSE graph_error ante fallo)
+    # D-B: payload con AMBAS señales positivas (idea_approved / idea_rejected)
+    # para que la ruta condicional del grafo distinga "decidido" de "no
+    # decidido" — nunca conflaciona rejected con not-yet (D-B).
     background_tasks.add_task(
         _resume_graph_background,
         tenant_id,
-        {"idea_approved": req.status == "approved"},
+        {
+            "idea_approved": req.status == "approved",
+            "idea_rejected": req.status == "rejected",
+        },
     )
 
     return {
@@ -230,10 +240,15 @@ async def approve_publish(tenant_id: str, req: PublishApproveRequest, background
     )
     
     # Reanudar el grafo en background (log + SSE graph_error ante fallo)
+    # D-B: AMBAS señales positivas (publish_approved / publish_rejected) — la
+    # ruta condicional distingue decisión de no-decisión (D-C).
     background_tasks.add_task(
         _resume_graph_background,
         tenant_id,
-        {"publish_approved": req.status == "approved"},
+        {
+            "publish_approved": req.status == "approved",
+            "publish_rejected": req.status == "rejected",
+        },
     )
 
     return {
