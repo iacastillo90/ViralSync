@@ -13,6 +13,7 @@ from typing import Dict, Any
 from agents.crews.video_prompt_crew import run_video_prompt_crew
 from workers.video_edit_task import trigger_video_render
 from backend.db.daos import insert_video
+from backend.storage.minio_client import presign_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,13 @@ async def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
     script = state.get("script", {})
     selected_idea = state.get("selected_idea", {})
     product_image_url = state.get("product_image_url", "")
+
+    # PERSIST-05-1 / D-5 (SH-05-3/4): si el state trae la key ESTABLE del objeto,
+    # re-firmar en CADA lectura (presigned_get_object) — la URL almacenada expiró.
+    # Filas legacy sin key (NULL) → fallback a la URL guardada tal cual (SH-05-4).
+    product_object_key = state.get("product_object_key")
+    if product_object_key:
+        product_image_url = presign_public_url(product_object_key)
 
     logger.info(f"[{tenant_id}] Ejecutando nodo 'video_edit' con Agente de Prompting Visual")
 
