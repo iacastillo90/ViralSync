@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Additive per-scene render protocol on the renderer `RenderRequest` (`microservices/renderer/app.py:43`). The renderer MAY receive `scenes[]` — the storyboard already produced by `video_prompt_crew` (`video_storyboard` in state) — so scene work is consumed instead of discarded. Payloads without `scenes[]` MUST render byte-identically to today (flat `script_text` + keyword b-roll), keeping the renderer deploy-safe.
+Additive per-scene render protocol on the renderer `RenderRequest` (`microservices/renderer/app.py:43`). The renderer MAY receive `scenes[]` — the storyboard already produced by `video_prompt_crew` (`video_storyboard` in state) — so scene work is consumed instead of discarded. Payloads without `scenes[]` MUST render byte-identically to today (flat `script_text` + keyword b-roll), keeping the renderer deploy-safe. The renderer's upload response MUST be a real signed URL for the private bucket (never a fabricated public root that 403s the publisher).
 
 ## Requirements
 
@@ -103,3 +103,29 @@ The system MUST reject (4xx, never silently render) requests where `scenes` hold
 - GIVEN a scene with an extra unrecognized key
 - WHEN the renderer validates
 - THEN it accepts the scene and ignores the unknown key
+
+### Requirement: REQ-SH-04 — Renderer returns a real signed URL
+
+**User Story**: As a publisher, I want the renderer's upload response to be a URL I can actually fetch — a signed URL for the private bucket, never a fabricated public root that 403s.
+
+**Motivo**: `upload_to_minio` (`renderer/app.py:329`) fabricates `http://{endpoint}/{bucket}/{key}` for a PRIVATE bucket; the publisher fetching it gets 403 in prod.
+
+The system MUST return a real `presigned_get_object` URL from `upload_to_minio` for the private bucket. The system MUST NOT return the fabricated `http://{endpoint}/{bucket}/{key}` root. All other render behavior (scenes protocol, TTS, b-roll, compose) MUST remain unchanged.
+
+#### Scenario: SH-04-1 — signed URL returned
+
+- GIVEN the renderer uploads the final `.mp4`
+- WHEN `upload_to_minio` completes
+- THEN the returned URL is a presigned URL containing `X-Amz-Signature=`
+
+#### Scenario: SH-04-2 — no fabricated public root
+
+- GIVEN the returned URL
+- WHEN it is inspected
+- THEN it is NOT the pattern `http://{endpoint}/{bucket}/{key}` of the private bucket
+
+#### Scenario: SH-04-3 — existing render behavior unchanged
+
+- GIVEN a render request (with or without `scenes[]`)
+- WHEN it renders after the change
+- THEN the produced video/audio output is unchanged; only the returned URL differs

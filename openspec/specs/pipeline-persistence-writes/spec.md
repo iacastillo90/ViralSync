@@ -4,7 +4,7 @@
 
 Real pipeline persistence: every graph run writes real ideas/scripts/videos rows via async DAOs, `approve_idea` performs a real DB commit, graph state survives backend restarts through a Postgres checkpointer, and product data (including `product_image_url`) flows ingest → state → DB.
 
-The tables and async ORM already existed (migrations 001-003); the hole was that nothing wrote (8 tenants, 0 rows). Adds migration 004 (`products` table + `Product` ORM, DDL-as-truth), async write DAOs, async graph nodes that persist, a real approve UPDATE, and a Postgres-backed checkpointer (`thread_id = tenant_id`). Rejections now terminate the run at the distinct terminal state `term_rejected` (never re-entering scriptwriting/publish), and empty ideation candidates surface an honest, visible "no candidates" error instead of an `IntegrityError`. MemorySaver sessions are deliberately not migrated (non-goal).
+The tables and async ORM already existed (migrations 001-003); the hole was that nothing wrote (8 tenants, 0 rows). Adds migration 004 (`products` table + `Product` ORM, DDL-as-truth), async write DAOs, async graph nodes that persist, a real approve UPDATE, and a Postgres-backed checkpointer (`thread_id = tenant_id`). Rejections now terminate the run at the distinct terminal state `term_rejected` (never re-entering scriptwriting/publish), and empty ideation candidates surface an honest, visible "no candidates" error instead of an `IntegrityError`. Product data now persists a stable `products.object_key` (not the 7-day presigned URL) and re-signs it to a working URL on every read, so the presigned expiry cannot kill the flow. MemorySaver sessions are deliberately not migrated (non-goal).
 
 ## Requirements
 
@@ -132,22 +132,42 @@ The system MUST compile the graph with a Postgres-backed checkpointer keyed by `
 - WHEN the saver is swapped to Postgres
 - THEN no migration of those sessions is attempted (documented, non-goal)
 
-### Requirement: REQ-PERSIST-05 — product data flows ingest → state → DB (data wiring only)
+### Requirement: REQ-PERSIST-05 — product data persists `object_key` and re-signs on read
 
-**User Story**: As a user, I want the `product_image_url` captured at product-ingest to reach graph state and persist, so the render path can later switch to IMAGE_TO_VIDEO.
+**User Story**: As a user, I want my product image reference to survive — a stable `object_key` persisted, re-signed to a working URL on every read — so the 7-day presigned URL expiry cannot kill the flow (RISK-04, RESILIENCE-008).
 
-**Motivo**: `product_image_url` exists in `AgencyState` (`graph.py:30`) but nothing populates it; the frontend never forwards the ingest result. LLM-composed video metadata (title/narrative) is explicitly OUT of scope — reserved extension point.
+**Motivo**: `product_image_url` persisted a 7-day presigned URL that dies; the LLM prompt and downstream consumers receive dead URLs. Migration 005 (additive, nullable `products.object_key`) plus re-sign-on-read keeps every URL real.
 
-The system MUST accept `product_image_url` on `/graph/run`, place it in graph state, and persist it with the `products` row; the pipeline MUST continue normally when it is absent.
+The system MUST persist `products.object_key` (not the presigned URL) via migration `005_*.sql` (additive nullable column, fresh volumes via `initdb.d`; documented manual `psql` apply for existing dev DBs). `upsert_product` MUST store `object_key`. Read paths MUST re-sign via `presigned_get_object`, honoring `MINIO_PUBLIC_ENDPOINT`, and the API MUST keep returning a working signed URL. Legacy rows with `object_key` NULL MUST fall back to the stored `product_image_url`. The LLM prompt (`video_prompt_crew`) MUST receive working URL text. The pipeline MUST continue normally when no product is ingested.
 
-#### Scenario: PERSIST-05-1 — image URL persists with the product
+(Previously: REQ-PERSIST-05 wired the 7-day presigned `product_image_url` from ingest into graph state and the `products` row; nothing was ever re-signed.)
 
-- GIVEN a product-ingest response with `product_image_url`
-- WHEN `/graph/run` starts and the product is persisted
-- THEN the `products` row stores the URL and state carries it downstream
+#### Scenario: PERSIST-05-1 (updated) — product persists object_key
 
-#### Scenario: PERSIST-05-2 — no product: graceful TEXT_TO_VIDEO
+- GIVEN a product-ingest response with an image
+- WHEN the product is upserted (`/graph/run` or ingest)
+- THEN the `products` row stores `object_key` — not the presigned URL
 
-- GIVEN no product ingested (`product_image_url` empty)
+#### Scenario: PERSIST-05-2 (unchanged) — no product: graceful TEXT_TO_VIDEO
+
+- GIVEN no product ingested
 - WHEN the graph runs
 - THEN the pipeline completes without error on the text-to-video path
+
+#### Scenario: SH-05-3 — read re-signs a working URL
+
+- GIVEN a `products` row with `object_key`
+- WHEN the product is read (API response / downstream consumer)
+- THEN the URL is freshly presigned (`X-Amz-Signature=`), honoring `MINIO_PUBLIC_ENDPOINT`
+
+#### Scenario: SH-05-4 — legacy rows fall back to stored URL
+
+- GIVEN a pre-005 row with `object_key` NULL and a stored `product_image_url`
+- WHEN it is read
+- THEN the stored URL is used as fallback — no break, no fabrication
+
+#### Scenario: SH-05-5 — LLM prompt receives working URL text
+
+- GIVEN `video_prompt_crew` runs with a product image
+- WHEN the storyboard/prompt is built
+- THEN the prompt contains a working (re-signed) URL text, never the expired one
