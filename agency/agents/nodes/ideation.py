@@ -16,6 +16,7 @@ Con `product_image_url` en state se persiste también la fila `products`
 import logging
 from typing import Dict, Any
 from agents.crews.ideation_crew import run_ideation_crew
+from agents.errors import NoCandidatesError
 from backend.db.daos import insert_ideas, upsert_product
 
 logger = logging.getLogger(__name__)
@@ -30,16 +31,24 @@ async def node_ideation(state: Dict[str, Any]) -> Dict[str, Any]:
     logger.info(f"[{tenant_id}] Ejecutando nodo 'ideation' para nicho '{niche}'")
 
     ideas = await run_ideation_crew(niche=niche, market_map=market_map)
-    selected_idea = ideas[0] if ideas else {}
+
+    # REQ-PTT-03 / D-D: cero candidatas que pasen el filtro 5/50 → error honesto
+    # ANTES de cualquier write (nunca IntegrityError, nunca éxito silencioso con
+    # cero filas, nunca una pausa humana por algo que no es una decisión humana).
+    if not ideas:
+        raise NoCandidatesError(
+            f"[{tenant_id}] Cero ideas candidatas superaron el filtro 5/50."
+        )
+
+    selected_idea = ideas[0]
 
     # Persistencia real (PERSIST-02): una fila `ideas` por candidata. El id del
     # DAO se inyecta en cada dict + selected_idea (design D3). Un fallo de DB se
     # propaga (PERSIST-02-2), nunca un éxito state-only.
-    if ideas:
-        rows = await insert_ideas(tenant_id, ideas)
-        for idea, row in zip(ideas, rows):
-            idea["id"] = row.id
-        selected_idea["id"] = ideas[0]["id"]
+    rows = await insert_ideas(tenant_id, ideas)
+    for idea, row in zip(ideas, rows):
+        idea["id"] = row.id
+    selected_idea["id"] = ideas[0]["id"]
 
     # PERSIST-05 / D8: si el run viene con foto de producto (IMAGE_TO_VIDEO),
     # persiste la fila `products`; sin producto el pipeline sigue (TEXT_TO_VIDEO).

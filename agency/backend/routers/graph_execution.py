@@ -56,8 +56,14 @@ async def _resume_graph_background(tenant_id: str, resume_payload: dict) -> None
     """
     config = _thread_config(tenant_id)
     try:
-        await get_graph_app().ainvoke(Command(resume=resume_payload), config=config)
-        logger.info("Graph resumed for tenant %s (resume payload: %s)", tenant_id, resume_payload)
+        # D-C/TCK-004: el checkpoint se reanuda con `Command(update=...)` (no
+        # `resume=`) para que las flags de aprobación/rechazo del payload se
+        # MERGEN en el estado del thread. Empíricamente (probe langgraph 1.2.10),
+        # `Command(resume=...)` soltaba el payload en el nodo interrupt y el grafo
+        # se re-pausaba para siempre sin entregar idea_approved/publish_rejected
+        # a la ruta condicional. `Command(update=...)` entrega el estado y resume.
+        await get_graph_app().ainvoke(Command(update=resume_payload), config=config)
+        logger.info("Graph resumed for tenant %s (update payload: %s)", tenant_id, resume_payload)
     except Exception as exc:  # noqa: BLE001 - absence of logging means silent hang
         logger.error("Graph resume failed for tenant %s: %s", tenant_id, exc, exc_info=True)
         await sse_manager.emit_graph_error(tenant_id, str(exc))
@@ -72,22 +78,39 @@ async def _run_graph_background(tenant_id: str, initial_state: dict) -> None:
     config = _thread_config(tenant_id)
     try:
         final_state = await get_graph_app().ainvoke(initial_state, config=config)
-        await sse_manager.broadcast(
-            tenant_id,
-            "graph_complete",
-            {
-                "node": "complete",
-                "message": "Grafo ejecutado con éxito.",
-                "final_state": {
-                    "tenant_id": tenant_id,
-                    "ideas_count": len(final_state.get("ideas", [])),
-                },
+        # D-C/TCK-005: guard isinstance — un final_state None (fake o caso raro)
+        # NO crashea: sin broadcast y sin graph_error (acuerdo del test).
+        if not isinstance(final_state, dict):
+            logger.warning(
+                "Graph execution returned non-dict final_state for tenant %s", tenant_id
+            )
+            return
+        graph_complete_data = {
+            "node": "complete",
+            "message": "Grafo ejecutado con éxito.",
+            "final_state": {
+                "tenant_id": tenant_id,
+                "ideas_count": len(final_state.get("ideas", [])),
             },
-        )
+        }
+        # D-C/TCK-005: `terminal_state` presente (p. ej. term_rejected) → campo
+        # ADITIVO `terminal` en el payload para que el frontend distinga el fin
+        # terminal del grafo. Ausente → wire shape estable sin la clave.
+        terminal_state = final_state.get("terminal_state")
+        if isinstance(terminal_state, str) and terminal_state:
+            graph_complete_data["terminal"] = terminal_state
+        await sse_manager.broadcast(tenant_id, "graph_complete", graph_complete_data)
         logger.info("Graph execution completed for tenant %s", tenant_id)
     except Exception as exc:  # noqa: BLE001 - absence of logging means silent hang
         logger.error("Graph execution failed for tenant %s: %s", tenant_id, exc, exc_info=True)
-        await sse_manager.emit_graph_error(tenant_id, str(exc))
+        # D-D/TCK-005: si el error expone `.code` (NoCandidatesError →
+        # "no_candidates") viaja como campo aditivo; si no, call de 2 args
+        # (wire estable, fakes compatibles con la firma original).
+        code = getattr(exc, "code", None)
+        if code is not None:
+            await sse_manager.emit_graph_error(tenant_id, str(exc), code=code)
+        else:
+            await sse_manager.emit_graph_error(tenant_id, str(exc))
 
 
 class GraphRunRequest(BaseModel):

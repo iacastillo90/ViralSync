@@ -24,6 +24,14 @@ async def node_scriptwriting(state: Dict[str, Any]) -> Dict[str, Any]:
 
     logger.info(f"[{tenant_id}] Ejecutando nodo 'scriptwriting'")
 
+    # D-D (REQ-PTT-03, defensa en profundidad): sin `selected_idea.id` no hay
+    # idea aprobada para FK → error honesto ANTES de llamar a insert_script
+    # (nunca IntegrityError por idea_id NULL).
+    if not selected_idea.get("id"):
+        raise ValueError(
+            f"[{tenant_id}] selected_idea sin 'id': no hay idea aprobada para FK."
+        )
+
     script = await run_scriptwriting_crew(idea=selected_idea, niche_ppp=niche_ppp)
 
     # Persistencia real (PERSIST-02): fila `scripts` FK a la idea aprobada. Un

@@ -51,18 +51,22 @@ class SSEManager:
         """Emite un evento SSE a todas las conexiones activas de un tenant."""
         await self.publish(tenant_id=tenant_id, event=event_type, data=data)
 
-    async def emit_graph_error(self, tenant_id: str, message: str) -> None:
+    async def emit_graph_error(self, tenant_id: str, message: str, code: str = None) -> None:
         """Emit un evento SSE ``graph_error`` con thread_id + mensaje.
 
         RESILIENCE-002: cuando el grafo falla en background tras responder 202,
         el frontend espera un evento SSE que nunca llegaba (sólo
         node_start/graph_complete). Este evento le permite conocer el fallo.
+
+        D-D (REQ-PTT-03): ``code`` es ADITIVO — cuando el error lo expone
+        (NoCandidatesError → "no_candidates") viaja en el payload para que el
+        frontend distinga la causa; si es None NO se incluye (wire shape
+        estable para eventos sin código).
         """
-        await self.broadcast(
-            tenant_id,
-            "graph_error",
-            {"thread_id": tenant_id, "message": message},
-        )
+        data = {"thread_id": tenant_id, "message": message}
+        if code is not None:
+            data["code"] = code
+        await self.broadcast(tenant_id, "graph_error", data)
 
     async def publish(self, tenant_id: str, event: str, data: Dict[str, Any]) -> None:
         """Emite un evento formateado vía Redis Pub/Sub y colas locales de memoria."""
