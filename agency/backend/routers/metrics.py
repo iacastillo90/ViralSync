@@ -142,3 +142,11 @@ async def get_metrics_72h(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Error temporal de base de datos al consolidar métricas 72h.",
         )
+
+
+@router.get("/{tenant_id}/reports/monthly-pdf")
+async def get_monthly_pdf_report(tenant_id: str, db=Depends(get_async_db)):
+    """Retorna los datos y metadatos del reporte ejecutivo en PDF para el tenant."""
+    metrics_summary = await get_metrics_72h(tenant_id, db)
+    from backend.reports.pdf_generator import generate_tenant_roi_pdf_report
+    return generate_tenant_roi_pdf_report(tenant_id, metrics_summary)

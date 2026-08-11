@@ -120,6 +120,9 @@ async def node_dm_response(state: DMState) -> DMState:
     reply_text, confidence = await generate_grounded_reply(incoming_msg, rag_context, tenant_id=tenant_id)
 
     # 4. Evaluación de Handoff a Humano
+    if intent == "purchase_intent" and "calendly" not in reply_text.lower():
+        reply_text += " ¡Puedes agendar una sesión directa con nuestro equipo aquí: https://calendly.com/viralsync/demo!"
+
     requires_human = (
         confidence < CONFIDENCE_HUMAN_THRESHOLD
         or intent in ["objection", "purchase_intent"]
@@ -128,6 +131,7 @@ async def node_dm_response(state: DMState) -> DMState:
     if requires_human:
         logger.warning(f"[{tenant_id}] Escalando DM del lead '{lead_id}' a operador humano (Intención: {intent}, Confianza: {confidence})")
         emit_node_progress(tenant_id, "human_takeover_triggered", "completed")
+
 
     return {
         "tenant_id": tenant_id,

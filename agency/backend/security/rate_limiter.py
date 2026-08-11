@@ -13,10 +13,25 @@ logger = logging.getLogger(__name__)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 _redis_client = None
+
 try:
     _redis_client = redis.Redis.from_url(REDIS_URL, socket_timeout=1.0)
 except Exception as exc:
     logger.warning(f"Redis no disponible para Rate Limiting ({exc}). Deshabilitando limitador.")
+
+
+TIER_LIMITS = {
+    "free": 60,
+    "pro": 300,
+    "enterprise": 1000,
+}
+
+
+def get_tenant_tier_rate_limit(tier: str = "free") -> int:
+    """Devuelve el límite de solicitudes por minuto según el nivel del tenant."""
+    return TIER_LIMITS.get(tier.lower(), 60)
+
+
 
 
 def check_rate_limit(tenant_id: str, limit: int = 30, window_seconds: int = 60) -> bool:
