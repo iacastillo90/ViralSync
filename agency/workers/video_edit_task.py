@@ -110,8 +110,37 @@ def trigger_video_render(
         render_payload["product_image_url"] = product_image_url
         logger.info(f"[{tenant_id}] Inyectando product_image_url en render_payload: {product_image_url}")
 
-    # WU2: reenviar el storyboard a scenes[] del payload de render (VSR-01
-    # worker side). Sin storyboard (o sin escenas válidas) → omitir scenes → flat.
+    # Si no se recibió storyboard (modo Low-LLM / fallback), construirlo desde el guion
+    if not storyboard and script:
+        p_name = script.get("keyword") or idea.get("niche") or "product"
+        storyboard = [
+            {
+                "scene_index": 1,
+                "block_type": "gancho",
+                "audio_text": script.get("gancho_0_5s", "Gancho"),
+                "visual_prompt": f"Hero showcase {p_name} close-up cinematic",
+            },
+            {
+                "scene_index": 2,
+                "block_type": "contexto",
+                "audio_text": script.get("contexto_5_30s", "Contexto"),
+                "visual_prompt": f"Dynamic action montage {p_name} professional workspace",
+            },
+            {
+                "scene_index": 3,
+                "block_type": "moraleja",
+                "audio_text": script.get("moraleja_30_50s", "Moraleja"),
+                "visual_prompt": f"Demonstration solution {p_name} high quality",
+            },
+            {
+                "scene_index": 4,
+                "block_type": "cta",
+                "audio_text": script.get("cta_50_60s", "CTA"),
+                "visual_prompt": f"Call to action floating banner {p_name}",
+            },
+        ]
+
+    # Reenviar el storyboard a scenes[] del payload de render
     if storyboard:
         scenes = _storyboard_to_scenes(storyboard)
         if scenes:

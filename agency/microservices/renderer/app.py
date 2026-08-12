@@ -166,34 +166,42 @@ def _scenes_total_duration(scene_durations: List[float], max_duration_seconds: O
     return min(sum(scene_durations), cap)
 
 
-def download_pexels_videos(keywords: List[str], temp_dir: str, per_page: int = 4) -> List[str]:
-    """Descarga clips de video verticales en formato HD usando Pexels API.
-
-    `per_page` acota la búsqueda: el pipeline flat usa 4 (comportamiento
-    histórico intacto); el render por escenas usa 2 (D3, búsquedas acotadas).
-    """
+def download_pexels_videos(keywords: List[str], temp_dir: str, per_page: int = 3) -> List[str]:
+    """Descarga clips de video verticales en formato HD usando Pexels API con diversidad dinámica."""
     downloaded_files = []
 
     if not PEXELS_API_KEY:
         logger.warning("PEXELS_API_KEY no configurada. Generando aviso para clips vacíos.")
         return downloaded_files
 
+    import random
+    import uuid
+
     headers = {"Authorization": PEXELS_API_KEY}
-    query = "+".join(keywords) if keywords else "business"
-    url = f"https://api.pexels.com/videos/search?query={query}&orientation=portrait&per_page={per_page}"
+    query = "+".join(keywords) if keywords else "business+technology"
+    random_page = random.randint(1, 4)
+    url = f"https://api.pexels.com/videos/search?query={query}&orientation=portrait&per_page={per_page}&page={random_page}"
 
     try:
         response = requests.get(url, headers=headers, timeout=10.0)
-        if response.status_code == 200:
-            data = response.json()
-            videos = data.get("videos", [])
+        data = response.json() if response.status_code == 200 else {}
+        videos = data.get("videos", [])
+
+        if not videos:
+            url = f"https://api.pexels.com/videos/search?query={query}&orientation=portrait&per_page={per_page}&page=1"
+            response = requests.get(url, headers=headers, timeout=10.0)
+            if response.status_code == 200:
+                videos = response.json().get("videos", [])
+
+        if videos:
             for idx, video in enumerate(videos[:per_page]):
                 video_files = video.get("video_files", [])
-                light_file = next((vf for vf in video_files if 720 <= vf.get("height", 0) <= 1080), None) or video_files[0] if video_files else None
+                light_file = next((vf for vf in video_files if 720 <= vf.get("height", 0) <= 1080), None) or (video_files[0] if video_files else None)
                 if light_file and light_file.get("link"):
                     video_url = light_file["link"]
-                    file_path = os.path.join(temp_dir, f"pexels_clip_{idx}.mp4")
-                    logger.info(f"Filtro Hardware (720p): Descargando clip Pexels {idx + 1}...")
+                    short_uuid = uuid.uuid4().hex[:6]
+                    file_path = os.path.join(temp_dir, f"pexels_clip_{short_uuid}_{idx}.mp4")
+                    logger.info(f"Filtro Hardware (720p): Descargando clip Pexels {idx + 1} ({query}, pag {random_page})...")
                     with requests.get(video_url, stream=True, timeout=15.0) as r:
                         r.raise_for_status()
                         with open(file_path, "wb") as f:
@@ -207,12 +215,13 @@ def download_pexels_videos(keywords: List[str], temp_dir: str, per_page: int = 4
 
 
 def compose_video_moviepy(audio_path: str, video_paths: List[str], output_path: str) -> float:
-    """Compone y renderiza el video vertical 9:16 combinando audios y clips con MoviePy (Máx 45s)."""
+    """Compone y renderiza el video vertical 9:16 combinando audios y clips con MoviePy."""
     from moviepy.editor import AudioFileClip, VideoFileClip, concatenate_videoclips, ColorClip
 
     logger.info("Componiendo video final con MoviePy...")
     audio_clip = AudioFileClip(audio_path)
-    audio_duration = min(audio_clip.duration, 45.0)
+    audio_duration = audio_clip.duration if audio_clip.duration > 0 else 30.0
+    TARGET_W, TARGET_H = 1080, 1920
 
     clip_objects = []
     if video_paths:
@@ -220,11 +229,32 @@ def compose_video_moviepy(audio_path: str, video_paths: List[str], output_path: 
         for path in video_paths:
             try:
                 v_clip = VideoFileClip(path)
-                sub_clip = v_clip.subclip(0, min(v_clip.duration, duration_per_clip))
-                sub_clip = sub_clip.resize(height=1920)
-                if sub_clip.w > 1080:
+                clip_ratio = v_clip.w / v_clip.h
+                target_ratio = TARGET_W / TARGET_H
+                if clip_ratio > target_ratio:
+                    sub_clip = v_clip.resize(height=TARGET_H)
                     x_center = sub_clip.w / 2
-                    sub_clip = sub_clip.crop(x1=x_center - 540, width=1080)
+                    sub_clip = sub_clip.crop(x1=x_center - TARGET_W / 2, width=TARGET_W)
+                else:
+                    sub_clip = v_clip.resize(width=TARGET_W)
+                    y_center = sub_clip.h / 2
+                    sub_clip = sub_clip.crop(y1=max(0, y_center - TARGET_H / 2), height=TARGET_H)
+                
+                sub_clip = sub_clip.subclip(0, min(sub_clip.duration, duration_per_clip))
+
+                def _make_overlay_frame(gf, t, dur=duration_per_clip):
+                    try:
+                        frame = gf(t)
+                        base = Image.fromarray(frame)
+                        if base.size != (TARGET_W, TARGET_H):
+                            base = base.resize((TARGET_W, TARGET_H), Image.Resampling.LANCZOS)
+                        out_img = draw_overlay_on_image(base, "", None, t, dur)
+                        return np.array(out_img)
+                    except Exception as exc:
+                        logger.warning(f"Error en _make_overlay_frame flat: {exc}")
+                        return gf(t)
+
+                sub_clip = sub_clip.fl(_make_overlay_frame)
                 clip_objects.append(sub_clip)
             except Exception as exc:
                 logger.warning(f"Error procesando clip {path}: {exc}")
@@ -234,7 +264,7 @@ def compose_video_moviepy(audio_path: str, video_paths: List[str], output_path: 
         fallback_clip = ColorClip(size=(1080, 1920), color=(15, 23, 42), duration=audio_duration)
         clip_objects.append(fallback_clip)
 
-    final_video = concatenate_videoclips(clip_objects, method="compose")
+    final_video = concatenate_videoclips(clip_objects, method="chain")
     final_video = final_video.set_audio(audio_clip)
     final_video = final_video.set_duration(audio_duration)
 
@@ -249,11 +279,13 @@ def compose_video_moviepy(audio_path: str, video_paths: List[str], output_path: 
         logger=None,
     )
 
-
     audio_clip.close()
     final_video.close()
     for c in clip_objects:
-        c.close()
+        try:
+            c.close()
+        except Exception:
+            pass
 
     return audio_duration
 

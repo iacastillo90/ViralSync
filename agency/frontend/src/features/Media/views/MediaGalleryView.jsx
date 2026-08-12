@@ -92,16 +92,19 @@ export function MediaGalleryView({ tenantId }) {
         key: folderKey,
         name: productName,
         createdAt: itemFormattedDate,
+        rawTime: item.created_at ? new Date(item.created_at).getTime() : 0,
         items: [],
       };
     } else {
-      // Mantener la fecha de la última actualización
-      if (itemFormattedDate) {
-        acc[folderKey].createdAt = itemFormattedDate;
+      if (item.created_at) {
+        const itemTime = new Date(item.created_at).getTime();
+        if (itemTime > acc[folderKey].rawTime) {
+          acc[folderKey].rawTime = itemTime;
+          acc[folderKey].createdAt = itemFormattedDate;
+        }
       }
     }
 
-    // Evitar fotos duplicadas si tienen el mismo nombre de archivo
     if (item.type === "image") {
       const alreadyHasImage = acc[folderKey].items.some(
         (i) => i.type === "image" && i.filename === item.filename
@@ -116,7 +119,13 @@ export function MediaGalleryView({ tenantId }) {
     return acc;
   }, {});
 
-  const folderList = Object.values(groupedMediaMap);
+  // Ordenar carpetas y elementos por fecha de creación descendente (los más recientes primero)
+  const folderList = Object.values(groupedMediaMap).sort((a, b) => b.rawTime - a.rawTime);
+  folderList.forEach((folder) => {
+    folder.items.sort(
+      (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    );
+  });
 
   const handleDownload = (item) => {
     // Force download of the file
@@ -335,8 +344,8 @@ export function MediaGalleryView({ tenantId }) {
 
                   <div className="flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-800/80 pt-2.5">
                     <span>{(item.size_bytes / (1024 * 1024)).toFixed(1)} MB</span>
-                    <span className="font-mono text-slate-500">
-                      {new Date(item.created_at).toLocaleDateString()}
+                    <span className="font-mono text-indigo-300 font-semibold flex items-center gap-1">
+                      🕒 {formatDate(item.created_at)}
                     </span>
                   </div>
 

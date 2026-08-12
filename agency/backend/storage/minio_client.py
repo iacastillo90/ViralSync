@@ -190,6 +190,8 @@ class MinIOStorageClient:
         ):
             object_key = obj.object_name
             items.append(self._to_media_item(object_key, obj))
+        # Ordenar por fecha de creación descendente (los más recientes primero)
+        items.sort(key=lambda x: x.get("created_at", ""), reverse=True)
         return items
 
     def _to_media_item(self, object_key: str, obj) -> Dict[str, Any]:
