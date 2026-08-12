@@ -28,7 +28,11 @@ async def node_ideation(state: Dict[str, Any]) -> Dict[str, Any]:
     niche = state.get("niche", "Negocios B2B y SaaS")
     market_map = state.get("market_map", {})
 
-    logger.info(f"[{tenant_id}] Ejecutando nodo 'ideation' para nicho '{niche}'")
+    if state.get("product_name"):
+        market_map["product_name"] = state.get("product_name")
+        market_map["product_description"] = state.get("product_description", "")
+
+    logger.info(f"[{tenant_id}] Ejecutando nodo 'ideation' para nicho '{niche}' y producto '{state.get('product_name')}'")
 
     ideas = await run_ideation_crew(niche=niche, market_map=market_map)
 
