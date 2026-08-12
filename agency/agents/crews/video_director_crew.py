@@ -159,8 +159,21 @@ def _parse_metadata_json(content: str) -> Optional[Dict[str, Any]]:
     if not content:
         return None
     text = content.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    
+    import re
+    match = re.search(r'\{\s*".*\}\s*', text, re.DOTALL)
+    if match:
+        text = match.group(0)
+    else:
+        if "```" in text:
+            parts = text.split("```")
+            for p in parts:
+                if p.strip().startswith("json"):
+                    text = p.strip()[4:].strip()
+                    break
+                elif p.strip().startswith("{"):
+                    text = p.strip()
+                    break
     try:
         data = json.loads(text)
     except (json.JSONDecodeError, ValueError):
@@ -318,11 +331,15 @@ def run_video_director_crew(
     cta = script.get("cta_50_60s", "")
 
     full_script_text = f"{gancho} {contexto} {moraleja} {cta}".strip()
-    # Truncar texto si excede aproximadamente 45 segundos de narración (~110 palabras)
+
+    target_dur = metadata.get("target_duration", 30) if metadata else 30
+    max_words = int(target_dur * 2.5)
     words = full_script_text.split()
-    if len(words) > 110:
-        full_script_text = " ".join(words[:110]) + "."
-        logger.info("Filtro de Hardware: Texto ajustado al límite estricto de 45s.")
+    if len(words) > max_words:
+        full_script_text = " ".join(words[:max_words])
+        if not full_script_text.endswith("."):
+            full_script_text += "."
+        logger.info(f"Director: Ajustando narración de {len(words)} a {max_words} palabras para garantizar {target_dur}s de video.")
 
     if curated and curated.get("keywords"):
         keywords = curated["keywords"]
