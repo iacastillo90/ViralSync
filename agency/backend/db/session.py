@@ -10,7 +10,7 @@ import asyncio
 import logging
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import StaticPool, NullPool
 from backend.db.models import Base
 
 logger = logging.getLogger(__name__)
@@ -53,10 +53,7 @@ logger.info(f"[DB] Usando motor: {'SQLite (test)' if 'sqlite' in TARGET_DB_URL e
 engine_kwargs: dict = {"echo": AGENCY_ENV == "dev"}
 if "sqlite" not in TARGET_DB_URL:
     engine_kwargs.update({
-        "pool_pre_ping": True,
-        "pool_recycle": 3600,
-        "pool_size": 10,
-        "max_overflow": 20,
+        "poolclass": NullPool,
     })
 else:
     # SQLite en memoria (:memory:) crea UNA DB nueva por conexión. StaticPool
