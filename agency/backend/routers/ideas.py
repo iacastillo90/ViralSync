@@ -60,7 +60,9 @@ async def get_tenant_ideas(
         return []
 
     try:
-        result = await db.execute(select(Idea).where(Idea.tenant_id == tenant_id))
+        result = await db.execute(
+            select(Idea).where(Idea.tenant_id == tenant_id).order_by(Idea.created_at.desc())
+        )
         ideas_orm = result.scalars().all()
         return [_idea_to_dict(i) for i in ideas_orm]
     except Exception as exc:

@@ -92,13 +92,24 @@ export function IdeaApprovalView({ tenantId }) {
         createdAt: formatDate(idea.created_at),
         items: [],
       };
+    } else {
+      if (ideaTime > acc[matchedBatchKey].timestamp) {
+        acc[matchedBatchKey].timestamp = ideaTime;
+        acc[matchedBatchKey].createdAt = formatDate(idea.created_at);
+      }
     }
 
     acc[matchedBatchKey].items.push(idea);
     return acc;
   }, {});
 
-  const folderList = Object.values(groupedIdeasMap);
+  // Ordenar carpetas y sus elementos por timestamp descendente (último lote de generación primero)
+  const folderList = Object.values(groupedIdeasMap).sort((a, b) => b.timestamp - a.timestamp);
+  folderList.forEach((folder) => {
+    folder.items.sort(
+      (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+    );
+  });
 
   const handleDecision = async (idea, approved) => {
     setDecisionError(null);
@@ -181,14 +192,24 @@ export function IdeaApprovalView({ tenantId }) {
             Carpetas por Producto ({folderList.length})
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {folderList.map((folder) => {
+            {folderList.map((folder, idx) => {
               const count = folder.items.length;
+              const isLatest = idx === 0;
               return (
                 <div
                   key={folder.key}
                   onClick={() => setActiveFolder(folder.key)}
-                  className="bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-2xl p-5 cursor-pointer transition-all hover:shadow-xl hover:shadow-indigo-500/10 group flex items-start gap-4"
+                  className={`bg-slate-900 border rounded-2xl p-5 cursor-pointer transition-all hover:shadow-xl group flex items-start gap-4 relative ${
+                    isLatest
+                      ? "border-indigo-500/70 shadow-lg shadow-indigo-500/10 hover:border-indigo-400"
+                      : "border-slate-800 hover:border-indigo-500/50 hover:shadow-indigo-500/10"
+                  }`}
                 >
+                  {isLatest && (
+                    <span className="absolute -top-2.5 right-4 bg-indigo-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-md shadow-indigo-600/40 flex items-center gap-1">
+                      ✨ NUEVO LOTE
+                    </span>
+                  )}
                   <div className="bg-indigo-600/20 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white p-3 rounded-xl transition-all">
                     <Folder className="w-6 h-6" />
                   </div>
