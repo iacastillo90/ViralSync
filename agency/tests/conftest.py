@@ -19,11 +19,21 @@ from backend.db.session import init_db, AsyncSessionLocal  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def set_testing_env(monkeypatch):
-    """Fuerza variables de entorno para testing síncrono en dev."""
+    """Fuerza variables de entorno para testing síncrono en dev.
+
+    Incluye la sanitización del renderer: `litellm` ejecuta `load_dotenv()`
+    al importarse, de modo que un `.env` local con
+    `VIDEO_RENDERER_PROVIDER=json2video` + API key real activaría el render
+    de nube durante los tests (los e2e exigen fallo honesto sin renderer
+    REAL, ver test_full_pipeline Step 5). Forzamos el provider local y
+    vaciamos la key para que la suite sea determinista sin red.
+    """
     monkeypatch.setenv("AGENCY_ENV", "dev")
     monkeypatch.setenv("CELERY_TASK_ALWAYS_EAGER", "True")
     monkeypatch.setenv("CELERY_TASK_EAGER_PROPAGATES", "True")
     monkeypatch.setenv("INSTAGRAM_APP_SECRET", "secreto_meta_test_secret")
+    monkeypatch.setenv("VIDEO_RENDERER_PROVIDER", "local")
+    monkeypatch.setenv("JSON2VIDEO_API_KEY", "")
 
 
 @pytest.fixture
