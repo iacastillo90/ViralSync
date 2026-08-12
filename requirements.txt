@@ -18,6 +18,10 @@ python-multipart~=0.0.32
 httpx~=0.28.1
 pytest~=9.1.1
 pytest-cov~=7.1.0
+# Harness de carga de pruebas (REQ-LLT-01, commit ae43179): tests/load/locustfile.py
+# y tests/unit/test_locust_script.py importan `locust`; sin esta dependencia la
+# suite entera falla en collection.
+locust~=2.32.0
 alembic~=1.13.0
 # Dependencias faltantes detectadas en Fase 6 — necesarias para importación y arranque
 litellm~=1.40.0
