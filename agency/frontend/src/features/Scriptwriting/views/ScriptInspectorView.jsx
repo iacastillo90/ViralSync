@@ -93,6 +93,33 @@ export function ScriptInspectorView({ tenantId }) {
   const [selectedScriptForVideo, setSelectedScriptForVideo] = useState(null);
   const [videoUrl, setVideoUrl] = useState(null);
   const [isVideoLoading, setIsVideoLoading] = useState(false);
+  const [selectedScriptForTranslate, setSelectedScriptForTranslate] = useState(null);
+  const [isTranslating, setIsTranslating] = useState(false);
+
+  const handleTranslateScript = async (scriptItem, targetLang) => {
+    if (!scriptItem || !scriptItem.id) return;
+    setIsTranslating(true);
+    try {
+      const translatedScript = await fetchWithTenant(
+        `/tenants/${tenantId}/scripts/${scriptItem.id}/translate`,
+        {
+          method: "POST",
+          body: JSON.stringify({ target_language: targetLang }),
+        },
+        tenantId
+      );
+      setIsTranslating(false);
+      setSelectedScriptForTranslate(null);
+      refresh();
+      // Renderizar el video del guion traducido
+      if (translatedScript && translatedScript.id) {
+        handleOpenVideoModal(translatedScript);
+      }
+    } catch (err) {
+      alert(`Error al traducir el guion: ${err.message}`);
+      setIsTranslating(false);
+    }
+  };
 
   const handleOpenVideoModal = async (script) => {
     setSelectedScriptForVideo(script);
@@ -225,16 +252,71 @@ export function ScriptInspectorView({ tenantId }) {
                   <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
                     Estructura Narrativa del Video
                   </h2>
-                  <button
-                    onClick={() => handleOpenVideoModal(scriptItem)}
-                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-600/30"
-                  >
-                    <PlayCircle className="w-4 h-4" /> Ver Video Renderizado
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setSelectedScriptForTranslate(scriptItem)}
+                      className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 px-3 py-2 rounded-xl text-xs font-bold transition-all"
+                    >
+                      🌎 Traducir Guion (Ampliar Público)
+                    </button>
+                    <button
+                      onClick={() => handleOpenVideoModal(scriptItem)}
+                      className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-600/30"
+                    >
+                      <PlayCircle className="w-4 h-4" /> Ver Video Renderizado
+                    </button>
+                  </div>
                 </div>
                 <Script4BlockReader script={scriptItem} />
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Traducción Multilingüe */}
+      {selectedScriptForTranslate && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full shadow-2xl p-6 space-y-5">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-800">
+              <h3 className="font-bold text-slate-100 flex items-center gap-2 text-base">
+                🌎 Traducir Reel para Audiencia Internacional
+              </h3>
+              <button
+                onClick={() => setSelectedScriptForTranslate(null)}
+                className="text-xs text-slate-400 hover:text-slate-200"
+              >
+                ✕ Cerrar
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300">
+              La IA adaptará culturalmente los ganchos virales, narrativa y CTA al idioma elegido para multiplicar las reproducciones globales:
+            </p>
+
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { code: "en", label: "🇺🇸 Inglés (English)" },
+                { code: "pt", label: "🇧🇷 Portugués (Português)" },
+                { code: "fr", label: "🇫🇷 Francés (Français)" },
+                { code: "de", label: "🇩🇪 Alemán (Deutsch)" },
+              ].map((lang) => (
+                <button
+                  key={lang.code}
+                  disabled={isTranslating}
+                  onClick={() => handleTranslateScript(selectedScriptForTranslate, lang.code)}
+                  className="flex items-center justify-center p-3 rounded-xl bg-slate-950 hover:bg-indigo-950/60 border border-slate-800 hover:border-indigo-500/50 text-slate-200 text-xs font-bold transition-all disabled:opacity-50"
+                >
+                  {lang.label}
+                </button>
+              ))}
+            </div>
+
+            {isTranslating && (
+              <div className="flex items-center justify-center gap-2 text-xs text-indigo-400 font-semibold py-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Traduciendo guion y adaptando CTA...
+              </div>
+            )}
           </div>
         </div>
       )}
