@@ -54,6 +54,8 @@ async def run_video_prompt_crew(
         system_prompt = (
             "You are an expert AI Video Prompt Engineer and Director of Photography for vertical 9:16 short-form content. "
             "Generate highly detailed, cinematic Text-to-Video / Image-to-Video visual prompts in English for 4 sequential scenes. "
+            "CRITICAL: The 'audio_text' field MUST ALWAYS REMAIN EXACTLY IN SPANISH (Español Latino) from the input script. "
+            "DO NOT translate 'audio_text' to English! ONLY 'visual_prompt' and 'camera_shot' should be in English. "
             "Output MUST be strict JSON array with 4 scene objects, without markdown wrapping."
         )
 
@@ -97,8 +99,11 @@ async def run_video_prompt_crew(
             content = content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         parsed = json.loads(content)
         if isinstance(parsed, list) and len(parsed) == 4:
-            for sc in parsed:
+            blocks = [gancho, contexto, moraleja, cta]
+            for idx, sc in enumerate(parsed):
                 sc["image_url"] = product_image_url if product_image_url else None
+                # Garantizar que el audio_text sea siempre el texto en Español Latino del guion original
+                sc["audio_text"] = blocks[idx] if idx < len(blocks) else sc.get("audio_text", "")
             storyboard = parsed
     except Exception as exc:
         logger.warning(f"Router LLM no disponible para video prompting ({exc}). Usando fallback cinematográfico.")
