@@ -35,6 +35,12 @@ router = APIRouter(tags=["Health Check"])
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 _raw_qdrant = os.getenv("QDRANT_URL", "http://localhost:6333")
 QDRANT_URL = _raw_qdrant if _raw_qdrant.startswith("http://") or _raw_qdrant.startswith("https://") else f"http://{_raw_qdrant}"
+SEARXNG_URL = os.getenv("SEARXNG_URL", "http://localhost:8080")
+
+
+class SearXNGSearchRequest(BaseModel):
+    query: str
+    num_results: int = 5
 
 # Per-probe timeout caps (seconds), env-overridable so operators can tune them.
 DATABASE_TIMEOUT_SECONDS = float(os.getenv("HEALTH_DATABASE_TIMEOUT", "2"))
@@ -529,3 +535,66 @@ async def delete_qdrant_document(document_id: str):
     except Exception as exc:
         logger.error(f"Error eliminando documento de Qdrant: {exc}")
         raise HTTPException(status_code=500, detail=f"Error al eliminar documento de Qdrant: {exc}")
+
+
+@router.get("/system/searxng/stats", status_code=status.HTTP_200_OK)
+async def get_searxng_stats():
+    """Consulta el estado del motor de búsqueda web SearXNG probando URLs candidatas."""
+    is_online = False
+    latency_ms = None
+    candidate_urls = list(dict.fromkeys([SEARXNG_URL, "http://searxng:8080", "http://localhost:8080"]))
+    
+    import httpx
+    for target_url in candidate_urls:
+        try:
+            start = time.time()
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                resp = await client.get(f"{target_url.rstrip('/')}/")
+                if resp.status_code in [200, 302]:
+                    latency_ms = round((time.time() - start) * 1000, 2)
+                    is_online = True
+                    break
+        except Exception as exc:
+            logger.debug(f"Probando {target_url} para SearXNG: {exc}")
+
+    return {
+        "status": "healthy" if is_online else "degraded",
+        "searxng_url": SEARXNG_URL,
+        "is_online": is_online,
+        "latency_ms": latency_ms,
+        "privacy_mode": "Sanitizado & Anonimizado (Sin Cookies / Tracking)",
+        "engines": ["Google", "DuckDuckGo", "Bing", "Reddit", "Wikipedia", "YouTube"],
+        "sanitizer_rules": [
+            "Remoción automática de etiquetas HTML <tag>",
+            "Compresión de espacios en blanco y saltos de línea",
+            "Recorte estricto de snippets a ~400 caracteres",
+            "Formato JSON normalizado para LLM Agents"
+        ]
+    }
+
+
+@router.post("/system/searxng/search", status_code=status.HTTP_200_OK)
+async def perform_searxng_live_search(req: SearXNGSearchRequest):
+    """Ejecuta una búsqueda web en vivo sanitizada mediante SearXNG."""
+    if not req.query:
+        raise HTTPException(status_code=400, detail="query es requerido")
+
+    try:
+        from agents.mcp_servers.searxng_mcp_server import asearxng_search_sanitized
+        start = time.time()
+        results = await asearxng_search_sanitized(req.query, req.num_results)
+        latency_ms = round((time.time() - start) * 1000, 2)
+
+        is_fallback = any("viralsync.io" in (r.get("url") or "") for r in results)
+
+        return {
+            "status": "success",
+            "query": req.query,
+            "results_count": len(results),
+            "latency_ms": latency_ms,
+            "is_fallback": is_fallback,
+            "results": results
+        }
+    except Exception as exc:
+        logger.error(f"Error realizando búsqueda SearXNG: {exc}")
+        raise HTTPException(status_code=500, detail=f"Error en búsqueda SearXNG: {exc}")

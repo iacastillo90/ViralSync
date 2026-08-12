@@ -103,6 +103,7 @@ services:
       - POSTGRES_HOST=postgres
       - REDIS_URL=redis://redis:6379/0
       - QDRANT_URL=qdrant:6333
+      - SEARXNG_URL=http://searxng:8080
       - AGENCY_ENV=${AGENCY_ENV:-dev}
       # Honest list fix (storage-honesty PR #1, D-6): dentro de compose el backend
       # debe apuntar a MinIO por el host del servicio, no a localhost (el default
@@ -209,9 +210,6 @@ services:
       - ./scripts/backup_postgres.sh:/backup_postgres.sh:ro
       - pgbackupdata:/backups
     entrypoint: ["/bin/sh", "-c", "chmod +x /backup_postgres.sh && while true; do /backup_postgres.sh; sleep 86400; done"]
-    depends_on:
-      postgres:
-        condition: service_healthy
 
 volumes:
   pgdata:
