@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useTenantResource } from "@/hooks/useTenantResource";
@@ -16,20 +16,107 @@ import {
   Sparkles,
   RefreshCw,
   FolderOpen,
+  Folder,
+  ArrowLeft,
 } from "lucide-react";
 
 export function MediaGalleryView({ tenantId }) {
-  const { data: mediaItems, loading, error } = useTenantResource("media", tenantId);
+  const { data: mediaItems, loading, error, refresh } = useTenantResource("media", tenantId);
+  const { data: productsData } = useTenantResource("products", tenantId);
+
+  // Polling automático cada 4 segundos para detectar nuevos videos renderizados
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refresh();
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [refresh]);
   const [items, setItems] = useState([]);
   const [filter, setFilter] = useState("all"); // "all", "video", "image"
   const [selectedMedia, setSelectedMedia] = useState(null); // for video modal player
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
+  const [activeFolder, setActiveFolder] = useState(null);
 
-  // Update local list when hook data arrives
-  const displayItems = (items.length > 0 ? items : (Array.isArray(mediaItems) ? mediaItems : []))
-    .filter((item) => filter === "all" || item.type === filter);
+  const rawItems = items.length > 0 ? items : (Array.isArray(mediaItems) ? mediaItems : []);
+  const products = Array.isArray(productsData) ? productsData : [];
+
+  // Formateador de fecha y hora pequeña
+  const formatDate = (isoString) => {
+    if (!isoString) return "";
+    try {
+      const d = new Date(isoString);
+      return d.toLocaleDateString("es-ES", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch (e) {
+      return isoString;
+    }
+  };
+
+  // Emparejar cada archivo multimedia (foto o video) con su producto correspondiente por orden de creación de campaña
+  const findProductForMedia = (itemCreatedAt) => {
+    if (!products || products.length === 0) return null;
+    if (!itemCreatedAt) return products[0];
+
+    const itemTime = new Date(itemCreatedAt).getTime();
+    const sortedProducts = [...products].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+
+    let matched = sortedProducts[0];
+    for (const prod of sortedProducts) {
+      const prodTime = new Date(prod.created_at).getTime();
+      // Asignar al último producto creado antes o cercano al archivo multimedia
+      if (prodTime <= itemTime + 15000) {
+        matched = prod;
+      }
+    }
+    return matched;
+  };
+
+  // Agrupar archivos en carpetas unificadas por Nombre de Producto (1 sola carpeta por producto con todos sus Reels versionados)
+  const groupedMediaMap = rawItems.reduce((acc, item) => {
+    const matchedProduct = findProductForMedia(item.created_at);
+    const productName = matchedProduct ? matchedProduct.name : "Archivos de Producto";
+    const folderKey = `prod_${productName.replace(/\s+/g, "_").toLowerCase()}`;
+    const itemFormattedDate = formatDate(item.created_at);
+
+    if (!acc[folderKey]) {
+      acc[folderKey] = {
+        key: folderKey,
+        name: productName,
+        createdAt: itemFormattedDate,
+        items: [],
+      };
+    } else {
+      // Mantener la fecha de la última actualización
+      if (itemFormattedDate) {
+        acc[folderKey].createdAt = itemFormattedDate;
+      }
+    }
+
+    // Evitar fotos duplicadas si tienen el mismo nombre de archivo
+    if (item.type === "image") {
+      const alreadyHasImage = acc[folderKey].items.some(
+        (i) => i.type === "image" && i.filename === item.filename
+      );
+      if (!alreadyHasImage) {
+        acc[folderKey].items.push(item);
+      }
+    } else {
+      acc[folderKey].items.push(item);
+    }
+
+    return acc;
+  }, {});
+
+  const folderList = Object.values(groupedMediaMap);
 
   const handleDownload = (item) => {
     // Force download of the file
@@ -113,7 +200,7 @@ export function MediaGalleryView({ tenantId }) {
           )}
 
           {/* Estado de Carga */}
-          {loading && items.length === 0 && (
+          {loading && rawItems.length === 0 && (
             <div className="flex flex-col items-center justify-center p-12 bg-slate-900/50 border border-slate-800/80 rounded-2xl">
               <RefreshCw className="w-8 h-8 text-indigo-400 animate-spin mb-3" />
               <p className="text-sm font-medium text-slate-300">Cargando galería multimedia desde MinIO...</p>
@@ -121,7 +208,7 @@ export function MediaGalleryView({ tenantId }) {
           )}
 
           {/* Estado Vacío */}
-          {!loading && displayItems.length === 0 && (
+          {!loading && rawItems.length === 0 && (
             <div className="flex flex-col items-center justify-center p-12 bg-slate-900/40 border border-slate-800 rounded-2xl text-center">
               <FolderOpen className="w-12 h-12 text-slate-600 mb-3" />
               <h3 className="text-base font-semibold text-slate-300">Sin archivos multimedia aún</h3>
@@ -137,9 +224,66 @@ export function MediaGalleryView({ tenantId }) {
             </div>
           )}
 
-          {/* Grid de Archivos Multimedia */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-            {displayItems.map((item) => (
+          {!activeFolder ? (
+            /* VISTA DE CARPETAS DE GALERÍA (FOLDER VIEW) */
+            <div className="space-y-4">
+              <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+                Carpetas de Multimedia por Producto ({folderList.length})
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {folderList.map((folder) => {
+                  const videosCount = folder.items.filter((i) => i.type === "video").length;
+                  const imagesCount = folder.items.filter((i) => i.type === "image").length;
+                  return (
+                    <div
+                      key={folder.key}
+                      onClick={() => setActiveFolder(folder.key)}
+                      className="bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-2xl p-5 cursor-pointer transition-all hover:shadow-xl hover:shadow-indigo-500/10 group flex items-start gap-4"
+                    >
+                      <div className="bg-indigo-600/20 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white p-3 rounded-xl transition-all">
+                        <Folder className="w-6 h-6" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-bold text-slate-100 group-hover:text-indigo-300 transition-colors">
+                          {folder.name}
+                        </h3>
+                        <div className="flex flex-col gap-0.5 mt-1.5">
+                          <span className="text-xs text-slate-400 font-medium">
+                            {videosCount > 0 && `${videosCount} ${videosCount === 1 ? "Video" : "Videos"}`}
+                            {videosCount > 0 && imagesCount > 0 && ", "}
+                            {imagesCount > 0 && `${imagesCount} ${imagesCount === 1 ? "Foto" : "Fotos"}`}
+                          </span>
+                          {folder.createdAt && (
+                            <span className="text-[11px] text-indigo-400/80 font-mono">
+                              🕒 {folder.createdAt}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            /* VISTA DE ARCHIVOS DENTRO DE LA CARPETA SELECCIONADA */
+            <div className="space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+                <button
+                  onClick={() => setActiveFolder(null)}
+                  className="flex items-center gap-2 text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
+                >
+                  <ArrowLeft className="w-4 h-4" /> Volver a Carpetas
+                </button>
+                <span className="text-xs text-slate-400 flex items-center gap-1.5 font-medium">
+                  <FolderOpen className="w-4 h-4 text-indigo-400" /> Carpeta activa: <strong>{groupedMediaMap[activeFolder]?.name}</strong>
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                {(groupedMediaMap[activeFolder]?.items || [])
+                  .filter((item) => filter === "all" || item.type === filter)
+                  .map((item) => (
               <div
                 key={item.id}
                 className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-slate-700 transition-all flex flex-col group shadow-lg"
@@ -224,9 +368,11 @@ export function MediaGalleryView({ tenantId }) {
                     </button>
                   </div>
                 </div>
+                </div>
+              ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
 
           {/* Modal Reproductor de Video MP4 */}
           {selectedMedia && (
