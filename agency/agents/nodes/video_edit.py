@@ -44,7 +44,11 @@ async def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
 
     # 2. Invocar renderizado real vía microservicio / Celery worker
     render_res = trigger_video_render(
-        tenant_id=tenant_id, script=script, idea=selected_idea, storyboard=storyboard
+        tenant_id=tenant_id,
+        script=script,
+        idea=selected_idea,
+        storyboard=storyboard,
+        product_image_url=product_image_url,
     )
     render_status = render_res.get("status")
 
