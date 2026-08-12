@@ -1139,6 +1139,8 @@ export default function AdminSistemaPage() {
                 </form>
               </div>
             </div>
+          )}
+
           {/* Modal Interactivo SearXNG Meta-Search Engine & Probador de Búsquedas Web */}
           {showSearXNGModal && (
             <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
