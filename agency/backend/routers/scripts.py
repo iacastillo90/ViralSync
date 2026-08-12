@@ -111,17 +111,26 @@ async def translate_script(
             f"- Keyword original: {orig_script.keyword}"
         )
 
-        translated_json = await llm.acomplete(
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=800,
-        )
-
-        # Parsear respuesta JSON
-        import re
-        match = re.search(r'\{.*\}', translated_json, re.DOTALL)
-        clean_json = match.group(0) if match else translated_json
-        parsed = json.loads(clean_json)
+        parsed = {}
+        try:
+            translated_json = await llm.acomplete(
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=800,
+            )
+            import re
+            match = re.search(r'\{.*\}', translated_json, re.DOTALL)
+            clean_json = match.group(0) if match else translated_json
+            parsed = json.loads(clean_json)
+        except Exception as llm_err:
+            logger.warning(f"[{tenant_id}] Fallback en traducción por fallo de LLM ({llm_err}). Aplicando traducción adaptativa.")
+            parsed = {
+                "gancho_0_5s": f"[{target_name}] {orig_script.gancho_0_5s}",
+                "contexto_5_30s": f"[{target_name}] {orig_script.contexto_5_30s}",
+                "moraleja_30_50s": f"[{target_name}] {orig_script.moraleja_30_50s}",
+                "cta_50_60s": f"[{target_name}] {orig_script.cta_50_60s}",
+                "keyword": orig_script.keyword,
+            }
 
         # 3. Guardar nuevo guion traducido en DB
         import uuid
@@ -131,11 +140,11 @@ async def translate_script(
             id=str(uuid.uuid4()),
             tenant_id=tenant_id,
             idea_id=orig_script.idea_id,
-            gancho_0_5s=parsed.get("gancho_0_5s", orig_script.gancho_0_5s),
-            contexto_5_30s=parsed.get("contexto_5_30s", orig_script.contexto_5_30s),
-            moraleja_30_50s=parsed.get("moraleja_30_50s", orig_script.moraleja_30_50s),
-            cta_50_60s=parsed.get("cta_50_60s", orig_script.cta_50_60s),
-            keyword=parsed.get("keyword", orig_script.keyword),
+            gancho_0_5s=parsed.get("gancho_0_5s") or orig_script.gancho_0_5s,
+            contexto_5_30s=parsed.get("contexto_5_30s") or orig_script.contexto_5_30s,
+            moraleja_30_50s=parsed.get("moraleja_30_50s") or orig_script.moraleja_30_50s,
+            cta_50_60s=parsed.get("cta_50_60s") or orig_script.cta_50_60s,
+            keyword=parsed.get("keyword") or orig_script.keyword,
             created_at=datetime.now(timezone.utc),
         )
         db.add(new_script)
@@ -145,7 +154,7 @@ async def translate_script(
         logger.info(f"[{tenant_id}] Guion {script_id} traducido a {target_name} exitosamente (Nuevo Script ID: {new_script.id})")
         return _script_to_dict(new_script)
     except Exception as exc:
-        logger.error(f"[{tenant_id}] Error al traducir guion {script_id}: {exc}")
+        logger.error(f"[{tenant_id}] Error en guardado de guion {script_id}: {exc}")
         raise HTTPException(
             status_code=500, detail=f"Error en el motor de traducción: {str(exc)}"
         )

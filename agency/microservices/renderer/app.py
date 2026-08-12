@@ -214,18 +214,24 @@ def download_pexels_videos(keywords: List[str], temp_dir: str, per_page: int = 3
     return downloaded_files
 
 
-def compose_video_moviepy(audio_path: str, video_paths: List[str], output_path: str) -> float:
+def compose_video_moviepy(
+    audio_path: str,
+    video_paths: List[str],
+    output_path: str,
+    target_duration: Optional[float] = None
+) -> float:
     """Compone y renderiza el video vertical 9:16 combinando audios y clips con MoviePy."""
     from moviepy.editor import AudioFileClip, VideoFileClip, concatenate_videoclips, ColorClip
 
     logger.info("Componiendo video final con MoviePy...")
     audio_clip = AudioFileClip(audio_path)
-    audio_duration = audio_clip.duration if audio_clip.duration > 0 else 30.0
+    base_audio_dur = audio_clip.duration if audio_clip.duration > 0 else 30.0
+    final_duration = target_duration if (target_duration and target_duration > 0) else base_audio_dur
     TARGET_W, TARGET_H = 1080, 1920
 
     clip_objects = []
     if video_paths:
-        duration_per_clip = audio_duration / len(video_paths)
+        duration_per_clip = final_duration / len(video_paths)
         for path in video_paths:
             try:
                 v_clip = VideoFileClip(path)
@@ -239,8 +245,12 @@ def compose_video_moviepy(audio_path: str, video_paths: List[str], output_path: 
                     sub_clip = v_clip.resize(width=TARGET_W)
                     y_center = sub_clip.h / 2
                     sub_clip = sub_clip.crop(y1=max(0, y_center - TARGET_H / 2), height=TARGET_H)
-                
-                sub_clip = sub_clip.subclip(0, min(sub_clip.duration, duration_per_clip))
+
+                # Ajustar la duración de cada clip para cubrir la duración total requerida
+                if sub_clip.duration < duration_per_clip:
+                    sub_clip = sub_clip.loop(duration=duration_per_clip)
+                else:
+                    sub_clip = sub_clip.subclip(0, duration_per_clip)
 
                 def _make_overlay_frame(gf, t, dur=duration_per_clip):
                     try:
@@ -860,7 +870,7 @@ async def render_video_endpoint(req: RenderRequest):
 
         # 3. Componer video con MoviePy en hilo secundario (Non-blocking CPU-bound)
         report_render_progress(req.tenant_id, "moviepy", "Componiendo y ajustando formato 9:16 con MoviePy...", 75)
-        duration = await asyncio.to_thread(compose_video_moviepy, audio_path, downloaded_clips, output_mp4_path)
+        duration = await asyncio.to_thread(compose_video_moviepy, audio_path, downloaded_clips, output_mp4_path, req.target_duration)
 
         # 4. Subir a MinIO
         report_render_progress(req.tenant_id, "minio", "Subiendo video MP4 producido a MinIO Storage...", 90)
