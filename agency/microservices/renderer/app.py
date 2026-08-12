@@ -23,6 +23,13 @@ from pydantic import BaseModel, ConfigDict, Field
 import edge_tts
 from minio import Minio
 
+# ── Monkeypatch: Pillow 10+ eliminó Image.ANTIALIAS; MoviePy 1.x lo usa internamente.
+# Debe declararse ANTES de cualquier import lazy de moviepy.editor para que el
+# parche sea visible cuando MoviePy llame a PIL.Image.ANTIALIAS por primera vez.
+import PIL.Image as _pil_image
+if not hasattr(_pil_image, "ANTIALIAS"):
+    _pil_image.ANTIALIAS = getattr(_pil_image, "LANCZOS", _pil_image.BICUBIC)
+
 # Configuración de Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("video_renderer")
@@ -58,31 +65,24 @@ def _host_port(endpoint: str) -> str:
 
 
 class RenderScene(BaseModel):
-    """Una escena del storyboard para el render por escenas (REQ-VSR-01..06).
-
-    `block` y `text` son obligatorios (text no vacío). `tts_voice`,
-    `visual_prompt` y `duration_s` son opcionales. Las claves desconocidas se
-    ignoran (extra='ignore') para compatibilidad hacia adelante (VSR-06-3).
-    """
-
     model_config = ConfigDict(extra="ignore")
 
     block: str
     text: str = Field(..., min_length=1, description="Narración de la escena (no vacía)")
     tts_voice: Optional[str] = Field(default=None, description="Voz edge-tts de la escena (si falta, DEFAULT_VOICE)")
     visual_prompt: Optional[str] = Field(default=None, description="Prompt visual para derivar keywords de b-roll")
+    image_url: Optional[str] = Field(default=None, description="URL de la imagen del producto")
     duration_s: Optional[float] = Field(default=None, gt=0, description="Duración explícita en segundos")
 
 
 class RenderRequest(BaseModel):
-    # PR-A: scenes es aditivo y opcional (VSR-01-2); extra='ignore' mantiene
-    # seguros a clientes que envían campos futuros (description/hashtags, etc.).
     model_config = ConfigDict(extra="ignore")
 
     title: str = Field(..., example="3 Errores al Escalar B2B")
     script_text: str = Field(..., example="El error principal no es la falta de herramientas, sino intentar abarcar todo sin foco.")
     keywords: List[str] = Field(default_factory=lambda: ["business", "technology", "office"])
     tenant_id: Optional[str] = Field(default="default_tenant")
+    product_image_url: Optional[str] = Field(default=None, description="URL de la imagen del producto")
     scenes: Optional[List[RenderScene]] = None
     max_duration_seconds: Optional[float] = Field(default=45.0)
 
@@ -114,16 +114,37 @@ def audio_duration_seconds(audio_path: str) -> float:
         clip.close()
 
 
-def _keywords_from_prompt(visual_prompt: Optional[str], fallback: List[str]) -> List[str]:
-    """Deriva keywords de búsqueda desde el visual_prompt de una escena (VSR-04-1).
+def _keywords_from_prompt(visual_prompt: Optional[str], fallback: List[str], context_text: str = "") -> List[str]:
+    """Deriva keywords de búsqueda limpias y temáticas para Pexels API."""
+    combined = f"{context_text} {visual_prompt or ''}".lower()
 
-    Si la escena no trae visual_prompt, devuelve el fallback (keywords del
-    payload, VSR-04-2). Se extraen tokens alfanuméricos (Unicode) del prompt.
-    """
-    if not visual_prompt:
-        return fallback
-    words = re.findall(r"\w+", visual_prompt)
-    return words or fallback or ["business"]
+    # Mapeos temáticos según el nicho/producto detectado
+    mappings = [
+        (["mic", "microfono", "k688", "fifine", "audio", "sonido", "podcast", "voz"], ["microphone", "podcast", "studio audio"]),
+        (["camara", "video", "foto", "fotografia"], ["camera", "filmmaking", "studio"]),
+        (["software", "saas", "app", "codigo", "dev", "b2b", "ia", "tecnologia"], ["coding", "laptop", "technology"]),
+        (["gym", "fitness", "entrenamiento", "deporte"], ["fitness", "workout", "gym"]),
+        (["moda", "ropa", "zapatillas", "outfit", "estilo"], ["fashion", "clothing", "style"]),
+        (["comida", "restaurante", "cocina"], ["food", "cooking", "restaurant"]),
+    ]
+
+    for triggers, target_kw in mappings:
+        if any(tr in combined for tr in triggers):
+            return target_kw
+
+    clean_prompt = re.sub(r"https?://\S+", "", visual_prompt or "")
+    clean_prompt = re.sub(r"X-Amz-\S+", "", clean_prompt)
+
+    words = re.findall(r"[a-zA-Z]{3,}", clean_prompt)
+    stop_words = {
+        "vertical", "video", "high", "resolution", "cinematic", "style",
+        "using", "reference", "product", "image", "from", "http", "localhost",
+        "viralsync", "media", "products", "png", "jpg", "jpeg", "signedheaders",
+        "signature", "credential", "algorithm", "expires", "mode", "ratio",
+        "ultra", "detailed", "focus", "lighting", "shot", "hero", "with", "and"
+    }
+    meaningful = [w for w in words if w.lower() not in stop_words]
+    return meaningful[:3] if meaningful else (fallback or ["business"])
 
 
 def _scene_duration_seconds(scene: RenderScene, audio_path: str) -> float:
@@ -231,47 +252,342 @@ def compose_video_moviepy(audio_path: str, video_paths: List[str], output_path: 
     return audio_duration
 
 
+import textwrap
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
+
+def generate_scene_frame(
+    width: int,
+    height: int,
+    text: str,
+    product_img: Optional[Image.Image],
+    t: float,
+    duration: float,
+) -> np.ndarray:
+    """
+    Genera un frame 9:16 vertical (1080x1920) dinámico de calidad profesional:
+    1. Fondo: Gradiente índigo oscuro + ambient blur del producto.
+    2. Producto: Tarjeta centrada con marco resplandeciente y zoom Ken Burns ligero.
+    3. Subtítulos: Banner dinámico amarillo/blanco en negrita en el tercio inferior.
+    """
+    img = Image.new("RGB", (width, height), (15, 23, 42))
+    draw = ImageDraw.Draw(img)
+
+    for y in range(0, height, 4):
+        r = int(15 + (30 - 15) * (y / height))
+        g = int(23 + (27 - 23) * (y / height))
+        b = int(42 + (75 - 42) * (y / height))
+        draw.rectangle([(0, y), (width, y + 4)], fill=(r, g, b))
+
+    if product_img:
+        try:
+            bg_copy = product_img.copy().convert("RGB")
+            bg_scaled = bg_copy.resize((width, height), Image.Resampling.LANCZOS)
+            bg_blurred = bg_scaled.filter(ImageFilter.GaussianBlur(radius=35))
+            img = Image.blend(img, bg_blurred, alpha=0.35)
+            draw = ImageDraw.Draw(img)
+        except Exception:
+            pass
+
+    if product_img:
+        try:
+            card_w, card_h = 680, 680
+            progress = min(max(t / max(duration, 0.1), 0.0), 1.0)
+            zoom = 1.0 + 0.05 * progress
+            cur_w = int(card_w * zoom)
+            cur_h = int(card_h * zoom)
+
+            p_resized = product_img.copy().convert("RGBA").resize((cur_w, cur_h), Image.Resampling.LANCZOS)
+
+            pos_x = (width - cur_w) // 2
+            pos_y = 420 + (card_h - cur_h) // 2
+
+            card_bg = Image.new("RGBA", (cur_w + 24, cur_h + 24), (0, 0, 0, 0))
+            card_draw = ImageDraw.Draw(card_bg)
+            card_draw.rounded_rectangle(
+                [(0, 0), (cur_w + 24, cur_h + 24)],
+                radius=32,
+                fill=(15, 23, 42, 230),
+                outline=(129, 140, 248, 240),
+                width=4,
+            )
+            img.paste(card_bg, (pos_x - 12, pos_y - 12), card_bg)
+            img.paste(p_resized, (pos_x, pos_y), p_resized)
+        except Exception as exc:
+            logger.warning(f"Error renderizando tarjeta de producto: {exc}")
+
+    if text:
+        try:
+            lines = textwrap.wrap(text, width=28)
+            if lines:
+                font_size = 46
+                font_paths = [
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+                ]
+                font = None
+                use_ttf = False
+                for fp in font_paths:
+                    if os.path.exists(fp):
+                        try:
+                            font = ImageFont.truetype(fp, font_size)
+                            use_ttf = True
+                            break
+                        except Exception:
+                            pass
+                if not font:
+                    font = ImageFont.load_default()
+
+                line_height = 60
+                badge_w = 940
+                badge_h = len(lines) * line_height + 40
+                badge_x = (width - badge_w) // 2
+                badge_y = 1380 - (badge_h // 2)
+
+                sub_badge = Image.new("RGBA", (badge_w, badge_h), (0, 0, 0, 0))
+                sub_draw = ImageDraw.Draw(sub_badge)
+                sub_draw.rounded_rectangle(
+                    [(0, 0), (badge_w, badge_h)],
+                    radius=24,
+                    fill=(15, 23, 42, 225),
+                    outline=(250, 204, 21, 220),
+                    width=3,
+                )
+                img.paste(sub_badge, (badge_x, badge_y), sub_badge)
+
+                draw_sub = ImageDraw.Draw(img)
+                for idx, line in enumerate(lines):
+                    ly = badge_y + 25 + idx * line_height
+                    text_color = (250, 204, 21) if idx == 0 else (255, 255, 255)
+                    
+                    if use_ttf:
+                        draw_sub.text(
+                            (width // 2, ly),
+                            line,
+                            font=font,
+                            fill=text_color,
+                            anchor="mm",
+                            stroke_width=3,
+                            stroke_fill=(0, 0, 0),
+                        )
+                    else:
+                        bbox = draw_sub.textbbox((0, 0), line, font=font)
+                        tw = bbox[2] - bbox[0]
+                        tx = (width - tw) // 2
+                        draw_sub.text((tx, ly), line, font=font, fill=text_color)
+        except Exception as exc:
+            logger.warning(f"Error renderizando subtítulos: {exc}")
+
+    return np.array(img)
+
+
+def draw_overlay_on_image(
+    base_img: Image.Image,
+    text: str,
+    prod_img: Optional[Image.Image] = None,
+    t: float = 0.0,
+    duration: float = 5.0
+) -> Image.Image:
+    """Superpone tarjeta de producto flotante y subtítulo con badge sobre la imagen base del video."""
+    width, height = base_img.size
+    img = base_img.convert("RGBA")
+
+    # 1. Tarjeta flotante de producto (tercio superior: y=260..680)
+    if prod_img:
+        try:
+            card_size = 420
+            progress = min(max(t / max(duration, 0.1), 0.0), 1.0)
+            zoom = 1.0 + 0.04 * np.sin(progress * np.pi)
+            cur_w = int(card_size * zoom)
+            cur_h = int(card_size * zoom)
+
+            p_rgba = prod_img.copy().convert("RGBA").resize((cur_w, cur_h), Image.Resampling.LANCZOS)
+
+            pos_x = (width - cur_w) // 2
+            pos_y = 260 + (card_size - cur_h) // 2
+
+            card_bg = Image.new("RGBA", (cur_w + 30, cur_h + 30), (0, 0, 0, 0))
+            card_draw = ImageDraw.Draw(card_bg)
+            card_draw.rounded_rectangle(
+                [(0, 0), (cur_w + 30, cur_h + 30)],
+                radius=28,
+                fill=(15, 23, 42, 220),
+                outline=(250, 204, 21, 240),
+                width=4,
+            )
+            img.paste(card_bg, (pos_x - 15, pos_y - 15), card_bg)
+            img.paste(p_rgba, (pos_x, pos_y), p_rgba)
+        except Exception as exc:
+            logger.warning(f"Error renderizando tarjeta de producto sobre video: {exc}")
+
+    # 2. Subtítulo badge en el tercio inferior (y=1450)
+    if text:
+        try:
+            lines = textwrap.wrap(text, width=28)
+            font_size = 46
+            font_paths = [
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            ]
+            font = None
+            use_ttf = False
+            for fp in font_paths:
+                if os.path.exists(fp):
+                    try:
+                        font = ImageFont.truetype(fp, font_size)
+                        use_ttf = True
+                        break
+                    except Exception:
+                        pass
+            if not font:
+                font = ImageFont.load_default()
+
+            line_height = 58
+            badge_w = 960
+            badge_h = len(lines) * line_height + 40
+            badge_x = (width - badge_w) // 2
+            badge_y = 1450 - (badge_h // 2)
+
+            sub_badge = Image.new("RGBA", (badge_w, badge_h), (0, 0, 0, 0))
+            sub_draw = ImageDraw.Draw(sub_badge)
+            sub_draw.rounded_rectangle(
+                [(0, 0), (badge_w, badge_h)],
+                radius=24,
+                fill=(15, 23, 42, 230),
+                outline=(250, 204, 21, 240),
+                width=3,
+            )
+
+            for idx, line in enumerate(lines):
+                ly = 25 + idx * line_height
+                text_color = (250, 204, 21, 255) if idx == 0 else (255, 255, 255, 255)
+                if use_ttf:
+                    bbox = sub_draw.textbbox((0, 0), line, font=font)
+                    tw = bbox[2] - bbox[0]
+                    tx = (badge_w - tw) // 2
+                    sub_draw.text((tx, ly), line, font=font, fill=text_color, stroke_width=2, stroke_fill=(0, 0, 0))
+                else:
+                    bbox = sub_draw.textbbox((0, 0), line, font=font)
+                    tw = bbox[2] - bbox[0]
+                    tx = (badge_w - tw) // 2
+                    sub_draw.text((tx, ly), line, font=font, fill=text_color)
+
+            img.paste(sub_badge, (badge_x, badge_y), sub_badge)
+        except Exception as exc:
+            logger.warning(f"Error renderizando subtítulos sobre video: {exc}")
+
+    return img.convert("RGB")
+
+
 def compose_scenes_video_moviepy(segments: List[dict], output_path: str, total_duration: float) -> float:
-    """Compone el video por escenas (D3): concatena clips y audio en orden de
-    escena y capa la duración total a `total_duration` (VSR-05)."""
+    """Compone el video por escenas concatenando clips 9:16 de Pexels con overlay de producto y subtítulo."""
     from moviepy.editor import (
         AudioFileClip,
         VideoFileClip,
+        VideoClip,
         concatenate_audioclips,
         concatenate_videoclips,
-        ColorClip,
     )
 
     logger.info(f"Componiendo video por escenas con MoviePy ({len(segments)} escenas)...")
     video_clips = []
     audio_clips = []
+    TARGET_W, TARGET_H = 1080, 1920
+
     for seg in segments:
         seg_duration = seg["duration"]
         per_clip = seg_duration / max(len(seg["video_paths"]), 1)
+        scene_text = seg.get("text", "")
+
+        prod_img_obj = None
+        img_url = seg.get("image_url")
+        if img_url:
+            try:
+                fetch_url = (
+                    img_url.replace("localhost:9000", "minio:9000")
+                    .replace("127.0.0.1:9000", "minio:9000")
+                )
+                headers = {"Host": "localhost:9000"} if "minio:9000" in fetch_url else {}
+                logger.info(f"Descargando foto de producto desde: {fetch_url}")
+                r = requests.get(fetch_url, headers=headers, timeout=8.0)
+                if r.status_code == 200:
+                    from io import BytesIO
+                    prod_img_obj = Image.open(BytesIO(r.content)).copy()
+                    logger.info("Imagen de producto descargada e instanciada con éxito.")
+                else:
+                    logger.warning(f"Status HTTP {r.status_code} al descargar imagen de producto: {r.status_code}")
+            except Exception as e:
+                logger.warning(f"No se pudo descargar imagen de producto: {e}")
+
         block = []
         for path in seg["video_paths"]:
             try:
                 v_clip = VideoFileClip(path)
-                sub_clip = v_clip.subclip(0, min(v_clip.duration, per_clip))
-                sub_clip = sub_clip.resize(height=1920)
-                if sub_clip.w > 1080:
+                clip_ratio = v_clip.w / v_clip.h
+                target_ratio = TARGET_W / TARGET_H
+                if clip_ratio > target_ratio:
+                    sub_clip = v_clip.resize(height=TARGET_H)
                     x_center = sub_clip.w / 2
-                    sub_clip = sub_clip.crop(x1=x_center - 540, width=1080)
+                    sub_clip = sub_clip.crop(x1=x_center - TARGET_W / 2, width=TARGET_W)
+                else:
+                    sub_clip = v_clip.resize(width=TARGET_W)
+                    y_center = sub_clip.h / 2
+                    sub_clip = sub_clip.crop(y1=max(0, y_center - TARGET_H / 2), height=TARGET_H)
+
+                sub_clip = sub_clip.subclip(0, min(sub_clip.duration, per_clip))
+
+                _txt = scene_text
+                _pimg = prod_img_obj
+                _dur = seg_duration
+
+                def _overlay_fn(frame, txt=_txt, p_img=_pimg, dur=_dur):
+                    try:
+                        base = Image.fromarray(frame)
+                        if base.size != (TARGET_W, TARGET_H):
+                            base = base.resize((TARGET_W, TARGET_H), Image.Resampling.LANCZOS)
+                        out_img = draw_overlay_on_image(base, txt, p_img, 0.0, dur)
+                        return np.array(out_img)
+                    except Exception as exc:
+                        logger.warning(f"Error en _overlay_fn: {exc}")
+                        return frame
+
+                sub_clip = sub_clip.fl_image(_overlay_fn)
                 block.append(sub_clip)
             except Exception as exc:
                 logger.warning(f"Error procesando clip {path}: {exc}")
+
         if not block:
-            logger.info(f"Usando fondo dinámico de fallback para la escena {seg['audio_path']}...")
-            block.append(ColorClip(size=(1080, 1920), color=(15, 23, 42), duration=seg_duration))
+            logger.info("Generando escena animada de fallback con imagen de producto y subtítulos...")
+            _txt2 = scene_text
+            _pimg2 = prod_img_obj
+            _dur2 = seg_duration
+
+            def make_frame(t, txt=_txt2, p_img=_pimg2, dur=_dur2):
+                base = Image.new("RGB", (TARGET_W, TARGET_H), (15, 23, 42))
+                out_img = draw_overlay_on_image(base, txt, p_img, t, dur)
+                return np.array(out_img)
+
+            v_clip = VideoClip(make_frame, duration=seg_duration)
+            block.append(v_clip)
+
         video_clips.extend(block)
         audio_clips.append(AudioFileClip(seg["audio_path"]))
 
-    final_video = concatenate_videoclips(video_clips, method="compose")
+    final_video = concatenate_videoclips(video_clips, method="chain")
     final_audio = concatenate_audioclips(audio_clips) if len(audio_clips) > 1 else audio_clips[0]
-    final_video = final_video.set_audio(final_audio)
-    final_video = final_video.set_duration(total_duration)
 
-    logger.info(f"Renderizando archivo final por escenas en {output_path} (Duración: {total_duration:.2f}s)...")
+    real_duration = final_audio.duration if (final_audio and hasattr(final_audio, "duration") and final_audio.duration > 0) else total_duration
+
+    if final_video.duration > real_duration:
+        logger.info(f"Recortando línea de tiempo del video de {final_video.duration:.2f}s a la duración real del audio ({real_duration:.2f}s)...")
+        final_video = final_video.subclip(0, real_duration)
+
+    final_video = final_video.set_audio(final_audio)
+    final_video = final_video.set_duration(real_duration)
+
+    logger.info(f"Renderizando archivo final por escenas en {output_path} (Duración real del audio: {real_duration:.2f}s)...")
     final_video.write_videofile(
         output_path,
         fps=24,
@@ -282,7 +598,6 @@ def compose_scenes_video_moviepy(segments: List[dict], output_path: str, total_d
         logger=None,
     )
 
-
     for clip in audio_clips + video_clips:
         try:
             clip.close()
@@ -290,7 +605,6 @@ def compose_scenes_video_moviepy(segments: List[dict], output_path: str, total_d
             pass
 
     return total_duration
-
 
 async def _render_scene_pipeline(req: RenderRequest, temp_dir: str, output_mp4_path: str) -> float:
     """Pipeline de render por escenas (REQ-VSR-03/04/05, D3).
@@ -311,7 +625,7 @@ async def _render_scene_pipeline(req: RenderRequest, temp_dir: str, output_mp4_p
         await generate_speech_audio(scene.text, scene_audio, voice)
         scene_audios.append(scene_audio)
 
-        scene_keywords = _keywords_from_prompt(scene.visual_prompt, req.keywords)
+        scene_keywords = _keywords_from_prompt(scene.visual_prompt, req.keywords, f"{req.title} {scene.text}")
         logger.info(f"[{req.tenant_id}] Escena {idx + 1} — búsqueda Pexels con keywords {scene_keywords}")
         scene_clips = await asyncio.to_thread(download_pexels_videos, scene_keywords, temp_dir, per_page=2)
         scene_clip_lists.append(scene_clips)
@@ -324,8 +638,10 @@ async def _render_scene_pipeline(req: RenderRequest, temp_dir: str, output_mp4_p
             "audio_path": audio_path,
             "video_paths": clip_paths,
             "duration": duration,
+            "text": scene.text,
+            "image_url": scene.image_url or req.product_image_url,
         }
-        for audio_path, clip_paths, duration in zip(scene_audios, scene_clip_lists, scene_durations)
+        for audio_path, clip_paths, duration, scene in zip(scene_audios, scene_clip_lists, scene_durations, req.scenes)
     ]
     return await asyncio.to_thread(compose_scenes_video_moviepy, segments, output_mp4_path, total_duration)
 
@@ -360,7 +676,10 @@ def upload_to_minio(file_path: str, tenant_id: str) -> str:
     if not minio_client.bucket_exists(MINIO_BUCKET):
         minio_client.make_bucket(MINIO_BUCKET)
 
-    object_name = f"{tenant_id}/faceless_output_{os.path.basename(file_path)}"
+    import uuid
+    short_id = uuid.uuid4().hex[:8]
+    clean_name = os.path.basename(file_path).replace(" ", "_")
+    object_name = f"{tenant_id}/videos/reel_{short_id}_{clean_name}"
     minio_client.fput_object(MINIO_BUCKET, object_name, file_path, content_type="video/mp4")
 
     public_url = signer_client.presigned_get_object(MINIO_BUCKET, object_name)
