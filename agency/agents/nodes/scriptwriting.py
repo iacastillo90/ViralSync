@@ -32,7 +32,13 @@ async def node_scriptwriting(state: Dict[str, Any]) -> Dict[str, Any]:
             f"[{tenant_id}] selected_idea sin 'id': no hay idea aprobada para FK."
         )
 
-    script = await run_scriptwriting_crew(idea=selected_idea, niche_ppp=niche_ppp)
+    script = await run_scriptwriting_crew(
+        idea=selected_idea, 
+        niche_ppp=niche_ppp,
+        product_name=state.get("product_name"),
+        product_description=state.get("product_description"),
+        target_duration=state.get("target_duration", 30),
+    )
 
     # Persistencia real (PERSIST-02): fila `scripts` FK a la idea aprobada. Un
     # fallo de DB se propaga (PERSIST-02-2). El id del guion se inyecta en state
