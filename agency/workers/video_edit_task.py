@@ -49,6 +49,8 @@ def _storyboard_to_scenes(storyboard: Optional[List[Dict[str, Any]]]) -> List[Di
             scene["tts_voice"] = str(sc["tts_voice"])
         if sc.get("visual_prompt"):
             scene["visual_prompt"] = str(sc["visual_prompt"])
+        if sc.get("image_url"):
+            scene["image_url"] = str(sc["image_url"])
         if sc.get("duration_s") is not None:
             scene["duration_s"] = float(sc["duration_s"])
         scenes.append(scene)
@@ -61,6 +63,7 @@ def trigger_video_render(
     script: Dict[str, Any],
     idea: Optional[Dict[str, Any]] = None,
     storyboard: Optional[List[Dict[str, Any]]] = None,
+    product_image_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Despacha el trabajo de renderizado al microservicio faceless independiente (Puerto 8001).
@@ -75,7 +78,7 @@ def trigger_video_render(
     logger.info(f"[{tenant_id}] Despachando trabajo al Agente Director (Guardián de Calidad y Rendimiento)...")
     director_result = run_video_director_crew(script=script, idea=idea, tenant_id=tenant_id)
 
-    # 1. Filtro de Valor: Verificar si el guion fue aprobado por el Guardián
+    # 1. Filtro de Valor: Verificar si el guion fue approved por el Guardián
     if not director_result.get("approved_for_render", False):
         logger.warning(f"[{tenant_id}] Guion RECHAZADO por Filtro de Valor RUM (Score: {director_result.get('quality_score')})")
         return {
@@ -89,11 +92,23 @@ def trigger_video_render(
     render_payload = director_result.get("render_payload", {})
     curated_metadata = director_result.get("metadata", {})
 
+    # Inyectar la duración objetivo del guion (15s, 20s, 30s, 60s) dinámicamente
+    target_duration = script.get("target_duration") or 30.0
+    render_payload["max_duration_seconds"] = float(target_duration)
+
+    if product_image_url:
+        render_payload["product_image_url"] = product_image_url
+        logger.info(f"[{tenant_id}] Inyectando product_image_url en render_payload: {product_image_url}")
+
     # WU2: reenviar el storyboard a scenes[] del payload de render (VSR-01
     # worker side). Sin storyboard (o sin escenas válidas) → omitir scenes → flat.
     if storyboard:
         scenes = _storyboard_to_scenes(storyboard)
         if scenes:
+            if product_image_url:
+                for sc in scenes:
+                    if not sc.get("image_url"):
+                        sc["image_url"] = product_image_url
             render_payload = {**render_payload, "scenes": scenes}
             logger.info(f"[{tenant_id}] Reenviando {len(scenes)} escenas del storyboard al renderer.")
 
