@@ -62,8 +62,16 @@ async def _resume_graph_background(tenant_id: str, resume_payload: dict) -> None
     """Reanuda un grafo pausado en background (RESILIENCE-002)."""
     config = _thread_config(tenant_id)
     try:
-        app = await get_graph_app_async()
-        await app.ainvoke(Command(update=resume_payload), config=config)
+        from backend.db.checkpointer import is_force_sqlite, _psycopg_conninfo
+        if is_force_sqlite():
+            from langgraph.checkpoint.memory import MemorySaver
+            app = build_agency_graph(checkpointer=MemorySaver())
+            await app.ainvoke(Command(update=resume_payload), config=config)
+        else:
+            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+            async with AsyncPostgresSaver.from_conn_string(_psycopg_conninfo()) as cp:
+                app = build_agency_graph(checkpointer=cp)
+                await app.ainvoke(Command(update=resume_payload), config=config)
         logger.info("Graph resumed for tenant %s (update payload: %s)", tenant_id, resume_payload)
     except Exception as exc:  # noqa: BLE001 - absence of logging means silent hang
         logger.error("Graph resume failed for tenant %s: %s", tenant_id, exc, exc_info=True)
@@ -74,8 +82,17 @@ async def _run_graph_background(tenant_id: str, initial_state: dict) -> None:
     """Ejecuta el grafo multi-agente en background (RESILIENCE-002)."""
     config = _thread_config(tenant_id)
     try:
-        app = await get_graph_app_async()
-        final_state = await app.ainvoke(initial_state, config=config)
+        from backend.db.checkpointer import is_force_sqlite, _psycopg_conninfo
+        if is_force_sqlite():
+            from langgraph.checkpoint.memory import MemorySaver
+            app = build_agency_graph(checkpointer=MemorySaver())
+            final_state = await app.ainvoke(initial_state, config=config)
+        else:
+            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+            async with AsyncPostgresSaver.from_conn_string(_psycopg_conninfo()) as cp:
+                app = build_agency_graph(checkpointer=cp)
+                final_state = await app.ainvoke(initial_state, config=config)
+
 
         # D-C/TCK-005: guard isinstance — un final_state None (fake o caso raro)
         # NO crashea: sin broadcast y sin graph_error (acuerdo del test).
@@ -113,9 +130,10 @@ async def _run_graph_background(tenant_id: str, initial_state: dict) -> None:
 
 
 class GraphRunRequest(BaseModel):
-    niche: Optional[str] = "B2B Software"
-    niche_ppp: Optional[str] = "Escalar conversiones SaaS en 90 días"
+    niche: Optional[str] = None
+    niche_ppp: Optional[str] = None
     target_platform: Optional[str] = "instagram"
+    target_duration: Optional[int] = 30
     ig_user_id: Optional[str] = None
     ig_access_token: Optional[str] = None
     tiktok_access_token: Optional[str] = None
@@ -264,6 +282,8 @@ async def approve_publish(tenant_id: str, req: PublishApproveRequest, background
 async def run_graph(tenant_id: str, req: GraphRunRequest, background_tasks: BackgroundTasks):
     """Ejecuta el grafo multi-agente asíncronamente."""
     from backend.security.rate_limiter import check_rate_limit
+    from backend.db.daos import get_latest_product
+
     if not check_rate_limit(tenant_id, limit=30, window_seconds=60):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -284,11 +304,19 @@ async def run_graph(tenant_id: str, req: GraphRunRequest, background_tasks: Back
         {"node": "ideation", "message": "Iniciando Agente de Ideación RUM...", "tenant_id": tenant_id},
     )
 
+    if not req.product_name:
+        latest_product = await get_latest_product(tenant_id)
+        if latest_product:
+            req.product_name = latest_product.name
+            req.product_description = latest_product.description
+            req.niche = latest_product.name  # Use product name as niche for more precise ideas
+
     initial_state = {
         "tenant_id": tenant_id,
         "niche": req.niche,
         "niche_ppp": req.niche_ppp,
         "target_platform": req.target_platform,
+        "target_duration": req.target_duration or 30,
         "ig_user_id": req.ig_user_id,
         "ig_access_token": req.ig_access_token,
         "tiktok_access_token": req.tiktok_access_token,
