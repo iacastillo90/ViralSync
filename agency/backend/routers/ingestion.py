@@ -253,6 +253,25 @@ async def batch_ingest_products(tenant_id: str, req: BatchProductIngestRequest):
     }
 
 
+@ingestion_router.get("/{tenant_id}/products")
+async def get_tenant_products(tenant_id: str, db: AsyncSession = Depends(get_async_db)):
+    """Lista todos los productos guardados para el tenant con sus timestamps."""
+    from backend.db.models import Product
+    result = await db.execute(select(Product).where(Product.tenant_id == tenant_id).order_by(Product.created_at.desc()))
+    products = result.scalars().all()
+    return [
+        {
+            "id": p.id,
+            "tenant_id": p.tenant_id,
+            "name": p.name,
+            "description": p.description,
+            "product_image_url": p.product_image_url,
+            "created_at": p.created_at.isoformat() if p.created_at else None,
+        }
+        for p in products
+    ]
+
+
 
 @ingestion_router.get("/{tenant_id}/media")
 async def list_media(tenant_id: str):
