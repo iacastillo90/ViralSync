@@ -50,6 +50,8 @@ def _log_llm_error_to_redis(model: str, error_msg: str):
 # Direct-chain fallback order: (model id, env var holding its API key).
 # Only providers with a configured key are attempted.
 DIRECT_CHAIN = (
+    ("gemini/gemini-3.5-flash-lite", "GEMINI_API_KEY"),
+    ("gemini/gemini-3.1-flash-lite", "GEMINI_API_KEY"),
     ("gemini/gemini-3.5-flash", "GEMINI_API_KEY"),
     ("groq/llama-3.3-70b-versatile", "GROQ_API_KEY"),
     ("openrouter/openrouter/free", "OPENROUTER_API_KEY"),

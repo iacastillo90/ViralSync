@@ -1,21 +1,44 @@
 # litellm_config.dev.yaml
-# AGENCY_ENV=dev — Pool de free tiers reales sin Ollama local requerido.
-# Estrategia: Gemini 3.5 Flash primario (1M tokens/día gratis).
-# Fallback automático en 429/503 → Groq → OpenRouter → Ollama.
-#
-# Setup: Copiar .env.example a .env y llenar al menos una API key.
+# AGENCY_ENV=dev — Pool de free tiers con alta cuota (500 RPD).
+# Estrategia: Gemini 3.5 Flash Lite (500 RPD) -> Gemini 3.1 Flash Lite (500 RPD) -> Gemini 3.5 Flash -> Groq -> OpenRouter -> Ollama.
 
 model_list:
-  # ── Primario ─────────────────────────────────────────────────────── #
+  # ── Primarios con Cuota Alta (500 RPD / 15 RPM) ──────────────────── #
+  - model_name: gemini-flash-lite-35
+    litellm_params:
+      model: gemini/gemini-3.5-flash-lite
+      api_key: "os.environ/GEMINI_API_KEY"
+
+  - model_name: gemini-flash-lite-31
+    litellm_params:
+      model: gemini/gemini-3.1-flash-lite
+      api_key: "os.environ/GEMINI_API_KEY"
+
   - model_name: motor-agencia
+    litellm_params:
+      model: gemini/gemini-3.5-flash-lite
+      api_key: "os.environ/GEMINI_API_KEY"
+
+  # ── Secundarios (20 RPD / 5 RPM) ─────────────────────────────────── #
+  - model_name: gemini-flash-35
     litellm_params:
       model: gemini/gemini-3.5-flash
       api_key: "os.environ/GEMINI_API_KEY"
 
-  # ── Fallbacks Free Tier ──────────────────────────────────────────── #
+  - model_name: gemini-flash-36
+    litellm_params:
+      model: gemini/gemini-3.6-flash
+      api_key: "os.environ/GEMINI_API_KEY"
+
+  # ── Fallbacks Ultra-Rápidos con Cuota Alta en Groq (14,400 RPD) ─── #
   - model_name: motor-agencia-groq
     litellm_params:
       model: groq/llama-3.3-70b-versatile
+      api_key: "os.environ/GROQ_API_KEY"
+
+  - model_name: motor-agencia-groq-instant
+    litellm_params:
+      model: groq/llama-3.1-8b-instant
       api_key: "os.environ/GROQ_API_KEY"
 
   - model_name: motor-agencia-openrouter
@@ -23,7 +46,7 @@ model_list:
       model: openrouter/openrouter/free
       api_key: "os.environ/OPENROUTER_API_KEY"
 
-  # ── Fallback Local (OPCIONAL — requiere Ollama corriendo) ────────── #
+  # ── Fallback Local (Offline) ──────────────────────────────────────── #
   - model_name: motor-agencia-ollama
     litellm_params:
       model: ollama/llama3.2
@@ -31,14 +54,23 @@ model_list:
 
 router_settings:
   routing_strategy: "usage-based-routing-v2"
-  num_retries: 3
+  num_retries: 4
   cooldown_time: 30
   allowed_fails: 1
   fallbacks:
     - motor-agencia:
+        - gemini-flash-lite-31
+        - gemini-flash-35
+        - gemini-flash-36
         - motor-agencia-groq
+        - motor-agencia-groq-instant
         - motor-agencia-openrouter
         - motor-agencia-ollama
+    - gemini-flash-lite-35:
+        - gemini-flash-lite-31
+        - gemini-flash-35
+        - motor-agencia-groq
+        - motor-agencia-openrouter
 
 general_settings:
   master_key: "os.environ/LITELLM_MASTER_KEY"
