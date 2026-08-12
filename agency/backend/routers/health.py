@@ -124,3 +124,23 @@ async def unified_health_check():
     if overall_status == "unhealthy":
         return JSONResponse(content=payload, status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     return payload
+
+
+@router.get("/system/llm-errors", status_code=status.HTTP_200_OK)
+async def get_system_llm_errors():
+    """Devuelve los últimos 50 errores de proveedores de LLM registrados en Redis."""
+    try:
+        import redis.asyncio as redis_async
+        import json
+        client = redis_async.Redis.from_url(REDIS_URL)
+        try:
+            raw_errors = await client.lrange("system_llm_errors", 0, -1)
+            errors = [json.loads(e) for e in raw_errors]
+            return {"errors": errors}
+        finally:
+            await client.aclose()
+    except Exception as exc:
+        return JSONResponse(
+            content={"error": f"Redis no disponible o error: {exc}", "errors": []},
+            status_code=status.HTTP_200_OK
+        )
