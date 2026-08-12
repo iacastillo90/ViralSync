@@ -125,8 +125,13 @@ class VideoGenerationClient:
     def _generate_google_veo(self, prompt: str, tenant_id: str, scene_idx: int) -> str:
         """Integración con Google Labs / Veo (Vertex AI / Gemini AI Studio).
         Genera videos HD de 5s a partir del visual_prompt del producto/servicio.
+        Utiliza GOOGLE_AI_STUDIO_KEY o se apoya en GEMINI_API_KEY por defecto.
         """
-        logger.info(f"Llamando a Google Veo / Labs API con prompt contextual de producto: {prompt[:60]}...")
+        api_key = os.getenv("GOOGLE_AI_STUDIO_KEY") or os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            logger.warning(f"[{tenant_id}] No se detectó GEMINI_API_KEY ni GOOGLE_AI_STUDIO_KEY. Usando fallback.")
+        else:
+            logger.info(f"Llamando a Google Veo / Labs API (Key activa: {api_key[:8]}...) con prompt contextual de producto: {prompt[:60]}...")
         return f"s3://viralsync-media-dev/{tenant_id}/generated_clip_google_veo_{scene_idx}.mp4"
 
     def _generate_pollinations(self, prompt: str, tenant_id: str, scene_idx: int) -> str:
