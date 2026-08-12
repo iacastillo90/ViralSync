@@ -45,6 +45,74 @@ export default function AdminSistemaPage() {
   const [isIngestingVector, setIsIngestingVector] = useState(false);
   const [ingestSuccessMsg, setIngestSuccessMsg] = useState("");
 
+  // Modales y estados de Ver / Editar / Descargar / Eliminar en Qdrant
+  const [selectedDocForView, setSelectedDocForView] = useState(null);
+  const [selectedDocForEdit, setSelectedDocForEdit] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editCategory, setEditCategory] = useState("Marketing Digital");
+  const [editContent, setEditContent] = useState("");
+  const [isUpdatingVector, setIsUpdatingVector] = useState(false);
+
+  const handleDownloadDocument = (doc) => {
+    if (!doc) return;
+    const fullText = `# ${doc.title}\n\n**Categoría:** ${doc.category}\n**ID Vector Qdrant:** ${doc.id}\n**Fecha:** ${doc.created_at || ""}\n\n${doc.content || doc.snippet}`;
+    const element = document.createElement("a");
+    const file = new Blob([fullText], { type: "text/markdown;charset=utf-8" });
+    element.href = URL.createObjectURL(file);
+    element.download = `${(doc.title || "documento_vectorial").toLowerCase().replace(/\s+/g, "_")}.md`;
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+  };
+
+  const handleDeleteDocument = async (docId) => {
+    if (!confirm("¿Estás seguro de que deseas eliminar este documento vectorial de Qdrant?")) return;
+    try {
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace("/api/v1", "");
+      const res = await fetch(`${baseUrl}/system/qdrant/documents/${docId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Error al eliminar documento");
+      if (selectedDocForView?.id === docId) setSelectedDocForView(null);
+      if (selectedDocForEdit?.id === docId) setSelectedDocForEdit(null);
+      fetchQdrantStats();
+    } catch (err) {
+      alert(`Error al eliminar: ${err.message}`);
+    }
+  };
+
+  const handleOpenEditModal = (doc) => {
+    setSelectedDocForEdit(doc);
+    setEditTitle(doc.title || "");
+    setEditCategory(doc.category || "Marketing Digital");
+    setEditContent(doc.content || doc.snippet || "");
+  };
+
+  const handleSaveEditDocument = async (e) => {
+    e.preventDefault();
+    if (!selectedDocForEdit) return;
+    setIsUpdatingVector(true);
+    try {
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace("/api/v1", "");
+      const res = await fetch(`${baseUrl}/system/qdrant/documents/${selectedDocForEdit.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: editTitle,
+          category: editCategory,
+          content: editContent,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Error al actualizar documento");
+      setIsUpdatingVector(false);
+      setSelectedDocForEdit(null);
+      fetchQdrantStats();
+    } catch (err) {
+      alert(`Error al guardar cambios: ${err.message}`);
+      setIsUpdatingVector(false);
+    }
+  };
+
   const fetchErrors = async () => {
     setLoadingErrors(true);
     try {
@@ -841,24 +909,171 @@ export default function AdminSistemaPage() {
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {qdrantStats.documents.map((doc) => (
-                          <div key={doc.id} className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
-                            <div className="flex justify-between items-start">
-                              <h4 className="font-bold text-slate-200 text-xs flex items-center gap-1.5">
-                                <Database className="w-3.5 h-3.5 text-purple-400" /> {doc.title}
-                              </h4>
-                              <span className="bg-purple-950/60 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded text-[10px] font-mono">
-                                {doc.category}
-                              </span>
+                          <div key={doc.id} className="bg-slate-950 border border-slate-800 hover:border-purple-500/40 rounded-xl p-4 space-y-3 transition-all flex flex-col justify-between">
+                            <div className="space-y-2">
+                              <div className="flex justify-between items-start">
+                                <h4 className="font-bold text-slate-100 text-xs flex items-center gap-1.5">
+                                  <Database className="w-3.5 h-3.5 text-purple-400 shrink-0" /> {doc.title}
+                                </h4>
+                                <span className="bg-purple-950/60 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded text-[10px] font-mono shrink-0">
+                                  {doc.category}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-400 line-clamp-3 italic font-mono bg-slate-900/60 p-2 rounded-lg border border-slate-800/80">
+                                "{doc.content || doc.snippet}"
+                              </p>
                             </div>
-                            <p className="text-[11px] text-slate-400 line-clamp-2 italic font-mono bg-slate-900/60 p-2 rounded-lg">
-                              "{doc.snippet}"
-                            </p>
+
+                            <div className="pt-2 border-t border-slate-900 flex items-center justify-between gap-1 text-[10px]">
+                              <button
+                                onClick={() => setSelectedDocForView(doc)}
+                                className="bg-slate-900 hover:bg-purple-950/60 text-purple-300 border border-slate-800 hover:border-purple-500/40 px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1"
+                              >
+                                👁️ Ver
+                              </button>
+                              <button
+                                onClick={() => handleDownloadDocument(doc)}
+                                className="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1"
+                              >
+                                📥 Descargar (.md)
+                              </button>
+                              <button
+                                onClick={() => handleOpenEditModal(doc)}
+                                className="bg-slate-900 hover:bg-amber-950/60 text-amber-300 border border-slate-800 hover:border-amber-500/40 px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1"
+                              >
+                                ✏️ Editar
+                              </button>
+                              <button
+                                onClick={() => handleDeleteDocument(doc.id)}
+                                className="bg-slate-900 hover:bg-rose-950/60 text-rose-400 border border-slate-800 hover:border-rose-500/40 px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1"
+                              >
+                                🗑️ Eliminar
+                              </button>
+                            </div>
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal de Ver Detalle Completo de Documento Vectorial */}
+          {selectedDocForView && (
+            <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-purple-500/40 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+                <div className="p-5 border-b border-slate-800 bg-slate-900 flex justify-between items-center">
+                  <div>
+                    <h3 className="font-bold text-slate-100 flex items-center gap-2 text-base">
+                      <Database className="w-5 h-5 text-purple-400" /> {selectedDocForView.title}
+                    </h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Categoría: <span className="text-purple-300 font-mono">{selectedDocForView.category}</span> • ID Qdrant: <span className="font-mono text-slate-300">{selectedDocForView.id}</span>
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setSelectedDocForView(null)}
+                    className="text-xs text-slate-400 hover:text-slate-100 bg-slate-800 p-2 rounded-xl border border-slate-700"
+                  >
+                    ✕ Cerrar
+                  </button>
+                </div>
+                <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                  <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl text-xs text-slate-200 font-mono whitespace-pre-wrap leading-relaxed shadow-inner">
+                    {selectedDocForView.content || selectedDocForView.snippet}
+                  </div>
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button
+                      onClick={() => handleDownloadDocument(selectedDocForView)}
+                      className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-lg shadow-purple-600/30 flex items-center gap-1.5"
+                    >
+                      📥 Descargar Archivo (.md)
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal de Editar Documento Vectorial Qdrant */}
+          {selectedDocForEdit && (
+            <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-amber-500/40 rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+                <div className="p-5 border-b border-slate-800 bg-slate-900 flex justify-between items-center">
+                  <div>
+                    <h3 className="font-bold text-slate-100 flex items-center gap-2 text-base">
+                      ✏️ Editar Documento Vectorial #{selectedDocForEdit.id}
+                    </h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Al guardar, los vectores de embedding se regenerarán automáticamente en Qdrant.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setSelectedDocForEdit(null)}
+                    className="text-xs text-slate-400 hover:text-slate-100 bg-slate-800 p-2 rounded-xl border border-slate-700"
+                  >
+                    ✕ Cerrar
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveEditDocument} className="p-6 space-y-4 overflow-y-auto flex-1">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="md:col-span-2 space-y-1">
+                      <label className="text-[11px] font-semibold text-slate-300">Título del Documento *</label>
+                      <input
+                        type="text"
+                        required
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-semibold text-slate-300">Categoría *</label>
+                      <select
+                        value={editCategory}
+                        onChange={(e) => setEditCategory(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500"
+                      >
+                        <option value="Marketing Digital">Marketing Digital</option>
+                        <option value="Tendencias de Mercado">Tendencias de Mercado</option>
+                        <option value="Modelos de Trabajo & Frameworks">Modelos de Trabajo & Frameworks</option>
+                        <option value="Copywriting Persuasivo">Copywriting Persuasivo</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-slate-300">Contenido / Texto a Re-Vectorizar *</label>
+                    <textarea
+                      required
+                      rows={8}
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-xs text-slate-100 focus:outline-none focus:border-amber-500 font-mono"
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDocForEdit(null)}
+                      className="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold px-4 py-2 rounded-xl"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isUpdatingVector}
+                      className="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-amber-600/30 flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <Database className="w-4 h-4" />
+                      {isUpdatingVector ? "Actualizando Qdrant..." : "💾 Guardar Cambios & Re-vectorizar"}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           )}

@@ -358,7 +358,7 @@ class QdrantKnowledgeIngestRequest(BaseModel):
 
 @router.get("/system/qdrant/stats", status_code=status.HTTP_200_OK)
 async def get_qdrant_stats():
-    """Consulta la colección 'marketing_brain' en Qdrant y devuelve estadísticas e ítems almacenados."""
+    """Consulta la colección 'marketing_brain' en Qdrant y devuelve estadísticas e ítems almacenados con contenido completo."""
     try:
         from qdrant_client import QdrantClient
         client = QdrantClient(url=QDRANT_URL)
@@ -373,17 +373,19 @@ async def get_qdrant_stats():
 
             scroll_res = client.scroll(
                 collection_name="marketing_brain",
-                limit=50,
+                limit=100,
                 with_payload=True,
                 with_vectors=False
             )
             for p in scroll_res[0]:
                 payload = p.payload or {}
+                raw_content = payload.get("content") or ""
                 vectors_info.append({
                     "id": p.id,
                     "title": payload.get("title") or payload.get("filename") or f"Doc #{p.id}",
                     "category": payload.get("category", "Marketing Digital"),
-                    "snippet": (payload.get("content") or "")[:140] + "...",
+                    "content": raw_content,
+                    "snippet": raw_content[:140] + ("..." if len(raw_content) > 140 else ""),
                     "created_at": payload.get("created_at") or "2026-08-12T00:00:00Z"
                 })
 
@@ -461,3 +463,69 @@ async def ingest_qdrant_knowledge(req: QdrantKnowledgeIngestRequest):
     except Exception as exc:
         logger.error(f"Error ingestando conocimiento en Qdrant: {exc}")
         raise HTTPException(status_code=500, detail=f"Error al indexar en Qdrant: {exc}")
+
+
+@router.put("/system/qdrant/documents/{document_id}", status_code=status.HTTP_200_OK)
+async def update_qdrant_document(document_id: str, req: QdrantKnowledgeIngestRequest):
+    """Actualiza un documento vectorial en Qdrant regenerando sus embeddings y payload."""
+    try:
+        from qdrant_client import QdrantClient
+        from qdrant_client.models import PointStruct
+
+        client = QdrantClient(url=QDRANT_URL)
+        vector = _generate_vector_embedding(req.content)
+
+        # Tratar document_id numérico o string
+        point_id = int(document_id) if document_id.isdigit() else document_id
+
+        payload = {
+            "title": req.title,
+            "category": req.category,
+            "content": req.content,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "filename": f"{req.title.lower().replace(' ', '_')}.md"
+        }
+
+        client.upsert(
+            collection_name="marketing_brain",
+            points=[PointStruct(id=point_id, vector=vector, payload=payload)]
+        )
+
+        return {
+            "status": "success",
+            "message": f"Documento #{document_id} actualizado en Qdrant con nuevos vectores de embedding.",
+            "document": {
+                "id": point_id,
+                "title": req.title,
+                "category": req.category,
+                "content": req.content,
+            }
+        }
+    except Exception as exc:
+        logger.error(f"Error actualizando documento en Qdrant: {exc}")
+        raise HTTPException(status_code=500, detail=f"Error al actualizar documento Qdrant: {exc}")
+
+
+@router.delete("/system/qdrant/documents/{document_id}", status_code=status.HTTP_200_OK)
+async def delete_qdrant_document(document_id: str):
+    """Elimina un documento vectorial de la colección 'marketing_brain' en Qdrant."""
+    try:
+        from qdrant_client import QdrantClient
+        from qdrant_client.models import PointIdsList
+
+        client = QdrantClient(url=QDRANT_URL)
+        point_id = int(document_id) if document_id.isdigit() else document_id
+
+        client.delete(
+            collection_name="marketing_brain",
+            points_selector=PointIdsList(points=[point_id])
+        )
+
+        return {
+            "status": "success",
+            "message": f"Documento #{document_id} eliminado exitosamente de Qdrant.",
+            "deleted_id": point_id
+        }
+    except Exception as exc:
+        logger.error(f"Error eliminando documento de Qdrant: {exc}")
+        raise HTTPException(status_code=500, detail=f"Error al eliminar documento de Qdrant: {exc}")
