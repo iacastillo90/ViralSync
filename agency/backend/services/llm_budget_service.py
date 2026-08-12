@@ -48,6 +48,14 @@ def track_llm_token_usage(
         r = redis.Redis.from_url(REDIS_URL, socket_timeout=1.0)
         redis_key = f"llm_spend:{tenant_id}"
         new_total = r.incrbyfloat(redis_key, cost_usd)
+        
+        # Incrementar contadores dinámicos por modelo para el dashboard de LiteLLM
+        m_key = model_name.lower().replace(" ", "-")
+        r.incrby(f"llm_usage:{m_key}:tokens", prompt_tokens + completion_tokens)
+        r.incrby(f"llm_usage:{m_key}:rpd", 1)
+        r.incrby(f"llm_usage:{m_key}:tpm", prompt_tokens + completion_tokens)
+        r.incrby(f"llm_usage:{m_key}:rpm", 1)
+
         logger.info(f"[{tenant_id}] Consumo acumulado atómico en Redis: ${new_total:.6f} USD")
     except Exception as redis_err:
         # Pass-open por diseño: Redis es de resiliencia, no crítico para el flujo.

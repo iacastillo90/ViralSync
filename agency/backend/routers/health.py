@@ -274,6 +274,23 @@ async def get_system_llm_stats():
         },
     ]
 
+    try:
+        import redis
+        r = redis.Redis.from_url(REDIS_URL, socket_timeout=1.0)
+        for model in models_info:
+            m_id = model["id"].lower().replace(" ", "-")
+            rpd_val = r.get(f"llm_usage:{m_id}:rpd")
+            tpm_val = r.get(f"llm_usage:{m_id}:tpm")
+            rpm_val = r.get(f"llm_usage:{m_id}:rpm")
+            if rpd_val:
+                model["rpd_current"] = int(rpd_val)
+            if tpm_val:
+                model["tpm_current"] = int(tpm_val)
+            if rpm_val:
+                model["rpm_current"] = int(rpm_val)
+    except Exception as redis_err:
+        logger.debug(f"Redis no disponible para lectura de métricas LLM: {redis_err}")
+
     tool_assignments = [
         {"tool": "Ideación 4 Cuadrantes & RUM", "model": "Gemini 3.5 Flash Lite", "quota": "500 RPD"},
         {"tool": "Búsqueda Tendencias en Vivo", "model": "Google Search Grounding", "quota": "1,500 Búsquedas/día"},
