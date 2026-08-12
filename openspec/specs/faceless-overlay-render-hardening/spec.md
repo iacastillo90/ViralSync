@@ -34,5 +34,11 @@ El sistema DEBE propagar la URL presignada de la imagen del producto desde el no
 ### REQ-FOR-02: Renderizado Continuo con Fallback Animado
 Si la API de Pexels no retorna clips o falla la conexión a internet, el sistema DEBE generar una escena animada vectorial pura utilizando gradientes índigo y la imagen de producto en alta resolución.
 
-### REQ-FOR-03: Sincronización Estricta de Duración
-El video final DEBE cortarse exactamente a la duración del audio sintetizado TTS (`subclip(0, real_duration)`), respetando el límite superior de `max_duration_seconds`.
+### REQ-FOR-03: Sincronización Estricta de Duración (15s, 30s, 45s, 60s)
+El video final DEBE tener una duración total de exactamente 15.0s, 30.0s, 45.0s o 60.0s, ajustando la velocidad del audio TTS y de los clips de video para coincidir con la duración estricta seleccionada.
+
+### REQ-FOR-04: Subtítulos Dinámicos Estilo Karaoke
+El motor de renderizado DEBE destacar la palabra activa siendo pronunciada en tiempo real en amarillo brillante `#FACB15` con contorno negro de 4px, manteniendo palabras previas en blanco y palabras futuras en blanco tenue, sobre un contenedor glassmorphism en el tercio inferior.
+
+### REQ-FOR-05: Fondos B-roll Transicionales Dinámicos
+El sistema DEBE extraer keywords de búsqueda en inglés basadas dinámicamente en el producto/servicio registrado en el formulario (SaaS, audio, fitness, inmobiliaria, restaurantes, etc.) y rotar múltiples shorts verticales de Pexels con transiciones rápidas cada 2.5–3 segundos.

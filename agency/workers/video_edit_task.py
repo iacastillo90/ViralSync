@@ -92,9 +92,19 @@ def trigger_video_render(
     render_payload = director_result.get("render_payload", {})
     curated_metadata = director_result.get("metadata", {})
 
-    # Inyectar la duración objetivo del guion (15s, 20s, 30s, 60s) dinámicamente
-    target_duration = script.get("target_duration") or 30.0
-    render_payload["max_duration_seconds"] = float(target_duration)
+    # Inyectar la duración objetivo estricta del guion (15s, 30s, 45s, 60s)
+    raw_td = float(script.get("target_duration") or idea.get("target_duration") or 30.0)
+    if raw_td <= 20:
+        strict_td = 15.0
+    elif raw_td <= 37:
+        strict_td = 30.0
+    elif raw_td <= 52:
+        strict_td = 45.0
+    else:
+        strict_td = 60.0
+
+    render_payload["target_duration"] = strict_td
+    render_payload["max_duration_seconds"] = strict_td
 
     if product_image_url:
         render_payload["product_image_url"] = product_image_url

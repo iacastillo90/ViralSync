@@ -84,7 +84,8 @@ class RenderRequest(BaseModel):
     tenant_id: Optional[str] = Field(default="default_tenant")
     product_image_url: Optional[str] = Field(default=None, description="URL de la imagen del producto")
     scenes: Optional[List[RenderScene]] = None
-    max_duration_seconds: Optional[float] = Field(default=45.0)
+    target_duration: Optional[float] = Field(default=30.0, description="Duración estricta del video: 15.0, 30.0, 45.0 o 60.0s")
+    max_duration_seconds: Optional[float] = Field(default=30.0)
 
 
 class RenderResponse(BaseModel):
@@ -115,17 +116,22 @@ def audio_duration_seconds(audio_path: str) -> float:
 
 
 def _keywords_from_prompt(visual_prompt: Optional[str], fallback: List[str], context_text: str = "") -> List[str]:
-    """Deriva keywords de búsqueda limpias y temáticas para Pexels API."""
+    """Deriva keywords de búsqueda limpias y temáticas en inglés para Pexels API según el producto/servicio del formulario."""
     combined = f"{context_text} {visual_prompt or ''}".lower()
 
-    # Mapeos temáticos según el nicho/producto detectado
     mappings = [
         (["mic", "microfono", "k688", "fifine", "audio", "sonido", "podcast", "voz"], ["microphone", "podcast", "studio audio"]),
-        (["camara", "video", "foto", "fotografia"], ["camera", "filmmaking", "studio"]),
-        (["software", "saas", "app", "codigo", "dev", "b2b", "ia", "tecnologia"], ["coding", "laptop", "technology"]),
-        (["gym", "fitness", "entrenamiento", "deporte"], ["fitness", "workout", "gym"]),
-        (["moda", "ropa", "zapatillas", "outfit", "estilo"], ["fashion", "clothing", "style"]),
-        (["comida", "restaurante", "cocina"], ["food", "cooking", "restaurant"]),
+        (["camara", "video", "foto", "fotografia"], ["camera lens", "filmmaking", "photographer"]),
+        (["software", "saas", "app", "codigo", "dev", "b2b", "ia", "tecnologia", "sistema", "plataforma"], ["coding laptop", "technology workspace", "digital software"]),
+        (["gym", "fitness", "entrenamiento", "deporte", "ejercicio", "musculo"], ["fitness workout", "gym training", "athlete"]),
+        (["moda", "ropa", "zapatillas", "outfit", "estilo", "calzado", "tienda"], ["fashion style", "clothing store", "outfit"]),
+        (["comida", "restaurante", "cocina", "receta", "cafe", "gastronomia"], ["delicious food", "restaurant kitchen", "chef cooking"]),
+        (["inmobiliaria", "casa", "departamento", "propiedad", "bienes raices"], ["modern house", "luxury apartment", "real estate"]),
+        (["belleza", "skincare", "cosmeticos", "maquillaje", "piel", "estetica"], ["skincare beauty", "cosmetics model", "spa wellness"]),
+        (["finanzas", "dinero", "inversion", "banco", "cripto", "negocio"], ["finance money", "business meeting", "investment stock"]),
+        (["auto", "carro", "vehiculo", "moto", "mecanica"], ["modern car", "driving highway", "automotive"]),
+        (["mascota", "perro", "gato", "veterinaria"], ["cute dog", "cat pet", "veterinary"]),
+        (["viaje", "turismo", "hotel", "playa", "vacaciones"], ["travel destination", "beach vacation", "tourist resort"]),
     ]
 
     for triggers, target_kw in mappings:
@@ -144,7 +150,7 @@ def _keywords_from_prompt(visual_prompt: Optional[str], fallback: List[str], con
         "ultra", "detailed", "focus", "lighting", "shot", "hero", "with", "and"
     }
     meaningful = [w for w in words if w.lower() not in stop_words]
-    return meaningful[:3] if meaningful else (fallback or ["business"])
+    return meaningful[:3] if meaningful else (fallback or ["business workspace", "technology"])
 
 
 def _scene_duration_seconds(scene: RenderScene, audio_path: str) -> float:
@@ -389,14 +395,14 @@ def draw_overlay_on_image(
     t: float = 0.0,
     duration: float = 5.0
 ) -> Image.Image:
-    """Superpone tarjeta de producto flotante y subtítulo con badge sobre la imagen base del video."""
+    """Superpone tarjeta de producto flotante y subtítulos estilo Karaoke dinámicos sobre la imagen base del video."""
     width, height = base_img.size
     img = base_img.convert("RGBA")
 
-    # 1. Tarjeta flotante de producto (tercio superior: y=260..680)
+    # 1. Tarjeta flotante de producto (tercio superior: y=240..660)
     if prod_img:
         try:
-            card_size = 420
+            card_size = 400
             progress = min(max(t / max(duration, 0.1), 0.0), 1.0)
             zoom = 1.0 + 0.04 * np.sin(progress * np.pi)
             cur_w = int(card_size * zoom)
@@ -405,7 +411,7 @@ def draw_overlay_on_image(
             p_rgba = prod_img.copy().convert("RGBA").resize((cur_w, cur_h), Image.Resampling.LANCZOS)
 
             pos_x = (width - cur_w) // 2
-            pos_y = 260 + (card_size - cur_h) // 2
+            pos_y = 240 + (card_size - cur_h) // 2
 
             card_bg = Image.new("RGBA", (cur_w + 30, cur_h + 30), (0, 0, 0, 0))
             card_draw = ImageDraw.Draw(card_bg)
@@ -421,68 +427,112 @@ def draw_overlay_on_image(
         except Exception as exc:
             logger.warning(f"Error renderizando tarjeta de producto sobre video: {exc}")
 
-    # 2. Subtítulo badge en el tercio inferior (y=1450)
+    # 2. Subtítulo dinámico estilo Karaoke en el tercio inferior (y=1420)
     if text:
         try:
-            lines = textwrap.wrap(text, width=28)
-            font_size = 46
-            font_paths = [
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-            ]
-            font = None
-            use_ttf = False
-            for fp in font_paths:
-                if os.path.exists(fp):
-                    try:
-                        font = ImageFont.truetype(fp, font_size)
-                        use_ttf = True
+            clean_text = text.strip()
+            words = clean_text.split()
+            if words:
+                font_size = 48
+                font_paths = [
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+                ]
+                font = None
+                for fp in font_paths:
+                    if os.path.exists(fp):
+                        try:
+                            font = ImageFont.truetype(fp, font_size)
+                            break
+                        except Exception:
+                            pass
+                if not font:
+                    font = ImageFont.load_default()
+
+                # Índice de la palabra activa en tiempo t
+                progress = min(max(t / max(duration, 0.001), 0.0), 1.0)
+                active_idx = min(int(progress * len(words)), len(words) - 1)
+
+                # Agrupar palabras en líneas de 4 palabras
+                words_per_line = 4
+                lines = []
+                for i in range(0, len(words), words_per_line):
+                    lines.append((i, words[i:i + words_per_line]))
+
+                # Determinar qué línea contiene la palabra activa
+                active_line_idx = 0
+                for idx, (start_word_i, line_words) in enumerate(lines):
+                    if start_word_i <= active_idx < start_word_i + len(line_words):
+                        active_line_idx = idx
                         break
-                    except Exception:
-                        pass
-            if not font:
-                font = ImageFont.load_default()
 
-            line_height = 58
-            badge_w = 960
-            badge_h = len(lines) * line_height + 40
-            badge_x = (width - badge_w) // 2
-            badge_y = 1450 - (badge_h // 2)
+                # Mostrar hasta 2 líneas a la vez alrededor de la línea activa
+                visible_lines = lines[max(0, active_line_idx - 1): min(len(lines), active_line_idx + 2)]
 
-            sub_badge = Image.new("RGBA", (badge_w, badge_h), (0, 0, 0, 0))
-            sub_draw = ImageDraw.Draw(sub_badge)
-            sub_draw.rounded_rectangle(
-                [(0, 0), (badge_w, badge_h)],
-                radius=24,
-                fill=(15, 23, 42, 230),
-                outline=(250, 204, 21, 240),
-                width=3,
-            )
+                badge_w = 980
+                line_height = 64
+                badge_h = len(visible_lines) * line_height + 44
+                badge_x = (width - badge_w) // 2
+                badge_y = 1420 - (badge_h // 2)
 
-            for idx, line in enumerate(lines):
-                ly = 25 + idx * line_height
-                text_color = (250, 204, 21, 255) if idx == 0 else (255, 255, 255, 255)
-                if use_ttf:
-                    bbox = sub_draw.textbbox((0, 0), line, font=font)
-                    tw = bbox[2] - bbox[0]
-                    tx = (badge_w - tw) // 2
-                    sub_draw.text((tx, ly), line, font=font, fill=text_color, stroke_width=2, stroke_fill=(0, 0, 0))
-                else:
-                    bbox = sub_draw.textbbox((0, 0), line, font=font)
-                    tw = bbox[2] - bbox[0]
-                    tx = (badge_w - tw) // 2
-                    sub_draw.text((tx, ly), line, font=font, fill=text_color)
+                sub_badge = Image.new("RGBA", (badge_w, badge_h), (0, 0, 0, 0))
+                sub_draw = ImageDraw.Draw(sub_badge)
+                sub_draw.rounded_rectangle(
+                    [(0, 0), (badge_w, badge_h)],
+                    radius=26,
+                    fill=(15, 23, 42, 230),
+                    outline=(250, 204, 21, 240),
+                    width=4,
+                )
 
-            img.paste(sub_badge, (badge_x, badge_y), sub_badge)
+                # Dibujar palabras con destacado en amarillo para la palabra activa (Karaoke)
+                for l_offset, (start_word_i, line_words) in enumerate(visible_lines):
+                    ly = 22 + l_offset * line_height
+                    
+                    word_widths = []
+                    for w in line_words:
+                        bbox = sub_draw.textbbox((0, 0), w, font=font)
+                        word_widths.append(bbox[2] - bbox[0])
+                    
+                    space_w = 14
+                    total_line_w = sum(word_widths) + space_w * (len(line_words) - 1)
+                    cur_x = (badge_w - total_line_w) // 2
+
+                    for w_offset, (w, w_w) in enumerate(zip(line_words, word_widths)):
+                        global_w_idx = start_word_i + w_offset
+                        if global_w_idx == active_idx:
+                            # Palabra ACTIVA (Karaoke Highlight): Amarillo brillante con bordes negros gruesos
+                            fill_c = (250, 204, 21, 255)
+                            sw = 4
+                        elif global_w_idx < active_idx:
+                            # Palabra YA HABLADA: Blanco puro
+                            fill_c = (255, 255, 255, 255)
+                            sw = 2
+                        else:
+                            # Palabra FUTURA: Blanco suave / gris claro
+                            fill_c = (210, 215, 225, 230)
+                            sw = 2
+
+                        sub_draw.text(
+                            (cur_x, ly),
+                            w,
+                            font=font,
+                            fill=fill_c,
+                            stroke_width=sw,
+                            stroke_fill=(0, 0, 0, 255),
+                        )
+                        cur_x += w_w + space_w
+
+                img.paste(sub_badge, (badge_x, badge_y), sub_badge)
         except Exception as exc:
-            logger.warning(f"Error renderizando subtítulos sobre video: {exc}")
+            logger.warning(f"Error renderizando subtítulos karaoke sobre video: {exc}")
 
     return img.convert("RGB")
 
 
 def compose_scenes_video_moviepy(segments: List[dict], output_path: str, total_duration: float) -> float:
-    """Compone el video por escenas concatenando clips 9:16 de Pexels con overlay de producto y subtítulo."""
+    """Compone el video por escenas concatenando clips 9:16 de Pexels con overlay de producto y subtítulo Karaoke animado."""
     from moviepy.editor import (
         AudioFileClip,
         VideoFileClip,
@@ -490,8 +540,9 @@ def compose_scenes_video_moviepy(segments: List[dict], output_path: str, total_d
         concatenate_audioclips,
         concatenate_videoclips,
     )
+    from moviepy.audio.fx.all import speedx as audio_speedx
 
-    logger.info(f"Componiendo video por escenas con MoviePy ({len(segments)} escenas)...")
+    logger.info(f"Componiendo video por escenas con MoviePy ({len(segments)} escenas, Duración objetivo estricta: {total_duration:.2f}s)...")
     video_clips = []
     audio_clips = []
     TARGET_W, TARGET_H = 1080, 1920
@@ -521,6 +572,17 @@ def compose_scenes_video_moviepy(segments: List[dict], output_path: str, total_d
             except Exception as e:
                 logger.warning(f"No se pudo descargar imagen de producto: {e}")
 
+        # 1. Ajuste del clip de audio de la escena a la duración exacta seg_duration
+        try:
+            a_clip = AudioFileClip(seg["audio_path"])
+            if a_clip.duration > 0 and abs(a_clip.duration - seg_duration) > 0.05:
+                # Ajustar velocidad del audio para coincidir con la duración estricta
+                a_clip = a_clip.fx(audio_speedx, a_clip.duration / seg_duration)
+            audio_clips.append(a_clip)
+        except Exception as exc:
+            logger.warning(f"Error procesando audio {seg.get('audio_path')}: {exc}")
+
+        # 2. Clips de video de la escena (Shorts transicionales de Pexels)
         block = []
         for path in seg["video_paths"]:
             try:
@@ -542,24 +604,25 @@ def compose_scenes_video_moviepy(segments: List[dict], output_path: str, total_d
                 _pimg = prod_img_obj
                 _dur = seg_duration
 
-                def _overlay_fn(frame, txt=_txt, p_img=_pimg, dur=_dur):
+                def _make_overlay_frame(gf, t, txt=_txt, p_img=_pimg, dur=_dur):
                     try:
+                        frame = gf(t)
                         base = Image.fromarray(frame)
                         if base.size != (TARGET_W, TARGET_H):
                             base = base.resize((TARGET_W, TARGET_H), Image.Resampling.LANCZOS)
-                        out_img = draw_overlay_on_image(base, txt, p_img, 0.0, dur)
+                        out_img = draw_overlay_on_image(base, txt, p_img, t, dur)
                         return np.array(out_img)
                     except Exception as exc:
-                        logger.warning(f"Error en _overlay_fn: {exc}")
-                        return frame
+                        logger.warning(f"Error en _make_overlay_frame: {exc}")
+                        return gf(t)
 
-                sub_clip = sub_clip.fl_image(_overlay_fn)
+                sub_clip = sub_clip.fl(_make_overlay_frame)
                 block.append(sub_clip)
             except Exception as exc:
                 logger.warning(f"Error procesando clip {path}: {exc}")
 
         if not block:
-            logger.info("Generando escena animada de fallback con imagen de producto y subtítulos...")
+            logger.info("Generando escena animada de fallback con imagen de producto y subtítulos karaoke...")
             _txt2 = scene_text
             _pimg2 = prod_img_obj
             _dur2 = seg_duration
@@ -573,21 +636,15 @@ def compose_scenes_video_moviepy(segments: List[dict], output_path: str, total_d
             block.append(v_clip)
 
         video_clips.extend(block)
-        audio_clips.append(AudioFileClip(seg["audio_path"]))
 
     final_video = concatenate_videoclips(video_clips, method="chain")
     final_audio = concatenate_audioclips(audio_clips) if len(audio_clips) > 1 else audio_clips[0]
 
-    real_duration = final_audio.duration if (final_audio and hasattr(final_audio, "duration") and final_audio.duration > 0) else total_duration
-
-    if final_video.duration > real_duration:
-        logger.info(f"Recortando línea de tiempo del video de {final_video.duration:.2f}s a la duración real del audio ({real_duration:.2f}s)...")
-        final_video = final_video.subclip(0, real_duration)
-
+    # Forzar duración objetivo ESTRICTA (15s, 30s, 45s, 60s)
     final_video = final_video.set_audio(final_audio)
-    final_video = final_video.set_duration(real_duration)
+    final_video = final_video.set_duration(total_duration)
 
-    logger.info(f"Renderizando archivo final por escenas en {output_path} (Duración real del audio: {real_duration:.2f}s)...")
+    logger.info(f"Renderizando archivo final por escenas en {output_path} (Duración estricta: {total_duration:.2f}s)...")
     final_video.write_videofile(
         output_path,
         fps=24,
@@ -606,14 +663,23 @@ def compose_scenes_video_moviepy(segments: List[dict], output_path: str, total_d
 
     return total_duration
 
-async def _render_scene_pipeline(req: RenderRequest, temp_dir: str, output_mp4_path: str) -> float:
-    """Pipeline de render por escenas (REQ-VSR-03/04/05, D3).
 
-    Por cada escena: TTS con `tts_voice` (o DEFAULT_VOICE), b-roll con keywords
-    derivadas de `visual_prompt` (o las del payload) y per_page=2, duración
-    `duration_s` o largo natural del TTS. Se concatena en orden y se capa el
-    total a `min(suma, max_duration_seconds or 45.0)`.
-    """
+async def _render_scene_pipeline(req: RenderRequest, temp_dir: str, output_mp4_path: str) -> float:
+    """Pipeline de render por escenas con duración objetivo estricta (15s, 30s, 45s, 60s)."""
+    raw_target = float(req.target_duration or req.max_duration_seconds or 30.0)
+    # Sanear duraciones a uno de los 4 valores estrictos (15s, 30s, 45s, 60s)
+    if raw_target <= 20:
+        strict_duration = 15.0
+    elif raw_target <= 37:
+        strict_duration = 30.0
+    elif raw_target <= 52:
+        strict_duration = 45.0
+    else:
+        strict_duration = 60.0
+
+    num_scenes = len(req.scenes) if req.scenes else 1
+    per_scene_duration = strict_duration / num_scenes
+
     scene_audios: List[str] = []
     scene_clip_lists: List[List[str]] = []
     scene_durations: List[float] = []
@@ -621,29 +687,28 @@ async def _render_scene_pipeline(req: RenderRequest, temp_dir: str, output_mp4_p
     for idx, scene in enumerate(req.scenes):
         voice = scene.tts_voice or DEFAULT_VOICE
         scene_audio = os.path.join(temp_dir, f"scene_{idx}.mp3")
-        logger.info(f"[{req.tenant_id}] Escena {idx + 1} ('{scene.block}') — TTS con voz '{voice}'")
+        logger.info(f"[{req.tenant_id}] Escena {idx + 1}/{num_scenes} ('{scene.block}') — TTS con voz '{voice}' (Objetivo: {per_scene_duration:.2f}s)")
         await generate_speech_audio(scene.text, scene_audio, voice)
         scene_audios.append(scene_audio)
 
         scene_keywords = _keywords_from_prompt(scene.visual_prompt, req.keywords, f"{req.title} {scene.text}")
         logger.info(f"[{req.tenant_id}] Escena {idx + 1} — búsqueda Pexels con keywords {scene_keywords}")
-        scene_clips = await asyncio.to_thread(download_pexels_videos, scene_keywords, temp_dir, per_page=2)
+        scene_clips = await asyncio.to_thread(download_pexels_videos, scene_keywords, temp_dir, per_page=3)
         scene_clip_lists.append(scene_clips)
 
-        scene_durations.append(_scene_duration_seconds(scene, scene_audio))
+        scene_durations.append(per_scene_duration)
 
-    total_duration = _scenes_total_duration(scene_durations, req.max_duration_seconds)
     segments = [
         {
             "audio_path": audio_path,
             "video_paths": clip_paths,
-            "duration": duration,
+            "duration": per_scene_duration,
             "text": scene.text,
             "image_url": scene.image_url or req.product_image_url,
         }
-        for audio_path, clip_paths, duration, scene in zip(scene_audios, scene_clip_lists, scene_durations, req.scenes)
+        for audio_path, clip_paths, scene in zip(scene_audios, scene_clip_lists, req.scenes)
     ]
-    return await asyncio.to_thread(compose_scenes_video_moviepy, segments, output_mp4_path, total_duration)
+    return await asyncio.to_thread(compose_scenes_video_moviepy, segments, output_mp4_path, strict_duration)
 
 
 def upload_to_minio(file_path: str, tenant_id: str) -> str:
