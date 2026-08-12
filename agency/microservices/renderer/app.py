@@ -420,51 +420,6 @@ def generate_scene_frame(
     return np.array(img)
 
 
-def draw_overlay_on_image(
-    base_img: Image.Image,
-    text: str,
-    prod_img: Optional[Image.Image] = None,
-    t: float = 0.0,
-    duration: float = 5.0
-) -> Image.Image:
-    """Superpone tarjeta de producto flotante y subtítulos estilo Karaoke dinámicos sobre la imagen base del video."""
-    width, height = base_img.size
-    img = base_img.convert("RGBA")
-
-    # 1. Tarjeta flotante de producto (tercio superior: y=240..660)
-    if prod_img:
-        try:
-            card_size = 400
-            progress = min(max(t / max(duration, 0.1), 0.0), 1.0)
-            zoom = 1.0 + 0.04 * np.sin(progress * np.pi)
-            cur_w = int(card_size * zoom)
-            cur_h = int(card_size * zoom)
-
-            p_rgba = prod_img.copy().convert("RGBA").resize((cur_w, cur_h), Image.Resampling.LANCZOS)
-
-            pos_x = (width - cur_w) // 2
-            pos_y = 240 + (card_size - cur_h) // 2
-
-            card_bg = Image.new("RGBA", (cur_w + 30, cur_h + 30), (0, 0, 0, 0))
-            card_draw = ImageDraw.Draw(card_bg)
-            card_draw.rounded_rectangle(
-                [(0, 0), (cur_w + 30, cur_h + 30)],
-                radius=28,
-                fill=(15, 23, 42, 220),
-                outline=(250, 204, 21, 240),
-                width=4,
-            )
-            img.paste(card_bg, (pos_x - 15, pos_y - 15), card_bg)
-            img.paste(p_rgba, (pos_x, pos_y), p_rgba)
-        except Exception as exc:
-            logger.warning(f"Error renderizando tarjeta de producto sobre video: {exc}")
-
-    # 2. Subtítulo dinámico estilo Karaoke en el tercio inferior (y=1420)
-    if text:
-        try:
-            clean_text = text.strip()
-            words = clean_text.split()
-            if words:
 _CACHED_FONT = None
 
 def _get_subtitle_font(font_size: int = 48):
