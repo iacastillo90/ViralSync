@@ -95,10 +95,50 @@ class RenderResponse(BaseModel):
     duration_seconds: float
 
 
-async def generate_speech_audio(text: str, output_path: str, voice: str = DEFAULT_VOICE) -> str:
-    """Genera un archivo de audio .mp3 usando Microsoft Edge TTS."""
-    logger.info(f"Generando narración Edge-TTS con voz '{voice}'...")
-    communicate = edge_tts.Communicate(text, voice)
+async def generate_speech_audio(
+    text: str, output_path: str, voice: str = DEFAULT_VOICE, target_duration: Optional[float] = None
+) -> str:
+    """Genera un archivo de audio .mp3 usando Microsoft Edge TTS con ajuste dinámico de ritmo de voz (rate)."""
+    rate_str = "+0%"
+    if target_duration and target_duration > 0:
+        # Calcular margen de silencio dinámico según duración objetivo
+        if target_duration <= 15.0:
+            silence_pad = 2.0
+        elif target_duration <= 30.0:
+            silence_pad = 3.0
+        elif target_duration <= 45.0:
+            silence_pad = 4.0
+        else:
+            silence_pad = 5.0
+
+        target_speech_dur = max(target_duration - silence_pad, 5.0)
+
+        # Medir duración natural en archivo temporal
+        temp_audio = output_path + ".tmp.mp3"
+        try:
+            comm_test = edge_tts.Communicate(text, voice)
+            await comm_test.save(temp_audio)
+            natural_dur = audio_duration_seconds(temp_audio)
+            if natural_dur > 0:
+                speed_ratio = natural_dur / target_speech_dur
+                rate_percent = int(round((speed_ratio - 1.0) * 100))
+                # Limitar ajuste entre -30% (ralentizar) y +35% (acelerar)
+                rate_percent = max(min(rate_percent, 35), -30)
+                rate_str = f"{'+' if rate_percent >= 0 else ''}{rate_percent}%"
+                logger.info(
+                    f"Ajuste dinámico TTS: Duración natural {natural_dur:.1f}s -> Objetivo {target_speech_dur:.1f}s (Silencio final: {silence_pad}s). Rate: {rate_str}"
+                )
+        except Exception as exc:
+            logger.warning(f"No se pudo pre-calcular duración natural TTS: {exc}")
+        finally:
+            if os.path.exists(temp_audio):
+                try:
+                    os.remove(temp_audio)
+                except Exception:
+                    pass
+
+    logger.info(f"Generando narración Edge-TTS con voz '{voice}' y ritmo '{rate_str}'...")
+    communicate = edge_tts.Communicate(text, voice, rate=rate_str)
     await communicate.save(output_path)
     logger.info(f"Audio generado exitosamente en {output_path}")
     return output_path
@@ -179,8 +219,8 @@ def download_pexels_videos(keywords: List[str], temp_dir: str, per_page: int = 3
 
     headers = {"Authorization": PEXELS_API_KEY}
     query = "+".join(keywords) if keywords else "business+technology"
-    random_page = random.randint(1, 4)
-    url = f"https://api.pexels.com/videos/search?query={query}&orientation=portrait&per_page={per_page}&page={random_page}"
+    random_page = random.randint(1, 10)
+    url = f"https://api.pexels.com/videos/search?query={query}&orientation=portrait&per_page=15&page={random_page}"
 
     try:
         response = requests.get(url, headers=headers, timeout=10.0)
@@ -188,20 +228,22 @@ def download_pexels_videos(keywords: List[str], temp_dir: str, per_page: int = 3
         videos = data.get("videos", [])
 
         if not videos:
-            url = f"https://api.pexels.com/videos/search?query={query}&orientation=portrait&per_page={per_page}&page=1"
+            url = f"https://api.pexels.com/videos/search?query={query}&orientation=portrait&per_page=15&page=1"
             response = requests.get(url, headers=headers, timeout=10.0)
             if response.status_code == 200:
                 videos = response.json().get("videos", [])
 
         if videos:
-            for idx, video in enumerate(videos[:per_page]):
+            random.shuffle(videos)
+            selected_videos = videos[:per_page]
+            for idx, video in enumerate(selected_videos):
                 video_files = video.get("video_files", [])
                 light_file = next((vf for vf in video_files if 720 <= vf.get("height", 0) <= 1080), None) or (video_files[0] if video_files else None)
                 if light_file and light_file.get("link"):
                     video_url = light_file["link"]
                     short_uuid = uuid.uuid4().hex[:6]
                     file_path = os.path.join(temp_dir, f"pexels_clip_{short_uuid}_{idx}.mp4")
-                    logger.info(f"Filtro Hardware (720p): Descargando clip Pexels {idx + 1} ({query}, pag {random_page})...")
+                    logger.info(f"Pexels API Video #{idx + 1} (Query: '{query}', Pag: {random_page}, ID: {video.get('id')}): {video_url[:70]}...")
                     with requests.get(video_url, stream=True, timeout=15.0) as r:
                         r.raise_for_status()
                         with open(file_path, "wb") as f:
@@ -862,7 +904,7 @@ async def render_video_endpoint(req: RenderRequest):
     try:
         # 1. Generar audio con Edge-TTS
         report_render_progress(req.tenant_id, "audio", "Sintetizando voz en español con Edge-TTS...", 25)
-        await generate_speech_audio(req.script_text, audio_path)
+        await generate_speech_audio(req.script_text, audio_path, target_duration=req.target_duration)
 
         # 2. Descargar clips de Pexels API en hilo secundario (Non-blocking I/O)
         report_render_progress(req.tenant_id, "broll", "Buscando y descargando clips B-roll 720p desde Pexels...", 50)

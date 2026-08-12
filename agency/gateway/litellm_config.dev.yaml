@@ -3,31 +3,31 @@
 # Estrategia: Gemini 3.5 Flash Lite (500 RPD) -> Gemini 3.1 Flash Lite (500 RPD) -> Gemini 3.5 Flash -> Groq -> OpenRouter -> Ollama.
 
 model_list:
-  # ── Primarios con Cuota Alta (500 RPD / 15 RPM) ──────────────────── #
-  - model_name: gemini-flash-lite-35
+  # ── Primarios con Cuota Alta en Google AI Studio (Gemini 2.0 & 1.5) ─── #
+  - model_name: gemini-flash-20
     litellm_params:
-      model: gemini/gemini-3.5-flash-lite
+      model: gemini/gemini-2.0-flash
       api_key: "os.environ/GEMINI_API_KEY"
 
-  - model_name: gemini-flash-lite-31
+  - model_name: gemini-flash-15
     litellm_params:
-      model: gemini/gemini-3.1-flash-lite
+      model: gemini/gemini-1.5-flash
       api_key: "os.environ/GEMINI_API_KEY"
 
   - model_name: motor-agencia
     litellm_params:
-      model: gemini/gemini-3.5-flash-lite
+      model: gemini/gemini-2.0-flash
       api_key: "os.environ/GEMINI_API_KEY"
 
-  # ── Secundarios (20 RPD / 5 RPM) ─────────────────────────────────── #
-  - model_name: gemini-flash-35
+  # ── Secundarios (Gemini 1.5 Flash 8B & Gemini 1.5 Pro) ──────────────── #
+  - model_name: gemini-flash-8b
     litellm_params:
-      model: gemini/gemini-3.5-flash
+      model: gemini/gemini-1.5-flash-8b
       api_key: "os.environ/GEMINI_API_KEY"
 
-  - model_name: gemini-flash-36
+  - model_name: gemini-pro-15
     litellm_params:
-      model: gemini/gemini-3.6-flash
+      model: gemini/gemini-1.5-pro
       api_key: "os.environ/GEMINI_API_KEY"
 
   # ── Fallbacks Ultra-Rápidos con Cuota Alta en Groq (14,400 RPD) ─── #
