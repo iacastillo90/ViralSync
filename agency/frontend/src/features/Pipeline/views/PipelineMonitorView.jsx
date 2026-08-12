@@ -6,6 +6,7 @@ import { useSSEStream } from "@/hooks/useSSEStream";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Activity, Play } from "lucide-react";
+import ProductIngestModal from "@/components/ProductIngestModal";
 
 export function PipelineMonitorView({ tenantId }) {
   const { nodes, logs, addLog } = useAgentStore();
@@ -45,6 +46,8 @@ export function PipelineMonitorView({ tenantId }) {
           <Play className="w-4 h-4 fill-current" /> Iniciar Hilo de Grafo
         </button>
       </div>
+
+      <ProductIngestModal />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-5">
