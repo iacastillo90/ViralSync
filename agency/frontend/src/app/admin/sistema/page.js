@@ -54,6 +54,11 @@ export default function AdminSistemaPage() {
   const [selectedTenantFilter, setSelectedTenantFilter] = useState("all");
   const [expandedLogId, setExpandedLogId] = useState(null);
 
+  // Paginación y filtro del Registro de Errores LLM
+  const [errorCurrentPage, setErrorCurrentPage] = useState(1);
+  const [errorsPerPage, setErrorsPerPage] = useState(5);
+  const [errorSearchQuery, setErrorSearchQuery] = useState("");
+
   // Formulario de ingesta de conocimiento en Qdrant
   const [newDocTitle, setNewDocTitle] = useState("");
   const [newDocCategory, setNewDocCategory] = useState("Marketing Digital");
@@ -402,54 +407,160 @@ export default function AdminSistemaPage() {
             })}
           </div>
 
-          {/* Registro de Errores LLM & Fallbacks */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 mt-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-md font-bold flex items-center gap-2 text-slate-200">
-                <AlertTriangle className="w-4 h-4 text-rose-400" /> Registro de Errores LLM & Fallbacks
-              </h2>
-              <button
-                onClick={fetchErrors}
-                className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1 rounded transition-colors"
-              >
-                Actualizar
-              </button>
+          {/* Registro de Errores LLM & Fallbacks con Paginación y Buscador */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 mt-6 space-y-4">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+              <div>
+                <h2 className="text-md font-bold flex items-center gap-2 text-slate-200">
+                  <AlertTriangle className="w-4 h-4 text-rose-400" /> Registro de Errores LLM & Fallbacks ({llmErrors.length})
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Historial de fallos de proveedores, errores 429 de límite de tasa y conmutaciones automáticas
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <div className="relative flex-1 md:w-64">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Filtrar por modelo o error..."
+                    value={errorSearchQuery}
+                    onChange={(e) => {
+                      setErrorSearchQuery(e.target.value);
+                      setErrorCurrentPage(1);
+                    }}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-rose-500 font-mono"
+                  />
+                </div>
+                <button
+                  onClick={fetchErrors}
+                  className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg transition-colors font-semibold shrink-0"
+                >
+                  🔄 Actualizar
+                </button>
+              </div>
             </div>
 
             {loadingErrors ? (
               <p className="text-xs text-slate-400">Cargando historial...</p>
-            ) : llmErrors.length === 0 ? (
-              <p className="text-xs text-slate-400">No hay errores recientes registrados en los proveedores LLM. El sistema está saludable.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs text-slate-300">
-                  <thead className="bg-slate-950/50 text-slate-400">
-                    <tr>
-                      <th className="px-3 py-2 font-semibold">Timestamp</th>
-                      <th className="px-3 py-2 font-semibold">Modelo / Proveedor</th>
-                      <th className="px-3 py-2 font-semibold">Error Detallado</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/50">
-                    {llmErrors.map((err, idx) => (
-                      <tr key={idx} className="hover:bg-slate-800/20 transition-colors">
-                        <td className="px-3 py-3 font-mono text-[10px] whitespace-nowrap text-slate-400">
-                          {new Date(err.timestamp).toLocaleString()}
-                        </td>
-                        <td className="px-3 py-3">
-                          <span className="bg-rose-950/30 text-rose-300 border border-rose-500/20 px-2 py-0.5 rounded font-mono font-medium">
-                            {err.model}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3 font-mono text-[10px] break-words text-rose-400/80">
-                          {err.error}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            ) : (() => {
+              const filteredErrors = llmErrors.filter((err) => {
+                if (!errorSearchQuery.trim()) return true;
+                const q = errorSearchQuery.toLowerCase();
+                return (
+                  (err.model || "").toLowerCase().includes(q) ||
+                  (err.error || "").toLowerCase().includes(q)
+                );
+              });
+
+              if (filteredErrors.length === 0) {
+                return (
+                  <p className="text-xs text-slate-400 italic py-4 text-center bg-slate-950/40 rounded-xl border border-slate-800/80">
+                    {errorSearchQuery.trim()
+                      ? `No se encontraron errores que coincidan con "${errorSearchQuery}".`
+                      : "No hay errores recientes registrados en los proveedores LLM. El sistema está saludable."}
+                  </p>
+                );
+              }
+
+              const totalPages = Math.ceil(filteredErrors.length / errorsPerPage);
+              const currentPage = Math.min(errorCurrentPage, totalPages);
+              const startIndex = (currentPage - 1) * errorsPerPage;
+              const currentErrors = filteredErrors.slice(startIndex, startIndex + errorsPerPage);
+
+              return (
+                <div className="space-y-3">
+                  <div className="overflow-x-auto border border-slate-800/80 rounded-xl">
+                    <table className="w-full text-left text-xs text-slate-300">
+                      <thead className="bg-slate-950/80 text-slate-400 border-b border-slate-800">
+                        <tr>
+                          <th className="px-4 py-2.5 font-semibold">Timestamp</th>
+                          <th className="px-4 py-2.5 font-semibold">Modelo / Proveedor</th>
+                          <th className="px-4 py-2.5 font-semibold">Detalle del Error / Respuesta</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/50 bg-slate-950">
+                        {currentErrors.map((err, idx) => (
+                          <tr key={idx} className="hover:bg-slate-900/60 transition-colors">
+                            <td className="px-4 py-3 font-mono text-[10px] whitespace-nowrap text-slate-400">
+                              {new Date(err.timestamp).toLocaleString("es-ES")}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className="bg-rose-950/50 text-rose-300 border border-rose-500/30 px-2 py-1 rounded-md font-mono text-[11px] font-bold">
+                                {err.model}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 font-mono text-[11px] break-words text-rose-400/90 leading-relaxed">
+                              {err.error}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Barra de Controles de Paginación */}
+                  <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-2 text-xs text-slate-400">
+                    <div className="flex items-center gap-2">
+                      <span>Filas por página:</span>
+                      <select
+                        value={errorsPerPage}
+                        onChange={(e) => {
+                          setErrorsPerPage(Number(e.target.value));
+                          setErrorCurrentPage(1);
+                        }}
+                        className="bg-slate-950 border border-slate-800 text-xs text-slate-200 rounded px-2 py-1 font-mono focus:outline-none focus:border-rose-500"
+                      >
+                        <option value={5}>5</option>
+                        <option value={10}>10</option>
+                        <option value={20}>20</option>
+                        <option value={50}>50</option>
+                      </select>
+                      <span className="text-slate-500 text-[11px]">
+                        Mostrando {startIndex + 1}-{Math.min(startIndex + errorsPerPage, filteredErrors.length)} de {filteredErrors.length}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setErrorCurrentPage(1)}
+                        disabled={currentPage === 1}
+                        className="px-2.5 py-1 rounded bg-slate-950 border border-slate-800 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed font-mono transition-colors"
+                      >
+                        ⏮️
+                      </button>
+                      <button
+                        onClick={() => setErrorCurrentPage((prev) => Math.max(prev - 1, 1))}
+                        disabled={currentPage === 1}
+                        className="px-2.5 py-1 rounded bg-slate-950 border border-slate-800 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed font-mono transition-colors"
+                      >
+                        ◀️ Anterior
+                      </button>
+
+                      <div className="flex items-center gap-1 px-2 font-mono text-xs font-bold text-slate-200">
+                        <span>Página {currentPage} de {totalPages}</span>
+                      </div>
+
+                      <button
+                        onClick={() => setErrorCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                        disabled={currentPage === totalPages}
+                        className="px-2.5 py-1 rounded bg-slate-950 border border-slate-800 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed font-mono transition-colors"
+                      >
+                        Siguiente ▶️
+                      </button>
+                      <button
+                        onClick={() => setErrorCurrentPage(totalPages)}
+                        disabled={currentPage === totalPages}
+                        className="px-2.5 py-1 rounded bg-slate-950 border border-slate-800 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed font-mono transition-colors"
+                      >
+                        ⏭️
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Modal Interactivo de Monitoreo LiteLLM */}
