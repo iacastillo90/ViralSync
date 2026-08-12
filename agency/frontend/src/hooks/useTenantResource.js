@@ -23,6 +23,9 @@ export function useTenantResource(endpoint, tenantId) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [trigger, setTrigger] = useState(0);
+
+  const refresh = () => setTrigger((prev) => prev + 1);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -45,14 +48,19 @@ export function useTenantResource(endpoint, tenantId) {
       { signal: controller.signal },
       tenantId
     )
-      .then((payload) => setData(payload))
+      .then((payload) => {
+        if (payload) setData(payload);
+      })
       .catch((err) => {
-        if (err.name !== "AbortError") setError(err);
+        if (err.name !== "AbortError") {
+          console.warn(`[useTenantResource] Reintento automático en /${endpoint}:`, err.message);
+          setError(err);
+        }
       })
       .finally(() => setLoading(false));
 
     return () => controller.abort();
-  }, [endpoint, tenantId]);
+  }, [endpoint, tenantId, trigger]);
 
-  return { data, loading, error };
+  return { data, loading, error, refresh };
 }
