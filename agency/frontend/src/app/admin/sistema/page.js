@@ -19,15 +19,20 @@ import {
   Radio,
   Zap,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 
 export default function AdminSistemaPage() {
-  const { tenantId } = useAgentStore();
+  const { tenantId, setTenantId } = useAgentStore();
+  const router = useRouter();
   const [llmErrors, setLlmErrors] = useState([]);
   const [loadingErrors, setLoadingErrors] = useState(true);
   const [showLiteLLMModal, setShowLiteLLMModal] = useState(false);
+  const [showWorkersModal, setShowWorkersModal] = useState(false);
   const [llmStats, setLlmStats] = useState(null);
+  const [workersData, setWorkersData] = useState(null);
   const [loadingStats, setLoadingStats] = useState(false);
+  const [loadingWorkers, setLoadingWorkers] = useState(false);
   const [activeTab, setActiveTab] = useState("models"); // 'models' | 'trends' | 'tools'
 
   const fetchErrors = async () => {
@@ -58,12 +63,28 @@ export default function AdminSistemaPage() {
     }
   };
 
+  const fetchWorkersStatus = async () => {
+    setLoadingWorkers(true);
+    try {
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace("/api/v1", "");
+      const res = await fetch(`${baseUrl}/system/workers-status`);
+      const data = await res.json();
+      setWorkersData(data);
+    } catch (err) {
+      console.error("Error fetching workers status:", err);
+    } finally {
+      setLoadingWorkers(false);
+    }
+  };
+
   useEffect(() => {
     fetchErrors();
     fetchLLMStats();
+    fetchWorkersStatus();
     const interval = setInterval(() => {
       fetchErrors();
       fetchLLMStats();
+      fetchWorkersStatus();
     }, 15000);
     return () => clearInterval(interval);
   }, []);
@@ -75,8 +96,16 @@ export default function AdminSistemaPage() {
       status: "ONLINE",
       detail: "Pool gratuito (Gemini 3.5 Flash Lite 1000 RPD / Groq / SambaNova) activo",
       clickable: true,
+      type: "litellm",
     },
-    { name: "Celery Workers", icon: Server, status: "ONLINE", detail: "Redis broker conectado (--concurrency=1 dev)", clickable: false },
+    {
+      name: "Celery Workers & Tenants",
+      icon: Server,
+      status: "ONLINE",
+      detail: "Redis broker conectado (--concurrency=1 dev) • Ver Tenants Asociados",
+      clickable: true,
+      type: "celery",
+    },
     { name: "Qdrant Vector DB", icon: Database, status: "ONLINE", detail: "Colección marketing_brain 1.19.0", clickable: false },
     { name: "SearXNG Engine", icon: Server, status: "ONLINE", detail: "Búsqueda web sanitizada activa", clickable: false },
   ];
@@ -101,25 +130,33 @@ export default function AdminSistemaPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {services.map((s) => {
               const Icon = s.icon;
-              const isLiteLLM = s.clickable;
+              const isClickable = s.clickable;
               return (
                 <div
                   key={s.name}
                   onClick={() => {
-                    if (isLiteLLM) {
+                    if (s.type === "litellm") {
                       setShowLiteLLMModal(true);
                       fetchLLMStats();
+                    } else if (s.type === "celery") {
+                      setShowWorkersModal(true);
+                      fetchWorkersStatus();
                     }
                   }}
                   className={`bg-slate-900 border rounded-xl p-5 space-y-3 transition-all ${
-                    isLiteLLM
+                    isClickable
                       ? "border-indigo-500/50 hover:border-indigo-400 cursor-pointer shadow-lg shadow-indigo-500/10 hover:shadow-indigo-500/20 group relative overflow-hidden"
                       : "border-slate-800"
                   }`}
                 >
-                  {isLiteLLM && (
+                  {s.type === "litellm" && (
                     <span className="absolute -top-1 -right-1 bg-indigo-600 text-white text-[9px] font-bold px-3 py-1 rounded-bl-xl flex items-center gap-1 shadow-md">
                       <BarChart2 className="w-3 h-3" /> VER METRICAS & MODELOS &rarr;
+                    </span>
+                  )}
+                  {s.type === "celery" && (
+                    <span className="absolute -top-1 -right-1 bg-emerald-600 text-white text-[9px] font-bold px-3 py-1 rounded-bl-xl flex items-center gap-1 shadow-md">
+                      <Server className="w-3 h-3" /> VER WORKERS & TENANTS &rarr;
                     </span>
                   )}
                   <div className="flex justify-between items-center">
@@ -131,10 +168,16 @@ export default function AdminSistemaPage() {
                     </span>
                   </div>
                   <p className="text-xs text-slate-400">{s.detail}</p>
-                  {isLiteLLM && (
+                  {s.type === "litellm" && (
                     <div className="pt-2 flex items-center gap-2 text-[11px] text-indigo-400 font-semibold">
                       <Activity className="w-3.5 h-3.5 animate-pulse" />
                       Haz clic para abrir el monitor de RPM, TPM, RPD y cuotas por modelo.
+                    </div>
+                  )}
+                  {s.type === "celery" && (
+                    <div className="pt-2 flex items-center gap-2 text-[11px] text-emerald-400 font-semibold">
+                      <Server className="w-3.5 h-3.5 animate-pulse" />
+                      Haz clic para ver los Celery Workers y la lista de Tenants asociados.
                     </div>
                   )}
                 </div>
@@ -421,6 +464,148 @@ export default function AdminSistemaPage() {
                       </div>
                     </div>
                   )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Interactivo Celery Workers & Tenants */}
+          {showWorkersModal && (
+            <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                {/* Header del Modal */}
+                <div className="p-6 border-b border-slate-800 bg-slate-900/90 flex justify-between items-center">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+                      <Server className="w-6 h-6 text-emerald-400" /> Celery Workers & Tenants Asociados
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Monitoreo de Infraestructura de Procesamiento Async & Aislamiento por Tenant
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowWorkersModal(false)}
+                    className="text-xs text-slate-400 hover:text-slate-100 bg-slate-800 p-2 rounded-xl border border-slate-700 transition-colors"
+                  >
+                    ✕ Cerrar
+                  </button>
+                </div>
+
+                <div className="p-6 space-y-6 overflow-y-auto flex-1">
+                  {/* Tarjetas de Estadísticas Principales */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
+                      <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Estado Celery
+                      </div>
+                      <div className="text-lg font-mono font-bold text-emerald-300">
+                        {workersData?.celery_status || "ONLINE"}
+                      </div>
+                    </div>
+                    <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
+                      <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
+                        <Layers className="w-3.5 h-3.5 text-indigo-400" /> Tenants Registrados
+                      </div>
+                      <div className="text-2xl font-mono font-bold text-indigo-300">
+                        {workersData?.tenants_count || 1}
+                      </div>
+                    </div>
+                    <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
+                      <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
+                        <Radio className="w-3.5 h-3.5 text-sky-400" /> Broker Redis
+                      </div>
+                      <div className="text-xs font-mono font-bold text-sky-300 truncate mt-1">
+                        redis:6379/0
+                      </div>
+                    </div>
+                    <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
+                      <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
+                        <Zap className="w-3.5 h-3.5 text-amber-400" /> Concurrencia
+                      </div>
+                      <div className="text-sm font-mono font-bold text-amber-300 mt-1">
+                        --concurrency=1 (Dev)
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Sección de Tenants Asociados */}
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-indigo-400" /> Tenants Registrados y Asociados al Sistema
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {(workersData?.tenants || []).map((t) => (
+                        <div
+                          key={t.id}
+                          className="bg-slate-950 border border-slate-800 hover:border-indigo-500/50 rounded-xl p-5 space-y-3 transition-all"
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <h4 className="font-bold text-slate-100 text-sm">{t.name}</h4>
+                              <p className="text-xs text-indigo-400 font-mono mt-0.5">ID: {t.id}</p>
+                            </div>
+                            <span className="bg-emerald-950 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded text-[10px] font-mono font-bold">
+                              {t.status || "ACTIVO"}
+                            </span>
+                          </div>
+
+                          <div className="text-xs space-y-1 text-slate-400 border-t border-slate-900 pt-2">
+                            <div><strong>Nicho / Industria:</strong> {t.niche}</div>
+                            <div><strong>Presupuesto LLM Mensual:</strong> ${t.budget_usd || 20.0} USD</div>
+                            {t.created_at && (
+                              <div className="text-[10px] text-slate-500">
+                                🕒 Creado: {new Date(t.created_at).toLocaleString("es-ES")}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="pt-2">
+                            <button
+                              onClick={() => {
+                                setTenantId(t.id);
+                                setShowWorkersModal(false);
+                                router.push(`/tenants/${t.id}`);
+                              }}
+                              className="w-full bg-slate-900 hover:bg-indigo-950/80 border border-slate-800 hover:border-indigo-500/50 text-indigo-300 text-xs font-bold py-2 rounded-lg transition-all flex items-center justify-center gap-1.5"
+                            >
+                              🚀 Ir al Dashboard de {t.name} &rarr;
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Sección de Tareas Async Celery */}
+                  <div className="space-y-3 pt-4 border-t border-slate-800">
+                    <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                      <Activity className="w-4 h-4 text-emerald-400" /> Tareas Async en Colas Redis
+                    </h3>
+                    <div className="overflow-x-auto border border-slate-800 rounded-xl">
+                      <table className="w-full text-left text-xs text-slate-300">
+                        <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
+                          <tr>
+                            <th className="px-4 py-2.5 font-semibold">Tarea Celery</th>
+                            <th className="px-4 py-2.5 font-semibold">Cola Redis</th>
+                            <th className="px-4 py-2.5 font-semibold">Descripción del Job</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60 bg-slate-900">
+                          {(workersData?.tasks_supported || []).map((task, idx) => (
+                            <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
+                              <td className="px-4 py-2.5 font-mono text-indigo-300 font-bold">{task.task}</td>
+                              <td className="px-4 py-2.5">
+                                <span className="bg-slate-950 text-slate-300 border border-slate-800 px-2 py-0.5 rounded text-[10px] font-mono font-bold">
+                                  {task.queue}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5 text-slate-400">{task.description}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
