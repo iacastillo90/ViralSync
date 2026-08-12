@@ -683,6 +683,7 @@ export default function AdminSistemaPage() {
                               </td>
                               <td className="px-4 py-2.5 text-slate-400">{task.description}</td>
                             </tr>
+                          ))}
                         </tbody>
                       </table>
                     </div>
