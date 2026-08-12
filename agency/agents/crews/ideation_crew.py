@@ -6,6 +6,7 @@ Crew de Ideación de ViralSync (CrewAI):
 2. Diseñador RUM: Evalúa las variables RUM y aplica el gate del Filtro 5/50.
 """
 
+import re
 import json
 import logging
 from typing import List, Dict, Any
@@ -40,8 +41,14 @@ async def run_ideation_crew(niche: str, market_map: Dict[str, Any]) -> List[Dict
             "Responde ÚNICAMENTE con un array JSON válido sin bloques markdown ```json ... ``` ni texto adicional."
         )
 
+        product_context = ""
+        product_name = market_map.get("product_name")
+        if product_name:
+            product_context = f"\nProducto/Servicio principal: {product_name}\nDescripción del producto: {market_map.get('product_description', '')}\n"
+
         user_prompt = (
             f"Nicho: {niche}\n"
+            f"{product_context}"
             f"Tendencias actuales del mercado (SearXNG):\n{json.dumps(trends, ensure_ascii=False)}\n\n"
             f"Mapa de Mercado:\n{json.dumps(market_map, ensure_ascii=False)}\n\n"
             "Genera exactamente 5 ideas en formato JSON con la siguiente estructura por objeto:\n"
@@ -72,20 +79,56 @@ async def run_ideation_crew(niche: str, market_map: Dict[str, Any]) -> List[Dict
             )
         ).strip()
 
-        if content.startswith("```"):
-            content = content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        # Limpieza robusta del JSON, ya que algunos LLM incluyen texto antes o después
+        match = re.search(r'\[\s*\{.*\}\s*\]', content, re.DOTALL)
+        if match:
+            content = match.group(0)
+        else:
+            # Intento secundario: limpiar bloques markdown
+            if "```" in content:
+                parts = content.split("```")
+                for p in parts:
+                    if p.strip().startswith("json"):
+                        content = p.strip()[4:].strip()
+                        break
+                    elif p.strip().startswith("["):
+                        content = p.strip()
+                        break
+                        
         parsed = json.loads(content)
         if isinstance(parsed, list) and len(parsed) > 0:
             candidate_ideas = parsed
     except Exception as exc:
         logger.warning(f"Router LLM no disponible o error en respuesta ({exc}). Usando fallback dinámico.")
 
-    # Fallback dinámico si no se obtuvieron ideas por LLM
+    # Fallback si el LLM falla por completo en devolver algo
     if not candidate_ideas:
-        candidate_ideas = [
+        pass
+
+    # 3. Aplicar filtro 5/50 y cálculo del score RUM
+    processed_ideas = []
+    for idea in candidate_ideas:
+        if passes_5_50_filter(idea):
+            metrics = {
+                "universalidad": idea.get("universalidad", 0.80),
+                "intensidad": idea.get("intensidad", 0.80),
+                "claridad": idea.get("claridad", 0.80),
+                "shareability": idea.get("shareability", 0.80),
+                "distribucion": idea.get("distribucion", 0.80),
+                "alineacion": idea.get("alineacion", 0.80),
+            }
+            idea["rum_score"] = calculate_rum_score(metrics)
+            idea["passes_5_50"] = True
+            processed_ideas.append(idea)
+
+    # Si ninguna idea del LLM superó el filtro, usar el fallback dinámico
+    if not processed_ideas:
+        logger.warning(f"Ninguna idea superó el filtro 5/50. Usando fallback dinámico.")
+        target_name = market_map.get("product_name") or niche
+        fallback_ideas = [
             {
-                "texto": f"3 Errores Críticos al Escalar {niche} en 2026",
-                "gancho": f"Si trabajas en {niche}, deja de cometer este error hoy mismo",
+                "texto": f"3 Errores Críticos al usar {target_name} en 2026",
+                "gancho": f"Si tienes un {target_name}, deja de cometer este error hoy mismo",
                 "entendible_nino_5_anos": True,
                 "interesa_50_de_100": True,
                 "universalidad": 0.85,
@@ -96,8 +139,8 @@ async def run_ideation_crew(niche: str, market_map: Dict[str, Any]) -> List[Dict
                 "alineacion": 0.90,
             },
             {
-                "texto": f"La Verdad Incómoda sobre {niche} que Nadie Te Dice",
-                "gancho": f"Por esto el 90% de los proyectos en {niche} fracasan antes del año",
+                "texto": f"La Verdad Incómoda sobre {target_name} que Nadie Te Dice",
+                "gancho": f"Por esto el 90% de las personas usan mal su {target_name}",
                 "entendible_nino_5_anos": True,
                 "interesa_50_de_100": True,
                 "universalidad": 0.80,
@@ -108,11 +151,7 @@ async def run_ideation_crew(niche: str, market_map: Dict[str, Any]) -> List[Dict
                 "alineacion": 0.85,
             },
         ]
-
-    # 3. Aplicar filtro 5/50 y cálculo del score RUM
-    processed_ideas = []
-    for idea in candidate_ideas:
-        if passes_5_50_filter(idea):
+        for idea in fallback_ideas:
             metrics = {
                 "universalidad": idea.get("universalidad", 0.80),
                 "intensidad": idea.get("intensidad", 0.80),
