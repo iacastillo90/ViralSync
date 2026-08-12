@@ -683,10 +683,15 @@ export default function AdminSistemaPage() {
                               </td>
                               <td className="px-4 py-2.5 text-slate-400">{task.description}</td>
                             </tr>
-                          ))}
                         </tbody>
                       </table>
                     </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Modal Interactivo Qdrant Vector DB & Alimentación del Cerebro */}
           {showQdrantModal && (
             <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
