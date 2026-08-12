@@ -909,17 +909,17 @@ export default function AdminSistemaPage() {
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {qdrantStats.documents.map((doc) => (
-                          <div key={doc.id} className="bg-slate-950 border border-slate-800 hover:border-purple-500/40 rounded-xl p-4 space-y-3 transition-all flex flex-col justify-between">
-                            <div className="space-y-2">
+                          <div key={doc.id} className="bg-slate-950 border border-slate-800 hover:border-purple-500/50 rounded-xl p-4 space-y-3 transition-all flex flex-col justify-between group">
+                            <div onClick={() => setSelectedDocForView(doc)} className="space-y-2 cursor-pointer">
                               <div className="flex justify-between items-start">
-                                <h4 className="font-bold text-slate-100 text-xs flex items-center gap-1.5">
+                                <h4 className="font-bold text-slate-100 group-hover:text-purple-300 transition-colors text-xs flex items-center gap-1.5">
                                   <Database className="w-3.5 h-3.5 text-purple-400 shrink-0" /> {doc.title}
                                 </h4>
                                 <span className="bg-purple-950/60 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded text-[10px] font-mono shrink-0">
                                   {doc.category}
                                 </span>
                               </div>
-                              <p className="text-[11px] text-slate-400 line-clamp-3 italic font-mono bg-slate-900/60 p-2 rounded-lg border border-slate-800/80">
+                              <p className="text-[11px] text-slate-400 line-clamp-3 italic font-mono bg-slate-900/60 p-2 rounded-lg border border-slate-800/80 group-hover:border-purple-500/30 transition-colors">
                                 "{doc.content || doc.snippet}"
                               </p>
                             </div>
