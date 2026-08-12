@@ -20,10 +20,32 @@ seam ``_call_completion(**kwargs)`` is what unit tests monkeypatch.
 import asyncio
 import logging
 import os
+import json
+from datetime import datetime
 
 import litellm
 
 logger = logging.getLogger(__name__)
+
+def _log_llm_error_to_redis(model: str, error_msg: str):
+    """Logs LLM provider errors to a global Redis list for the Admin Sistema dashboard."""
+    try:
+        import redis
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        client = redis.Redis.from_url(redis_url, socket_timeout=1.0)
+        
+        event = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "model": model,
+            "error": str(error_msg)
+        }
+        
+        # Push to list and trim to keep only the last 50 errors
+        client.lpush("system_llm_errors", json.dumps(event))
+        client.ltrim("system_llm_errors", 0, 49)
+    except Exception as exc:
+        logger.debug("Failed to log LLM error to Redis: %s", exc)
+
 
 # Direct-chain fallback order: (model id, env var holding its API key).
 # Only providers with a configured key are attempted.
@@ -105,6 +127,7 @@ def complete(messages, temperature=0.7, max_tokens=1000, **kwargs):
                 len(providers),
                 exc,
             )
+            _log_llm_error_to_redis(model, str(exc))
     raise AllProvidersFailedError(
         "All LLM providers failed: " + "; ".join(reasons)
     )
