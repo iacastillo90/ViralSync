@@ -79,7 +79,10 @@ class MinIOStorageClient:
             access_key=MINIO_ROOT_USER,
             secret_key=MINIO_ROOT_PASSWORD,
             secure=self.secure,
+            region="us-east-1",
         )
+        self.minio_client._region_map[self.bucket] = "us-east-1"
+        
         # Signer "público" opcional: si MINIO_PUBLIC_ENDPOINT está seteado, las
         # URLs presignadas se firman contra ese host (native signing, sin
         # string-surgery — D-1, SH-01-3).
@@ -90,7 +93,11 @@ class MinIOStorageClient:
                 access_key=MINIO_ROOT_USER,
                 secret_key=MINIO_ROOT_PASSWORD,
                 secure=self.secure,
+                region="us-east-1",
             )
+            # Evita que el SDK intente consultar la región del bucket vía HTTP
+            # usando el endpoint público (el cual es inaccesible desde este contenedor).
+            self._signer_client._region_map[self.bucket] = "us-east-1"
 
     # ── Bucket privado (lazy) ────────────────────────────────────────────────
 
