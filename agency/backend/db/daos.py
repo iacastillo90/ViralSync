@@ -15,7 +15,7 @@ Los dicts de los crews se mapean por whitelist a las columnas reales del DDL
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -224,34 +224,34 @@ async def upsert_product(tenant_id: str, product: Dict[str, Any]) -> Product:
             await session.flush()
 
         name = product.get("name")
-        existing = (
-            await session.execute(
-                select(Product).where(
-                    Product.tenant_id == tenant_id, Product.name == name
-                )
-            )
-        ).scalars().first()
-
         new_object_key = product.get("object_key")
-        if existing is not None:
-            existing.description = product.get("description", existing.description)
-            existing.product_image_url = product.get(
-                "product_image_url", existing.product_image_url
-            )
-            if new_object_key is not None:  # None-safe: conserva la key ya guardada
-                existing.object_key = new_object_key
-            row = existing
-        else:
-            row = Product(
-                id=str(uuid.uuid4()),
-                tenant_id=tenant_id,
-                name=name,
-                description=product.get("description"),
-                product_image_url=product.get("product_image_url"),
-                object_key=new_object_key,
-            )
-            session.add(row)
+
+        # Cada envío del formulario genera una nueva campaña/producto con su ID y marca de tiempo propia
+        row = Product(
+            id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            name=name,
+            description=product.get("description"),
+            product_image_url=product.get("product_image_url"),
+            object_key=new_object_key,
+            created_at=datetime.utcnow(),
+        )
+        session.add(row)
         await session.flush()
         return row
 
+    return await _run_with_commit(_work)
+
+
+async def get_latest_product(tenant_id: str) -> Optional[Product]:
+    """Obtiene el último producto registrado por el tenant."""
+    async def _work(session: AsyncSession) -> Optional[Product]:
+        return (
+            await session.execute(
+                select(Product)
+                .where(Product.tenant_id == tenant_id)
+                .order_by(Product.created_at.desc())
+                .limit(1)
+            )
+        ).scalars().first()
     return await _run_with_commit(_work)
