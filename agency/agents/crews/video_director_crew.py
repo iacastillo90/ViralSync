@@ -103,11 +103,14 @@ def curate_video_metadata(script: Dict[str, Any], idea: Dict[str, Any]) -> Dict[
         "#InteligenciaArtificial",
     ]
 
+    target_duration = script.get("target_duration") or idea.get("target_duration") or 30
+
     return {
         "final_title": final_title,
         "description": description,
         "hashtags": hashtags,
         "full_caption": f"{description}\n\n" + " ".join(hashtags),
+        "target_duration": target_duration,
     }
 
 
