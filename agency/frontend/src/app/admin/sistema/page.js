@@ -50,6 +50,10 @@ export default function AdminSistemaPage() {
   const [isSearchingWeb, setIsSearchingWeb] = useState(false);
   const [activeTab, setActiveTab] = useState("models"); // 'models' | 'trends' | 'tools'
 
+  // Filtros y visor de logs Celery por Tenant
+  const [selectedTenantFilter, setSelectedTenantFilter] = useState("all");
+  const [expandedLogId, setExpandedLogId] = useState(null);
+
   // Formulario de ingesta de conocimiento en Qdrant
   const [newDocTitle, setNewDocTitle] = useState("");
   const [newDocCategory, setNewDocCategory] = useState("Marketing Digital");
@@ -741,20 +745,20 @@ export default function AdminSistemaPage() {
                     </div>
                   </div>
 
-                  {/* Sección de Tenants Asociados */}
+                  {/* Sección de Tenants Registrados & Accesos Directos */}
                   <div className="space-y-4">
                     <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
-                      <ShieldCheck className="w-4 h-4 text-indigo-400" /> Tenants Registrados y Asociados al Sistema
+                      <ShieldCheck className="w-4 h-4 text-indigo-400" /> Tenants Registrados y Módulos Asociados
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {(workersData?.tenants || []).map((t) => (
                         <div
                           key={t.id}
-                          className="bg-slate-950 border border-slate-800 hover:border-indigo-500/50 rounded-xl p-5 space-y-3 transition-all"
+                          className="bg-slate-950 border border-slate-800 hover:border-indigo-500/50 rounded-xl p-5 space-y-3 transition-all group"
                         >
                           <div className="flex justify-between items-start">
                             <div>
-                              <h4 className="font-bold text-slate-100 text-sm">{t.name}</h4>
+                              <h4 className="font-bold text-slate-100 text-sm group-hover:text-indigo-300 transition-colors">{t.name}</h4>
                               <p className="text-xs text-indigo-400 font-mono mt-0.5">ID: {t.id}</p>
                             </div>
                             <span className="bg-emerald-950 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded text-[10px] font-mono font-bold">
@@ -772,27 +776,145 @@ export default function AdminSistemaPage() {
                             )}
                           </div>
 
-                          <div className="pt-2">
+                          {/* Accesos Directos por Módulo sin 404 */}
+                          <div className="pt-2 space-y-2 border-t border-slate-900">
                             <button
                               onClick={() => {
                                 setTenantId(t.id);
                                 setShowWorkersModal(false);
-                                router.push(`/tenants/${t.id}`);
+                                router.push(`/tenants/${t.id}/pipeline`);
                               }}
-                              className="w-full bg-slate-900 hover:bg-indigo-950/80 border border-slate-800 hover:border-indigo-500/50 text-indigo-300 text-xs font-bold py-2 rounded-lg transition-all flex items-center justify-center gap-1.5"
+                              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/20"
                             >
-                              🚀 Ir al Dashboard de {t.name} &rarr;
+                              🚀 Ir al Dashboard Principal de {t.name} &rarr;
                             </button>
+
+                            <div className="flex flex-wrap gap-1 text-[10px]">
+                              <button
+                                onClick={() => {
+                                  setTenantId(t.id);
+                                  setShowWorkersModal(false);
+                                  router.push(`/tenants/${t.id}/pipeline`);
+                                }}
+                                className="bg-slate-900 hover:bg-indigo-950/80 text-indigo-300 border border-slate-800 px-2 py-1 rounded font-mono font-bold"
+                              >
+                                🎬 Pipeline
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setTenantId(t.id);
+                                  setShowWorkersModal(false);
+                                  router.push(`/tenants/${t.id}/cerebro`);
+                                }}
+                                className="bg-slate-900 hover:bg-purple-950/80 text-purple-300 border border-slate-800 px-2 py-1 rounded font-mono font-bold"
+                              >
+                                🧠 Cerebro
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setTenantId(t.id);
+                                  setShowWorkersModal(false);
+                                  router.push(`/tenants/${t.id}/guiones`);
+                                }}
+                                className="bg-slate-900 hover:bg-emerald-950/80 text-emerald-300 border border-slate-800 px-2 py-1 rounded font-mono font-bold"
+                              >
+                                📜 Guiones
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setTenantId(t.id);
+                                  setShowWorkersModal(false);
+                                  router.push(`/tenants/${t.id}/metricas`);
+                                }}
+                                className="bg-slate-900 hover:bg-sky-950/80 text-sky-300 border border-slate-800 px-2 py-1 rounded font-mono font-bold"
+                              >
+                                📊 Métricas 72h
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setTenantId(t.id);
+                                  setShowWorkersModal(false);
+                                  router.push(`/tenants/${t.id}/media`);
+                                }}
+                                className="bg-slate-900 hover:bg-amber-950/80 text-amber-300 border border-slate-800 px-2 py-1 rounded font-mono font-bold"
+                              >
+                                🎥 Media
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  {/* Sección de Tareas Async Celery */}
+                  {/* Visor de Logs de Celery por Tenant */}
+                  <div className="space-y-4 pt-4 border-t border-slate-800">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                        <Activity className="w-4 h-4 text-emerald-400" /> Visor de Logs de Celery por Tenant
+                      </h3>
+                      <select
+                        value={selectedTenantFilter}
+                        onChange={(e) => setSelectedTenantFilter(e.target.value)}
+                        className="bg-slate-950 border border-slate-800 text-xs text-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500 font-mono"
+                      >
+                        <option value="all">🔍 Todos los Tenants</option>
+                        {(workersData?.tenants || []).map((t) => (
+                          <option key={t.id} value={t.id}>
+                            🏢 {t.name} ({t.id.slice(0, 8)})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      {((workersData?.recent_task_logs || []).filter(
+                        (log) => selectedTenantFilter === "all" || log.tenant_id === selectedTenantFilter
+                      )).length === 0 ? (
+                        <p className="text-xs text-slate-400 italic">No hay ejecuciones registradas para el filtro seleccionado.</p>
+                      ) : (
+                        (workersData?.recent_task_logs || [])
+                          .filter((log) => selectedTenantFilter === "all" || log.tenant_id === selectedTenantFilter)
+                          .map((log) => {
+                            const isExpanded = expandedLogId === log.task_id;
+                            return (
+                              <div key={log.task_id} className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden">
+                                <div
+                                  onClick={() => setExpandedLogId(isExpanded ? null : log.task_id)}
+                                  className="p-3 bg-slate-900/60 hover:bg-slate-800/40 cursor-pointer flex justify-between items-center transition-colors text-xs"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <span className="bg-emerald-950 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded text-[10px] font-mono font-bold">
+                                      {log.status}
+                                    </span>
+                                    <div>
+                                      <span className="font-mono font-bold text-slate-200">{log.task_name}</span>
+                                      <div className="text-[10px] text-slate-400">
+                                        Tenant: <strong className="text-indigo-300">{log.tenant_name}</strong> • Cola: <span className="font-mono text-slate-300">{log.queue}</span> • Duración: <span className="font-mono text-amber-300">{log.duration_sec}s</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <button className="text-xs text-slate-400 hover:text-slate-100 font-mono">
+                                    {isExpanded ? "▲ Ocultar Log" : "▼ Ver Log Terminal"}
+                                  </button>
+                                </div>
+
+                                {isExpanded && (
+                                  <div className="p-4 bg-slate-950 border-t border-slate-800 text-[11px] font-mono text-emerald-400 whitespace-pre-wrap leading-relaxed shadow-inner">
+                                    {log.log_output}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Sección de Tareas Async Celery Soportadas */}
                   <div className="space-y-3 pt-4 border-t border-slate-800">
                     <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
-                      <Activity className="w-4 h-4 text-emerald-400" /> Tareas Async en Colas Redis
+                      <Zap className="w-4 h-4 text-amber-400" /> Definición de Tareas Async en Colas Redis
                     </h3>
                     <div className="overflow-x-auto border border-slate-800 rounded-xl">
                       <table className="w-full text-left text-xs text-slate-300">
