@@ -29,6 +29,9 @@ class AgencyState(TypedDict, total=False):
     idea_approved: bool
     idea_rejected: bool
     script: Dict[str, Any]
+    target_duration: int
+    product_name: str
+    product_description: str
     product_image_url: str
     # PERSIST-05-1 / D-5: key estable del objeto en MinIO (no la URL presignada).
     # Viaja del request → state → node_ideation (persiste) → node_video_edit
