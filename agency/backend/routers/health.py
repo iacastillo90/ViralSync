@@ -33,7 +33,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Health Check"])
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
+_raw_qdrant = os.getenv("QDRANT_URL", "http://localhost:6333")
+QDRANT_URL = _raw_qdrant if _raw_qdrant.startswith("http://") or _raw_qdrant.startswith("https://") else f"http://{_raw_qdrant}"
 
 # Per-probe timeout caps (seconds), env-overridable so operators can tune them.
 DATABASE_TIMEOUT_SECONDS = float(os.getenv("HEALTH_DATABASE_TIMEOUT", "2"))
@@ -336,3 +337,127 @@ async def get_system_workers_status():
             {"task": "webhook_dlq_task.process_failed_webhook_retry", "queue": "webhooks", "description": "Reintentos de Webhooks Instagram DLQ"},
         ],
     }
+
+
+def _generate_vector_embedding(text: str) -> list[float]:
+    """Genera vector de embedding determinista (384-dim) para pruebas local/dev en Qdrant."""
+    import hashlib
+    vec = []
+    for i in range(384):
+        h = hashlib.sha256(f"{text}:{i}".encode("utf-8")).hexdigest()
+        val = (int(h[:8], 16) / 0xFFFFFFFF) * 2.0 - 1.0
+        vec.append(val)
+    return vec
+
+
+class QdrantKnowledgeIngestRequest(BaseModel):
+    title: str
+    category: str = "Marketing Digital"
+    content: str
+
+
+@router.get("/system/qdrant/stats", status_code=status.HTTP_200_OK)
+async def get_qdrant_stats():
+    """Consulta la colección 'marketing_brain' en Qdrant y devuelve estadísticas e ítems almacenados."""
+    try:
+        from qdrant_client import QdrantClient
+        client = QdrantClient(url=QDRANT_URL)
+
+        collections = [c.name for c in client.get_collections().collections]
+        points_count = 0
+        vectors_info = []
+
+        if "marketing_brain" in collections:
+            count_res = client.count(collection_name="marketing_brain")
+            points_count = count_res.count
+
+            scroll_res = client.scroll(
+                collection_name="marketing_brain",
+                limit=50,
+                with_payload=True,
+                with_vectors=False
+            )
+            for p in scroll_res[0]:
+                payload = p.payload or {}
+                vectors_info.append({
+                    "id": p.id,
+                    "title": payload.get("title") or payload.get("filename") or f"Doc #{p.id}",
+                    "category": payload.get("category", "Marketing Digital"),
+                    "snippet": (payload.get("content") or "")[:140] + "...",
+                    "created_at": payload.get("created_at") or "2026-08-12T00:00:00Z"
+                })
+
+        return {
+            "status": "healthy",
+            "collection_name": "marketing_brain",
+            "points_count": points_count,
+            "vector_dimension": 384,
+            "documents": vectors_info,
+        }
+    except Exception as exc:
+        logger.warning(f"Error consultando estadísticas de Qdrant: {exc}")
+        return {
+            "status": "degraded",
+            "collection_name": "marketing_brain",
+            "points_count": 0,
+            "vector_dimension": 384,
+            "documents": [],
+            "error": str(exc)
+        }
+
+
+@router.post("/system/qdrant/ingest", status_code=status.HTTP_201_CREATED)
+async def ingest_qdrant_knowledge(req: QdrantKnowledgeIngestRequest):
+    """Ingesta un nuevo documento de conocimiento (Marketing, Tendencias, Frameworks) en Qdrant."""
+    if not req.title or not req.content:
+        raise HTTPException(status_code=400, detail="title y content son requeridos")
+
+    try:
+        from qdrant_client import QdrantClient
+        from qdrant_client.models import VectorParams, Distance, PointStruct
+
+        client = QdrantClient(url=QDRANT_URL)
+        collections = [c.name for c in client.get_collections().collections]
+
+        if "marketing_brain" not in collections:
+            client.create_collection(
+                collection_name="marketing_brain",
+                vectors_config=VectorParams(size=384, distance=Distance.COSINE),
+            )
+
+        vector = _generate_vector_embedding(req.content)
+        point_id = int(time.time() * 1000) % 2000000000
+
+        payload = {
+            "title": req.title,
+            "category": req.category,
+            "content": req.content,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "filename": f"{req.title.lower().replace(' ', '_')}.md"
+        }
+
+        client.upsert(
+            collection_name="marketing_brain",
+            points=[PointStruct(id=point_id, vector=vector, payload=payload)]
+        )
+
+        try:
+            knowledge_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "knowledge")
+            os.makedirs(knowledge_dir, exist_ok=True)
+            filepath = os.path.join(knowledge_dir, payload["filename"])
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(f"# {req.title}\n\n**Categoría:** {req.category}\n\n{req.content}\n")
+        except Exception as file_exc:
+            logger.warning(f"No se pudo guardar copia local del archivo md: {file_exc}")
+
+        count_res = client.count(collection_name="marketing_brain")
+
+        return {
+            "status": "success",
+            "message": f"Documento '{req.title}' indexado exitosamente en Qdrant 'marketing_brain'",
+            "point_id": point_id,
+            "total_points_count": count_res.count
+        }
+    except Exception as exc:
+        logger.error(f"Error ingestando conocimiento en Qdrant: {exc}")
+        raise HTTPException(status_code=500, detail=f"Error al indexar en Qdrant: {exc}")

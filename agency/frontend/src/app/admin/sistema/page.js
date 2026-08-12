@@ -29,11 +29,21 @@ export default function AdminSistemaPage() {
   const [loadingErrors, setLoadingErrors] = useState(true);
   const [showLiteLLMModal, setShowLiteLLMModal] = useState(false);
   const [showWorkersModal, setShowWorkersModal] = useState(false);
+  const [showQdrantModal, setShowQdrantModal] = useState(false);
   const [llmStats, setLlmStats] = useState(null);
   const [workersData, setWorkersData] = useState(null);
+  const [qdrantStats, setQdrantStats] = useState(null);
   const [loadingStats, setLoadingStats] = useState(false);
   const [loadingWorkers, setLoadingWorkers] = useState(false);
+  const [loadingQdrant, setLoadingQdrant] = useState(false);
   const [activeTab, setActiveTab] = useState("models"); // 'models' | 'trends' | 'tools'
+
+  // Formulario de ingesta de conocimiento en Qdrant
+  const [newDocTitle, setNewDocTitle] = useState("");
+  const [newDocCategory, setNewDocCategory] = useState("Marketing Digital");
+  const [newDocContent, setNewDocContent] = useState("");
+  const [isIngestingVector, setIsIngestingVector] = useState(false);
+  const [ingestSuccessMsg, setIngestSuccessMsg] = useState("");
 
   const fetchErrors = async () => {
     setLoadingErrors(true);
@@ -77,14 +87,63 @@ export default function AdminSistemaPage() {
     }
   };
 
+  const fetchQdrantStats = async () => {
+    setLoadingQdrant(true);
+    try {
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace("/api/v1", "");
+      const res = await fetch(`${baseUrl}/system/qdrant/stats`);
+      const data = await res.json();
+      setQdrantStats(data);
+    } catch (err) {
+      console.error("Error fetching Qdrant stats:", err);
+    } finally {
+      setLoadingQdrant(false);
+    }
+  };
+
+  const handleIngestQdrantDocument = async (e) => {
+    e.preventDefault();
+    if (!newDocTitle.trim() || !newDocContent.trim()) {
+      alert("Por favor ingresa un título y el contenido del conocimiento.");
+      return;
+    }
+    setIsIngestingVector(true);
+    setIngestSuccessMsg("");
+    try {
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace("/api/v1", "");
+      const res = await fetch(`${baseUrl}/system/qdrant/ingest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: newDocTitle,
+          category: newDocCategory,
+          content: newDocContent,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Error al indexar documento");
+
+      setIngestSuccessMsg(`¡Éxito! "${newDocTitle}" fue vectorizado e indexado correctamente.`);
+      setNewDocTitle("");
+      setNewDocContent("");
+      fetchQdrantStats();
+    } catch (err) {
+      alert(`Error al alimentar Qdrant: ${err.message}`);
+    } finally {
+      setIsIngestingVector(false);
+    }
+  };
+
   useEffect(() => {
     fetchErrors();
     fetchLLMStats();
     fetchWorkersStatus();
+    fetchQdrantStats();
     const interval = setInterval(() => {
       fetchErrors();
       fetchLLMStats();
       fetchWorkersStatus();
+      fetchQdrantStats();
     }, 15000);
     return () => clearInterval(interval);
   }, []);
@@ -106,7 +165,14 @@ export default function AdminSistemaPage() {
       clickable: true,
       type: "celery",
     },
-    { name: "Qdrant Vector DB", icon: Database, status: "ONLINE", detail: "Colección marketing_brain 1.19.0", clickable: false },
+    {
+      name: "Qdrant Vector DB",
+      icon: Database,
+      status: "ONLINE",
+      detail: "Colección marketing_brain • Alimentar Base Vectorial con Marketing & Frameworks",
+      clickable: true,
+      type: "qdrant",
+    },
     { name: "SearXNG Engine", icon: Server, status: "ONLINE", detail: "Búsqueda web sanitizada activa", clickable: false },
   ];
 
@@ -141,11 +207,16 @@ export default function AdminSistemaPage() {
                     } else if (s.type === "celery") {
                       setShowWorkersModal(true);
                       fetchWorkersStatus();
+                    } else if (s.type === "qdrant") {
+                      setShowQdrantModal(true);
+                      fetchQdrantStats();
                     }
                   }}
                   className={`bg-slate-900 border rounded-xl p-5 space-y-3 transition-all ${
                     isClickable
-                      ? "border-indigo-500/50 hover:border-indigo-400 cursor-pointer shadow-lg shadow-indigo-500/10 hover:shadow-indigo-500/20 group relative overflow-hidden"
+                      ? s.type === "qdrant"
+                        ? "border-purple-500/50 hover:border-purple-400 cursor-pointer shadow-lg shadow-purple-500/10 hover:shadow-purple-500/20 group relative overflow-hidden"
+                        : "border-indigo-500/50 hover:border-indigo-400 cursor-pointer shadow-lg shadow-indigo-500/10 hover:shadow-indigo-500/20 group relative overflow-hidden"
                       : "border-slate-800"
                   }`}
                 >
@@ -157,6 +228,11 @@ export default function AdminSistemaPage() {
                   {s.type === "celery" && (
                     <span className="absolute -top-1 -right-1 bg-emerald-600 text-white text-[9px] font-bold px-3 py-1 rounded-bl-xl flex items-center gap-1 shadow-md">
                       <Server className="w-3 h-3" /> VER WORKERS & TENANTS &rarr;
+                    </span>
+                  )}
+                  {s.type === "qdrant" && (
+                    <span className="absolute -top-1 -right-1 bg-purple-600 text-white text-[9px] font-bold px-3 py-1 rounded-bl-xl flex items-center gap-1 shadow-md">
+                      <Database className="w-3 h-3" /> ALIMENTAR BASE VECTORIAL &rarr;
                     </span>
                   )}
                   <div className="flex justify-between items-center">
@@ -178,6 +254,12 @@ export default function AdminSistemaPage() {
                     <div className="pt-2 flex items-center gap-2 text-[11px] text-emerald-400 font-semibold">
                       <Server className="w-3.5 h-3.5 animate-pulse" />
                       Haz clic para ver los Celery Workers y la lista de Tenants asociados.
+                    </div>
+                  )}
+                  {s.type === "qdrant" && (
+                    <div className="pt-2 flex items-center gap-2 text-[11px] text-purple-400 font-semibold">
+                      <Database className="w-3.5 h-3.5 animate-pulse" />
+                      Haz clic para alimentar Qdrant con documentos de Marketing, Tendencias o Frameworks.
                     </div>
                   )}
                 </div>
@@ -605,6 +687,170 @@ export default function AdminSistemaPage() {
                         </tbody>
                       </table>
                     </div>
+          {/* Modal Interactivo Qdrant Vector DB & Alimentación del Cerebro */}
+          {showQdrantModal && (
+            <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                {/* Header del Modal */}
+                <div className="p-6 border-b border-slate-800 bg-slate-900/90 flex justify-between items-center">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+                      <Database className="w-6 h-6 text-purple-400" /> Administrador de Base Vectorial Qdrant
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Alimentar el Cerebro IA con Frameworks de Marketing Digital, Tendencias y Modelos Persuasivos
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setShowQdrantModal(false);
+                      setIngestSuccessMsg("");
+                    }}
+                    className="text-xs text-slate-400 hover:text-slate-100 bg-slate-800 p-2 rounded-xl border border-slate-700 transition-colors"
+                  >
+                    ✕ Cerrar
+                  </button>
+                </div>
+
+                <div className="p-6 space-y-6 overflow-y-auto flex-1">
+                  {/* Tarjetas de Estadísticas Principales */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
+                      <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
+                        <Database className="w-3.5 h-3.5 text-purple-400" /> Colección Qdrant
+                      </div>
+                      <div className="text-sm font-mono font-bold text-purple-300">
+                        {qdrantStats?.collection_name || "marketing_brain"}
+                      </div>
+                    </div>
+                    <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
+                      <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
+                        <Layers className="w-3.5 h-3.5 text-indigo-400" /> Vectores Guardados
+                      </div>
+                      <div className="text-2xl font-mono font-bold text-indigo-300">
+                        {qdrantStats?.points_count || 0}
+                      </div>
+                    </div>
+                    <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
+                      <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
+                        <Zap className="w-3.5 h-3.5 text-sky-400" /> Dimensión Embeddings
+                      </div>
+                      <div className="text-sm font-mono font-bold text-sky-300 mt-1">
+                        384 (Cosine)
+                      </div>
+                    </div>
+                    <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
+                      <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> RAG Status
+                      </div>
+                      <div className="text-sm font-mono font-bold text-emerald-300 mt-1">
+                        HABILITADO
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Formulario de Alimentación Vectorial (Ingestar Conocimiento) */}
+                  <div className="bg-slate-950 border border-purple-500/30 rounded-xl p-5 space-y-4 shadow-lg shadow-purple-500/5">
+                    <h3 className="text-sm font-bold text-purple-300 flex items-center gap-2 border-b border-slate-800 pb-2">
+                      <Sparkles className="w-4 h-4 text-purple-400" /> Ingestar Nuevo Conocimiento de Marketing
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Sube metodologías, ganchos virales o análisis de tendencias para que todos los agentes (Ideador RUM, Guionista) se alimenten semánticamente de este conocimiento:
+                    </p>
+
+                    <form onSubmit={handleIngestQdrantDocument} className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="md:col-span-2 space-y-1">
+                          <label className="text-[11px] font-semibold text-slate-300">
+                            Título del Documento / Framework *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="Ej: Metodología de Ganchos Virales 2026 para TikTok & Reels"
+                            value={newDocTitle}
+                            onChange={(e) => setNewDocTitle(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-purple-500"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[11px] font-semibold text-slate-300">
+                            Categoría *
+                          </label>
+                          <select
+                            value={newDocCategory}
+                            onChange={(e) => setNewDocCategory(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-purple-500"
+                          >
+                            <option value="Marketing Digital">Marketing Digital</option>
+                            <option value="Tendencias de Mercado">Tendencias de Mercado</option>
+                            <option value="Modelos de Trabajo & Frameworks">Modelos de Trabajo & Frameworks</option>
+                            <option value="Copywriting Persuasivo">Copywriting Persuasivo</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-semibold text-slate-300">
+                          Contenido / Texto del Conocimiento a Vectorizar *
+                        </label>
+                        <textarea
+                          required
+                          rows={4}
+                          placeholder="Escribe o pega aquí el conocimiento clave, reglas de retención de 3 segundos, estructuras de CTA, análisis de audiencia..."
+                          value={newDocContent}
+                          onChange={(e) => setNewDocContent(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs text-slate-100 focus:outline-none focus:border-purple-500 font-mono"
+                        />
+                      </div>
+
+                      {ingestSuccessMsg && (
+                        <div className="bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs p-3 rounded-lg flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                          {ingestSuccessMsg}
+                        </div>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={isIngestingVector}
+                        className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-purple-600/30 flex items-center gap-2 disabled:opacity-50"
+                      >
+                        <Database className="w-4 h-4" />
+                        {isIngestingVector ? "Indexando Vectores en Qdrant..." : "🧠 Ingestar & Indexar en Qdrant"}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Lista de Documentos Vectorizados Existentes */}
+                  <div className="space-y-3 pt-2">
+                    <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-purple-400" /> Documentos Vectorizados en 'marketing_brain' ({qdrantStats?.documents?.length || 0})
+                    </h3>
+
+                    {loadingQdrant ? (
+                      <p className="text-xs text-slate-400">Cargando base vectorial Qdrant...</p>
+                    ) : (qdrantStats?.documents || []).length === 0 ? (
+                      <p className="text-xs text-slate-400">Aún no hay documentos vectorizados. Utiliza el formulario arriba para alimentar el cerebro.</p>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {qdrantStats.documents.map((doc) => (
+                          <div key={doc.id} className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
+                            <div className="flex justify-between items-start">
+                              <h4 className="font-bold text-slate-200 text-xs flex items-center gap-1.5">
+                                <Database className="w-3.5 h-3.5 text-purple-400" /> {doc.title}
+                              </h4>
+                              <span className="bg-purple-950/60 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded text-[10px] font-mono">
+                                {doc.category}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 line-clamp-2 italic font-mono bg-slate-900/60 p-2 rounded-lg">
+                              "{doc.snippet}"
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
