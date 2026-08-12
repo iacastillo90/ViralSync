@@ -6,3 +6,8 @@ use_default_settings: true
 server:
   secret_key: "!SEARXNG_SECRET"
   image_proxy: true
+
+search:
+  formats:
+    - html
+    - json
