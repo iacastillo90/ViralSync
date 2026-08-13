@@ -282,78 +282,112 @@ export function IdeaApprovalView({ tenantId }) {
         onBulkDownload={handleBulkDownload}
       />
 
-      {/* 2. Selector de Carpetas por Producto si no hay carpeta activa */}
-      {!activeFolder && folderList.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-            📁 Carpetas de Productos ({folderList.length})
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {folderList.map((folder) => (
-              <div
-                key={folder.key}
-                onClick={() => setActiveFolder(folder.key)}
-                className="bg-slate-900/90 border border-slate-800 hover:border-indigo-500/60 p-4 rounded-2xl cursor-pointer transition-all hover:shadow-xl group flex items-center gap-3"
-              >
-                <div className="bg-indigo-600/20 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white p-2.5 rounded-xl transition-all">
-                  <Folder className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-slate-100 group-hover:text-indigo-300 transition-colors">
-                    {folder.name}
-                  </h3>
-                  <span className="text-[11px] text-slate-400">
-                    {folder.items.length} {folder.items.length === 1 ? "idea" : "ideas"}
-                  </span>
-                </div>
-              </div>
-            ))}
+      {/* 2. NIVEL 1: Si no se ha ingresado a ninguna carpeta, mostrar la cuadrícula de Carpetas */}
+      {!activeFolder ? (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              📁 Carpetas de Productos y Servicios ({folderList.length})
+            </h2>
+            <span className="text-[11px] text-slate-500 font-medium">
+              Haz clic en una carpeta para abrir y explorar sus propuestas de ideación
+            </span>
           </div>
-        </div>
-      )}
 
-      {/* Migas de pan si hay carpeta activa */}
-      {activeFolder && (
-        <div className="flex items-center justify-between bg-slate-950/60 border border-slate-800 px-4 py-2 rounded-xl text-xs">
-          <button
-            onClick={() => setActiveFolder(null)}
-            className="flex items-center gap-1.5 font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" /> Volver a todas las carpetas
-          </button>
-          <span className="text-slate-400 font-medium flex items-center gap-1.5">
-            <FolderOpen className="w-4 h-4 text-indigo-400" /> Carpeta: <strong>{activeFolder}</strong>
-          </span>
-        </div>
-      )}
+          {loading && localIdeas.length === 0 ? (
+            <div className="flex items-center justify-center gap-3 text-xs text-slate-400 py-12">
+              <Loader2 className="w-5 h-5 animate-spin text-indigo-400" /> Cargando catálogo de ideación...
+            </div>
+          ) : folderList.length === 0 ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center space-y-3">
+              <Folder className="w-12 h-12 text-slate-600 mx-auto" />
+              <h3 className="text-sm font-bold text-slate-300">No hay carpetas de ideación</h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                Genera propuestas desde el formulario inicial para ver carpetas organizadas por producto o servicio.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {folderList.map((folder) => {
+                const count = folder.items.length;
+                const isService = folder.items.some((i) => i.service_name || i.is_service);
+                return (
+                  <div
+                    key={folder.key}
+                    onClick={() => setActiveFolder(folder.key)}
+                    className="group bg-slate-900/90 border border-slate-800 hover:border-indigo-500/70 p-5 rounded-2xl cursor-pointer transition-all hover:shadow-2xl flex flex-col justify-between space-y-3 relative overflow-hidden"
+                  >
+                    {/* Estilo Mac Window Controls */}
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-800/60">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 group-hover:bg-rose-500 transition-colors"></span>
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 group-hover:bg-amber-500 transition-colors"></span>
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 group-hover:bg-emerald-500 transition-colors"></span>
+                      </div>
+                      <span className="bg-indigo-950 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded text-[10px] font-mono font-bold">
+                        {count} {count === 1 ? "propuesta" : "propuestas"}
+                      </span>
+                    </div>
 
-      {/* 3. Renderizado de Ideas en Modo Iconos (Grid) o Modo Lista Lineal */}
-      {loading && localIdeas.length === 0 ? (
-        <div className="flex items-center justify-center gap-3 text-xs text-slate-400 py-12">
-          <Loader2 className="w-5 h-5 animate-spin text-indigo-400" /> Cargando catálogo de ideación...
+                    <div className="flex items-center gap-3 py-1">
+                      <div className="bg-indigo-600/20 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white p-3 rounded-xl transition-all">
+                        <Folder className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-100 group-hover:text-indigo-300 transition-colors">
+                          {folder.name}
+                        </h3>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          {isService ? "🛠️ Servicio" : "📦 Producto"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
-      ) : viewMode === "grid" ? (
-        <IdeationMacGridView
-          ideas={filteredIdeas}
-          selectedIds={selectedIds}
-          onToggleSelect={handleToggleSelect}
-          onEdit={handleOpenEdit}
-          onDelete={handleDeleteIdea}
-          onDownload={handleDownloadIdea}
-          onApprove={handleApproveIdea}
-          onSelectFolder={(folderName) => setActiveFolder(folderName)}
-        />
       ) : (
-        <IdeationMacListView
-          ideas={filteredIdeas}
-          selectedIds={selectedIds}
-          onToggleSelect={handleToggleSelect}
-          onEdit={handleOpenEdit}
-          onDelete={handleDeleteIdea}
-          onDownload={handleDownloadIdea}
-          onApprove={handleApproveIdea}
-          onSelectFolder={(folderName) => setActiveFolder(folderName)}
-        />
+        /* NIVEL 2: DENTRO DE LA CARPETA SELECCIONADA */
+        <div className="space-y-4">
+          <div className="flex items-center justify-between bg-slate-950/80 border border-slate-800 px-4 py-2.5 rounded-xl text-xs shadow-md">
+            <button
+              onClick={() => setActiveFolder(null)}
+              className="flex items-center gap-2 font-bold text-indigo-400 hover:text-indigo-300 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" /> ← Volver a todas las carpetas
+            </button>
+            <span className="text-slate-300 font-semibold flex items-center gap-2">
+              <FolderOpen className="w-4 h-4 text-indigo-400" /> Carpeta Activa: <strong className="text-indigo-300">{activeFolder}</strong> ({filteredIdeas.length} propuestas)
+            </span>
+          </div>
+
+          {/* Renderizado de las ideaciones dentro de la carpeta activa */}
+          {viewMode === "grid" ? (
+            <IdeationMacGridView
+              ideas={filteredIdeas}
+              selectedIds={selectedIds}
+              onToggleSelect={handleToggleSelect}
+              onEdit={handleOpenEdit}
+              onDelete={handleDeleteIdea}
+              onDownload={handleDownloadIdea}
+              onApprove={handleApproveIdea}
+              onSelectFolder={(folderName) => setActiveFolder(folderName)}
+            />
+          ) : (
+            <IdeationMacListView
+              ideas={filteredIdeas}
+              selectedIds={selectedIds}
+              onToggleSelect={handleToggleSelect}
+              onEdit={handleOpenEdit}
+              onDelete={handleDeleteIdea}
+              onDownload={handleDownloadIdea}
+              onApprove={handleApproveIdea}
+              onSelectFolder={(folderName) => setActiveFolder(folderName)}
+            />
+          )}
+        </div>
       )}
 
       {/* 4. Modal Interactivo de Edición y Recálculo Dinámico de Tiempo */}
