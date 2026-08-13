@@ -8,7 +8,7 @@ import { ScriptsMacGridView } from "@/components/scripts/ScriptsMacGridView";
 import { ScriptsMacListView } from "@/components/scripts/ScriptsMacListView";
 import { EditScriptModal } from "@/components/scripts/EditScriptModal";
 import { TranslateScriptModal } from "@/components/scripts/TranslateScriptModal";
-import { Sparkles, Loader2, FolderOpen, ArrowLeft, Folder, Calendar, Wrench, Package, Video, X } from "lucide-react";
+import { Sparkles, Loader2, FolderOpen, ArrowLeft, Folder, Calendar, Wrench, Package, Video, X, CheckCircle2, AlertCircle } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 
 /**
@@ -48,6 +48,9 @@ export function ScriptInspectorView({ tenantId }) {
   const [selectedSort, setSelectedSort] = useState("newest");
   const [selectedIds, setSelectedIds] = useState([]);
   const [activeFolder, setActiveFolder] = useState(null);
+
+  // Estado para Ventana Emergente (Pop-up OK / Error)
+  const [notification, setNotification] = useState(null); // { type: "success" | "error", title: string, message: string }
 
   // Estado del Modal de Edición de Guion
   const [editingScript, setEditingScript] = useState(null);
@@ -280,7 +283,7 @@ export function ScriptInspectorView({ tenantId }) {
     if (!script || !script.id) return;
     setIsTranslating(true);
     try {
-      const res = await fetchWithTenant(
+      const resData = await fetchWithTenant(
         `/tenants/${tenantId}/scripts/${script.id}/translate`,
         {
           method: "POST",
@@ -288,7 +291,7 @@ export function ScriptInspectorView({ tenantId }) {
         },
         tenantId
       );
-      const resData = await res.json();
+
       if (resData && (resData.id || resData.gancho_0_5s)) {
         // Agregar el nuevo guion traducido a la lista local para renderizado instantáneo
         setLocalScripts((prev) => [
@@ -299,10 +302,30 @@ export function ScriptInspectorView({ tenantId }) {
           ...prev,
         ]);
         setIsTranslateModalOpen(false);
+
+        const langLabels = {
+          en: "Inglés (English)",
+          pt: "Portugués (Português)",
+          fr: "Francés (Français)",
+          de: "Alemán (Deutsch)",
+          es: "Español",
+        };
+        const langName = langLabels[targetLang] || targetLang.toUpperCase();
+
+        setNotification({
+          type: "success",
+          title: "¡Guion Traducido con Éxito!",
+          message: `El guion de 4 bloques ha sido adaptado al idioma ${langName} y añadido a tu catálogo de guiones.`,
+        });
+
         refresh();
       }
     } catch (err) {
-      alert(`Error al traducir guion: ${err.message}`);
+      setNotification({
+        type: "error",
+        title: "Error al Traducir Guion",
+        message: err.message || "Ocurrió un error en el motor de traducción del servidor.",
+      });
     } finally {
       setIsTranslating(false);
     }
@@ -314,7 +337,7 @@ export function ScriptInspectorView({ tenantId }) {
     setRenderingScriptTitle(script.gancho_0_5s || script.title || "Guion Viral");
     try {
       const fullText = `${script.gancho_0_5s || ""} ${script.contexto_5_30s || ""} ${script.moraleja_30_50s || ""} ${script.cta_50_60s || ""}`.trim();
-      const res = await fetchWithTenant(
+      const resData = await fetchWithTenant(
         `/tenants/${tenantId}/render`,
         {
           method: "POST",
@@ -327,12 +350,15 @@ export function ScriptInspectorView({ tenantId }) {
         },
         tenantId
       );
-      const resData = await res.json();
       if (resData && resData.video_url) {
         setVideoUrl(resData.video_url);
       }
     } catch (err) {
-      alert(`Error iniciando renderizado: ${err.message}`);
+      setNotification({
+        type: "error",
+        title: "Error al Solicitar Renderizado",
+        message: err.message || "No se pudo conectar con el servicio de renderizado de video.",
+      });
     } finally {
       setIsVideoLoading(false);
     }
@@ -553,6 +579,45 @@ export function ScriptInspectorView({ tenantId }) {
         onTranslate={handleTranslateScript}
         isTranslating={isTranslating}
       />
+
+      {/* Ventana Emergente de Notificación (Pop-up OK / Error) */}
+      {notification && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div
+            className={`bg-slate-900 border rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-center animate-fadeIn ${
+              notification.type === "success" ? "border-emerald-500/60" : "border-rose-500/60"
+            }`}
+          >
+            <div
+              className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto ${
+                notification.type === "success"
+                  ? "bg-emerald-950 text-emerald-400 border border-emerald-500/40"
+                  : "bg-rose-950 text-rose-400 border border-rose-500/40"
+              }`}
+            >
+              {notification.type === "success" ? (
+                <CheckCircle2 className="w-6 h-6" />
+              ) : (
+                <AlertCircle className="w-6 h-6" />
+              )}
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-100">{notification.title}</h3>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">{notification.message}</p>
+            </div>
+            <button
+              onClick={() => setNotification(null)}
+              className={`w-full py-2 rounded-xl font-bold text-xs shadow-md transition-all ${
+                notification.type === "success"
+                  ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                  : "bg-rose-600 hover:bg-rose-500 text-white"
+              }`}
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
