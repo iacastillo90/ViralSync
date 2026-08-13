@@ -61,13 +61,11 @@ export function IdeationMacGridView({
     );
   }
 
-  // Ocultar botón "Aprobar" si hay más de 1 idea en pantalla para evitar aprobaciones masivas no deseadas
-  const showApproveButton = ideas.length === 1;
-
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       {ideas.map((idea) => {
         const isSelected = selectedIds.includes(idea.id);
+        const isApproved = idea.approval_status === "approved";
         const title =
           idea.gancho ||
           idea.angle ||
@@ -186,7 +184,7 @@ export function IdeationMacGridView({
               )}
             </div>
 
-            {/* Pie de la Tarjeta Mac: Acciones Rápidas (Editar, Descargar, Borrar y Aprobar Condicional) */}
+            {/* Pie de la Tarjeta Mac: Acciones Rápidas (Editar, Descargar, Borrar y Aprobar) */}
             <div className="pt-2.5 border-t border-slate-800/60 flex items-center justify-between gap-1">
               <div className="flex items-center gap-1">
                 <button
@@ -221,17 +219,23 @@ export function IdeationMacGridView({
                 </button>
               </div>
 
-              {/* Botón Aprobar solo cuando showApproveButton es verdadero (1 sola idea) */}
-              {onApprove && showApproveButton && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onApprove(idea);
-                  }}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-md transition-all"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Aprobar
-                </button>
+              {/* Botón Aprobar o Insignia Aprobada */}
+              {isApproved ? (
+                <span className="bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1">
+                  ✓ Aprobada
+                </span>
+              ) : (
+                onApprove && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onApprove(idea);
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-md transition-all"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Aprobar
+                  </button>
+                )
               )}
             </div>
           </div>
