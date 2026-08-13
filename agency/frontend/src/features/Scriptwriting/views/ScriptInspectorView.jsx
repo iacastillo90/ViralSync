@@ -1,157 +1,293 @@
-import { useState, useEffect } from "react";
-import { useTenantResource } from "@/hooks/useTenantResource";
-import { Script4BlockReader } from "../components/Script4BlockReader";
-import { FileText, Folder, FolderOpen, PlayCircle, Loader2, ArrowLeft, Video } from "lucide-react";
-import { useSearchParams } from "next/navigation";
-import { fetchWithTenant } from "@/services/apiConfig";
+"use client";
 
+import { useState, useEffect, useMemo } from "react";
+import { useTenantResource } from "@/hooks/useTenantResource";
+import { fetchWithTenant } from "@/services/apiConfig";
+import { ScriptsHeaderBar } from "@/components/scripts/ScriptsHeaderBar";
+import { ScriptsMacGridView } from "@/components/scripts/ScriptsMacGridView";
+import { ScriptsMacListView } from "@/components/scripts/ScriptsMacListView";
+import { EditScriptModal } from "@/components/scripts/EditScriptModal";
+import { Sparkles, Loader2, FolderOpen, ArrowLeft, Folder, Calendar, Wrench, Package, Video, X } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+
+/**
+ * Formateador de fecha y hora pequeña (DD/MM/YYYY HH:mm)
+ */
+function formatDateTime(isoString) {
+  if (!isoString) return "Reciente";
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleDateString("es-ES", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch (e) {
+    return isoString;
+  }
+}
+
+/**
+ * ScriptInspectorView
+ * Vista principal de Guiones Virales con interfaz estilo macOS Finder,
+ * jerarquía de 2 niveles (Carpetas -> Guiones), edición con recálculo dinámico de tiempos y vistas conmutables.
+ */
 export function ScriptInspectorView({ tenantId }) {
   const { data, loading, error, refresh } = useTenantResource("scripts", tenantId);
   const { data: productsData } = useTenantResource("products", tenantId);
   const searchParams = useSearchParams();
   const ideaIdParam = searchParams ? searchParams.get("ideaId") : null;
 
-  const scripts = Array.isArray(data) ? data : [];
-  const products = Array.isArray(productsData) ? productsData : [];
+  // Estados de interfaz macOS Finder
+  const [viewMode, setViewMode] = useState("grid"); // "grid" | "list"
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedSort, setSelectedSort] = useState("newest");
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [activeFolder, setActiveFolder] = useState(null);
 
-  // Polling automático cada 4 segundos para detectar nuevos guiones recien escritos
+  // Estado del Modal de Edición de Guion
+  const [editingScript, setEditingScript] = useState(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  // Estados de Renderizado de Video
+  const [videoUrl, setVideoUrl] = useState(null);
+  const [renderingScriptTitle, setRenderingScriptTitle] = useState("");
+  const [isVideoLoading, setIsVideoLoading] = useState(false);
+
+  // Lista local editable de guiones
+  const [localScripts, setLocalScripts] = useState([]);
+
+  useEffect(() => {
+    if (Array.isArray(data)) {
+      const products = Array.isArray(productsData) ? productsData : [];
+      const enriched = data.map((s) => {
+        let pName = s.product_name || s.service_name || s.category;
+        if (!pName && products.length > 0) {
+          pName = products[0].name || products[0].title;
+        }
+        return {
+          ...s,
+          product_name: pName || "Producto de Campaña",
+        };
+      });
+      setLocalScripts(enriched);
+    }
+  }, [data, productsData]);
+
+  // Polling silencioso cada 5s para sincronización de nuevos guiones
   useEffect(() => {
     const interval = setInterval(() => {
       refresh();
-    }, 4000);
+    }, 5000);
     return () => clearInterval(interval);
   }, [refresh]);
 
-  // Formateador de fecha y hora pequeña
-  const formatDate = (isoString) => {
-    if (!isoString) return "";
-    try {
-      const d = new Date(isoString);
-      return d.toLocaleDateString("es-ES", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
+  // Categorías/productos únicos
+  const categoriesList = useMemo(() => {
+    const cats = new Set();
+    localScripts.forEach((item) => {
+      const name = item.product_name || item.service_name || item.category;
+      if (name) cats.add(name);
+    });
+    return Array.from(cats);
+  }, [localScripts]);
+
+  // Agrupar, filtrar y ordenar carpetas de guiones en Nivel 1
+  const folderList = useMemo(() => {
+    const map = {};
+    localScripts.forEach((script) => {
+      const pName = script.product_name || script.service_name || script.category || "Producto de Campaña";
+      const isService = Boolean(script.service_name || script.is_service);
+      const scriptTime = new Date(script.created_at || Date.now()).getTime();
+
+      let matchedKey = Object.keys(map).find((key) => {
+        const item = map[key];
+        return item.productName === pName && Math.abs(scriptTime - item.timestamp) < 120000;
       });
-    } catch (e) {
-      return isoString;
-    }
-  };
 
-  // Asignar cada guion al producto correspondiente por fecha
-  const findMatchingProduct = (itemCreatedAt) => {
-    if (!products || products.length === 0) return null;
-    if (!itemCreatedAt) return products[0];
-
-    const itemTime = new Date(itemCreatedAt).getTime();
-    let bestProduct = null;
-    let minDiff = Infinity;
-
-    for (const prod of products) {
-      const prodTime = new Date(prod.created_at).getTime();
-      const diff = itemTime - prodTime;
-      if (diff >= -10000 && diff < minDiff) {
-        minDiff = diff;
-        bestProduct = prod;
+      if (!matchedKey) {
+        matchedKey = `batch_${pName}_${scriptTime}`;
+        map[matchedKey] = {
+          key: matchedKey,
+          productName: pName,
+          name: pName,
+          isService,
+          timestamp: scriptTime,
+          createdAt: script.created_at,
+          items: [],
+        };
       }
-    }
-    return bestProduct || products[0];
-  };
 
-  // Agrupar guiones en carpetas independientes por lote de generación (batch por timestamp)
-  const groupedScriptsMap = scripts.reduce((acc, s) => {
-    const scriptTime = new Date(s.created_at || Date.now()).getTime();
-
-    // Buscar si ya existe un lote creado dentro de un margen de 30 segundos
-    let matchedBatchKey = Object.keys(acc).find((key) => {
-      const batchTime = acc[key].timestamp;
-      return Math.abs(scriptTime - batchTime) < 30000;
+      map[matchedKey].items.push(script);
     });
 
-    const matchedProduct = findMatchingProduct(s.created_at);
-    const productName = matchedProduct ? matchedProduct.name : "Guiones de Producto";
+    let folders = Object.values(map);
 
-    if (!matchedBatchKey) {
-      matchedBatchKey = `batch_${s.id || scriptTime}`;
-      acc[matchedBatchKey] = {
-        key: matchedBatchKey,
-        name: productName,
-        timestamp: scriptTime,
-        createdAt: formatDate(s.created_at),
-        items: [],
-      };
+    // 1. Filtro por Tipo o Nombre
+    if (selectedCategory === "product") {
+      folders = folders.filter((f) => !f.isService);
+    } else if (selectedCategory === "service") {
+      folders = folders.filter((f) => f.isService);
+    } else if (selectedCategory !== "all") {
+      folders = folders.filter((f) => f.productName === selectedCategory);
     }
 
-    acc[matchedBatchKey].items.push(s);
-    return acc;
-  }, {});
+    // 2. Filtro por Búsqueda por texto
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      folders = folders.filter(
+        (f) =>
+          f.productName.toLowerCase().includes(q) ||
+          f.items.some(
+            (s) =>
+              (s.gancho_0_5s || "").toLowerCase().includes(q) ||
+              (s.contexto_5_30s || "").toLowerCase().includes(q) ||
+              (s.title || "").toLowerCase().includes(q)
+          )
+      );
+    }
 
-  const folderList = Object.values(groupedScriptsMap);
+    // 3. Ordenamiento Dinámico de Carpetas
+    if (selectedSort === "newest") {
+      folders.sort((a, b) => b.timestamp - a.timestamp);
+    } else if (selectedSort === "oldest") {
+      folders.sort((a, b) => a.timestamp - b.timestamp);
+    } else if (selectedSort === "title") {
+      folders.sort((a, b) => a.productName.localeCompare(b.productName));
+    }
 
-  const [activeFolder, setActiveFolder] = useState(ideaIdParam && folderList.length > 0 ? folderList[0].key : null);
-  const [selectedScriptForVideo, setSelectedScriptForVideo] = useState(null);
-  const [videoUrl, setVideoUrl] = useState(null);
-  const [isVideoLoading, setIsVideoLoading] = useState(false);
-  const [selectedScriptForTranslate, setSelectedScriptForTranslate] = useState(null);
-  const [isTranslating, setIsTranslating] = useState(false);
+    return folders;
+  }, [localScripts, selectedCategory, searchQuery, selectedSort]);
 
-  const handleTranslateScript = async (scriptItem, targetLang) => {
-    if (!scriptItem || !scriptItem.id) return;
-    setIsTranslating(true);
+  // Autoseleccionar carpeta si viene el parámetro ideaIdParam de la URL
+  useEffect(() => {
+    if (ideaIdParam && folderList.length > 0 && !activeFolder) {
+      setActiveFolder(folderList[0].key);
+    }
+  }, [ideaIdParam, folderList, activeFolder]);
+
+  // Filtrar los guiones pertencientes a la carpeta activa
+  const filteredScripts = useMemo(() => {
+    let result = [];
+    if (activeFolder) {
+      const folderObj = folderList.find(
+        (f) => f.key === activeFolder || f.productName === activeFolder || f.name === activeFolder
+      );
+      if (folderObj) {
+        result = [...folderObj.items];
+      } else {
+        result = localScripts.filter(
+          (item) => (item.product_name || item.service_name || item.category) === activeFolder
+        );
+      }
+    } else {
+      result = [...localScripts];
+    }
+
+    // Ordenamiento secundario de guiones
+    if (selectedSort === "newest") {
+      result.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    } else if (selectedSort === "oldest") {
+      result.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+    }
+
+    return result;
+  }, [localScripts, folderList, activeFolder, selectedSort]);
+
+  // Controles de Selección Múltiple
+  const handleToggleSelect = (id) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedIds.length === filteredScripts.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredScripts.map((item) => item.id));
+    }
+  };
+
+  // Acciones Masivas
+  const handleBulkDelete = () => {
+    if (!confirm(`¿Eliminar los ${selectedIds.length} guiones seleccionados?`)) return;
+    setLocalScripts((prev) => prev.filter((item) => !selectedIds.includes(item.id)));
+    setSelectedIds([]);
+  };
+
+  const handleBulkDownload = () => {
+    const selectedData = localScripts.filter((item) => selectedIds.includes(item.id));
+    const jsonStr = JSON.stringify(selectedData, null, 2);
+    const blob = new Blob([jsonStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `guiones_viralsync_${tenantId}.json`;
+    a.click();
+  };
+
+  // Acciones Individuales
+  const handleDeleteScript = (id) => {
+    if (!confirm("¿Eliminar este guion viral?")) return;
+    setLocalScripts((prev) => prev.filter((item) => item.id !== id));
+    setSelectedIds((prev) => prev.filter((item) => item !== id));
+  };
+
+  const handleDownloadScript = (script) => {
+    const fullText = `=== GUION VIRAL: ${script.product_name || "PRODUCTO"} ===\n\n` +
+      `🪝 BLOQUE 1 - GANCHO (0-5s):\n${script.gancho_0_5s || script.gancho || ""}\n\n` +
+      `💡 BLOQUE 2 - CONTEXTO (5-30s):\n${script.contexto_5_30s || script.contexto || ""}\n\n` +
+      `✨ BLOQUE 3 - MORALEJA (30-50s):\n${script.moraleja_30_50s || script.moraleja || ""}\n\n` +
+      `📣 BLOQUE 4 - CTA (50-60s):\n${script.cta_50_60s || script.cta || ""}\n`;
+
+    const blob = new Blob([fullText], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `guion_${script.id || "viral"}.txt`;
+    a.click();
+  };
+
+  const handleOpenEdit = (script) => {
+    setEditingScript(script);
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEditedScript = (updatedScript) => {
+    setLocalScripts((prev) =>
+      prev.map((item) => (item.id === updatedScript.id ? updatedScript : item))
+    );
+  };
+
+  // Ordenar Renderizado de Video al Microservicio
+  const handleRenderVideo = async (script) => {
+    setIsVideoLoading(true);
+    setRenderingScriptTitle(script.gancho_0_5s || script.title || "Guion Viral");
     try {
-      const translatedScript = await fetchWithTenant(
-        `/tenants/${tenantId}/scripts/${scriptItem.id}/translate`,
+      const fullText = `${script.gancho_0_5s || ""} ${script.contexto_5_30s || ""} ${script.moraleja_30_50s || ""} ${script.cta_50_60s || ""}`.trim();
+      const res = await fetchWithTenant(
+        `/tenants/${tenantId}/render`,
         {
           method: "POST",
-          body: JSON.stringify({ target_language: targetLang }),
+          body: JSON.stringify({
+            script_id: script.id,
+            script_text: fullText,
+            product_image_url: script.product_image_url,
+            target_duration: script.target_duration || 30,
+          }),
         },
         tenantId
       );
-      setIsTranslating(false);
-      setSelectedScriptForTranslate(null);
-      refresh();
-      // Renderizar el video del guion traducido
-      if (translatedScript && translatedScript.id) {
-        handleOpenVideoModal(translatedScript);
+      const resData = await res.json();
+      if (resData && resData.video_url) {
+        setVideoUrl(resData.video_url);
       }
     } catch (err) {
-      alert(`Error al traducir el guion: ${err.message}`);
-      setIsTranslating(false);
-    }
-  };
-
-  const handleOpenVideoModal = async (script) => {
-    setSelectedScriptForVideo(script);
-    setIsVideoLoading(true);
-    setVideoUrl(null);
-
-    try {
-      // Intentar obtener el video desde la API de media / videos
-      const res = await fetchWithTenant(`/tenants/${tenantId}/media`, {}, tenantId);
-      if (Array.isArray(res) && res.length > 0) {
-        const scriptTime = new Date(script.created_at || Date.now()).getTime();
-        const videos = res.filter((m) => m.type === "video" || m.object_key?.endsWith(".mp4") || m.url?.includes(".mp4"));
-        
-        // Ordenar videos del más reciente al más antiguo
-        videos.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-
-        // Encontrar el video creado alrededor o después del guion
-        let matchedVideo = videos.find((v) => {
-          const vTime = new Date(v.created_at || 0).getTime();
-          return vTime >= scriptTime - 30000;
-        });
-
-        if (!matchedVideo && videos.length > 0) {
-          matchedVideo = videos[0]; // fallback al video más reciente
-        }
-
-        if (matchedVideo && matchedVideo.url) {
-          setVideoUrl(matchedVideo.url);
-        }
-      }
-    } catch (err) {
-      console.error("Error obteniendo video:", err);
+      alert(`Error iniciando renderizado: ${err.message}`);
     } finally {
       setIsVideoLoading(false);
     }
@@ -159,118 +295,206 @@ export function ScriptInspectorView({ tenantId }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center pb-4 border-b border-slate-800">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            <FileText className="w-5 h-5 text-indigo-400" /> Inspector de Guiones en 4 Bloques
-          </h1>
-          <p className="text-xs text-slate-400">
-            Tenant: <span className="font-mono text-indigo-400">{tenantId}</span>
-          </p>
-        </div>
-        <button
-          onClick={refresh}
-          className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors"
-        >
-          Refrescar Guiones
-        </button>
-      </div>
+      {/* 1. Barra de Herramientas Estilo macOS Finder */}
+      <ScriptsHeaderBar
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        selectedCategory={selectedCategory}
+        setSelectedCategory={setSelectedCategory}
+        selectedSort={selectedSort}
+        setSelectedSort={setSelectedSort}
+        categories={categoriesList}
+        selectedCount={selectedIds.length}
+        totalCount={filteredScripts.length}
+        isAllSelected={selectedIds.length > 0 && selectedIds.length === filteredScripts.length}
+        onToggleSelectAll={handleToggleSelectAll}
+        onBulkDelete={handleBulkDelete}
+        onBulkDownload={handleBulkDownload}
+      />
 
-      {loading ? (
-        <div className="flex items-center gap-3 text-sm text-slate-400 py-10">
-          <Loader2 className="w-5 h-5 animate-spin text-indigo-400" /> Cargando carpetas de guiones…
-        </div>
-      ) : error ? (
-        <div className="text-sm text-rose-300 bg-rose-950/40 border border-rose-500/30 rounded-lg p-3">
-          Error al cargar guiones: {error.message}
-        </div>
-      ) : scripts.length === 0 ? (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 text-center space-y-3">
-          <Folder className="w-12 h-12 text-slate-600 mx-auto" />
-          <h3 className="text-slate-300 font-semibold">Sin guiones todavía</h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            Aprueba una idea en la pestaña de Ideación RUM para que el Guionista Viral genere la estructura narrativa.
-          </p>
-        </div>
-      ) : !activeFolder ? (
-        /* VISTA DE CARPETAS (FOLDER VIEW) */
+      {/* 2. NIVEL 1: Si no se ha ingresado a ninguna carpeta, mostrar la cuadrícula de Carpetas */}
+      {!activeFolder ? (
         <div className="space-y-4">
-          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-            Carpetas de Guiones ({folderList.length})
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {folderList.map((folder) => {
-              const count = folder.items.length;
-              return (
-                <div
-                  key={folder.key}
-                  onClick={() => setActiveFolder(folder.key)}
-                  className="bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-2xl p-5 cursor-pointer transition-all hover:shadow-xl hover:shadow-indigo-500/10 group flex items-start gap-4"
-                >
-                  <div className="bg-indigo-600/20 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white p-3 rounded-xl transition-all">
-                    <Folder className="w-6 h-6" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-slate-100 group-hover:text-indigo-300 transition-colors">
-                      {folder.name}
-                    </h3>
-                    <div className="flex flex-col gap-0.5 mt-1.5">
-                      <span className="text-xs text-slate-400 font-medium">
-                        {count} {count === 1 ? "guion generado" : "guiones generados"}
-                      </span>
-                      {folder.createdAt && (
-                        <span className="text-[11px] text-indigo-400/80 font-mono">
-                          🕒 {folder.createdAt}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : (
-        /* VISTA DENTRO DE LA CARPETA SELECCIONADA / GUION AISLADO */
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setActiveFolder(null)}
-              className="flex items-center gap-2 text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4" /> Volver a Carpetas
-            </button>
-            <span className="text-xs text-slate-400 flex items-center gap-1.5 font-medium">
-              <FolderOpen className="w-4 h-4 text-indigo-400" /> Carpeta activa: <strong>{groupedScriptsMap[activeFolder]?.name}</strong>
+          <div className="flex justify-between items-center">
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              📁 Carpetas de Guiones por Producto ({folderList.length})
+            </h2>
+            <span className="text-[11px] text-slate-500 font-medium">
+              Haz clic en una carpeta para inspeccionar sus guiones estructurados
             </span>
           </div>
 
-          <div className="space-y-6">
-            {(groupedScriptsMap[activeFolder]?.items || []).map((scriptItem) => (
-              <div key={scriptItem.id} className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
-                <div className="flex justify-between items-center pb-2 border-b border-slate-800/80">
-                  <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
-                    Estructura Narrativa del Video
-                  </h2>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setSelectedScriptForTranslate(scriptItem)}
-                      className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 px-3 py-2 rounded-xl text-xs font-bold transition-all"
-                    >
-                      🌎 Traducir Guion (Ampliar Público)
-                    </button>
-                    <button
-                      onClick={() => handleOpenVideoModal(scriptItem)}
-                      className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-600/30"
-                    >
-                      <PlayCircle className="w-4 h-4" /> Ver Video Renderizado
-                    </button>
+          {loading && localScripts.length === 0 ? (
+            <div className="flex items-center justify-center gap-3 text-xs text-slate-400 py-12">
+              <Loader2 className="w-5 h-5 animate-spin text-indigo-400" /> Cargando catálogo de guiones...
+            </div>
+          ) : folderList.length === 0 ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center space-y-3">
+              <Folder className="w-12 h-12 text-slate-600 mx-auto" />
+              <h3 className="text-sm font-bold text-slate-300">No hay carpetas de guiones</h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                Aprueba una propuesta en Ideación para redactar sus guiones virales automáticamente.
+              </p>
+            </div>
+          ) : viewMode === "grid" ? (
+            /* VISTA DE ICONOS EN NIVEL 1 */
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {folderList.map((folder) => {
+                const count = folder.items.length;
+                const isService = folder.isService;
+                return (
+                  <div
+                    key={folder.key}
+                    onClick={() => setActiveFolder(folder.key)}
+                    className="group bg-slate-900/90 border border-slate-800 hover:border-indigo-500/70 p-5 rounded-2xl cursor-pointer transition-all hover:shadow-2xl flex flex-col justify-between space-y-3 relative overflow-hidden"
+                  >
+                    {/* Estilo Mac Window Controls */}
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-800/60">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 group-hover:bg-rose-500 transition-colors"></span>
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 group-hover:bg-amber-500 transition-colors"></span>
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 group-hover:bg-emerald-500 transition-colors"></span>
+                      </div>
+                      <span className="bg-indigo-950 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded text-[10px] font-mono font-bold">
+                        {count} {count === 1 ? "guion" : "guiones"}
+                      </span>
+                    </div>
+
+                    <div className="flex items-start gap-3 py-1">
+                      <div className="bg-indigo-600/20 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white p-3 rounded-xl transition-all shrink-0">
+                        <Folder className="w-6 h-6" />
+                      </div>
+                      <div className="space-y-1.5 flex-1 min-w-0">
+                        <h3 className="text-sm font-bold text-slate-100 group-hover:text-indigo-300 transition-colors leading-snug truncate">
+                          {folder.productName}
+                        </h3>
+
+                        <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-slate-500 shrink-0" />
+                          <span>{formatDateTime(folder.createdAt)}</span>
+                        </div>
+
+                        <div className="pt-0.5">
+                          <span
+                            className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md border ${
+                              isService
+                                ? "bg-amber-950/60 text-amber-300 border-amber-500/30"
+                                : "bg-indigo-950/60 text-indigo-300 border-indigo-500/30"
+                            }`}
+                          >
+                            {isService ? <Wrench className="w-3 h-3 text-amber-400" /> : <Package className="w-3 h-3 text-indigo-400" />}
+                            <span>{isService ? "Servicio" : "Producto"}</span>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <Script4BlockReader script={scriptItem} />
-              </div>
-            ))}
+                );
+              })}
+            </div>
+          ) : (
+            /* VISTA DE LISTA DETALLADA EN NIVEL 1 */
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl shadow-xl backdrop-blur-md overflow-hidden">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-950/90 border-b border-slate-800 text-slate-400 font-medium select-none">
+                  <tr>
+                    <th className="px-4 py-2.5 font-semibold">Carpeta / Producto o Servicio</th>
+                    <th className="px-3 py-2.5 font-semibold">Tipo</th>
+                    <th className="px-3 py-2.5 font-semibold text-center">Guiones</th>
+                    <th className="px-3 py-2.5 font-semibold">Fecha y Hora</th>
+                    <th className="px-4 py-2.5 font-semibold text-right">Acción</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/40 bg-slate-950/40">
+                  {folderList.map((folder) => {
+                    const isService = folder.isService;
+                    return (
+                      <tr
+                        key={folder.key}
+                        onClick={() => setActiveFolder(folder.key)}
+                        className="hover:bg-slate-900/80 cursor-pointer transition-colors group"
+                      >
+                        <td className="px-4 py-2.5 font-bold text-slate-200 group-hover:text-indigo-300">
+                          <div className="flex items-center gap-2">
+                            <Folder className="w-4 h-4 text-indigo-400 shrink-0" />
+                            <span>{folder.productName}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                              isService
+                                ? "bg-amber-950/60 text-amber-300 border-amber-500/30"
+                                : "bg-indigo-950/60 text-indigo-300 border-indigo-500/30"
+                            }`}
+                          >
+                            {isService ? <Wrench className="w-3 h-3 text-amber-400" /> : <Package className="w-3 h-3 text-indigo-400" />}
+                            <span>{isService ? "Servicio" : "Producto"}</span>
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-center whitespace-nowrap font-mono font-bold text-indigo-300">
+                          {folder.items.length} {folder.items.length === 1 ? "guion" : "guiones"}
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap text-[11px] font-mono text-slate-400">
+                          <div className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-slate-500" />
+                            <span>{formatDateTime(folder.createdAt)}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                          <span className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] px-3 py-1 rounded-lg shadow transition-all">
+                            Abrir Carpeta →
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* NIVEL 2: DENTRO DE LA CARPETA SELECCIONADA */
+        <div className="space-y-4">
+          <div className="flex items-center justify-between bg-slate-950/80 border border-slate-800 px-4 py-2.5 rounded-xl text-xs shadow-md">
+            <button
+              onClick={() => setActiveFolder(null)}
+              className="flex items-center gap-2 font-bold text-indigo-400 hover:text-indigo-300 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" /> ← Volver a todas las carpetas
+            </button>
+            <span className="text-xs text-slate-400 flex items-center gap-1.5 font-medium">
+              <FolderOpen className="w-4 h-4 text-indigo-400" /> Carpeta activa: <strong className="text-indigo-300">{activeFolder}</strong> ({filteredScripts.length} guiones)
+            </span>
           </div>
+
+          {/* Renderizado conmutatorio de guiones (Grid de Iconos vs Lista Compacta Lineal) */}
+          {viewMode === "grid" ? (
+            <ScriptsMacGridView
+              scripts={filteredScripts}
+              selectedIds={selectedIds}
+              onToggleSelect={handleToggleSelect}
+              onEdit={handleOpenEdit}
+              onDelete={handleDeleteScript}
+              onDownload={handleDownloadScript}
+              onRenderVideo={handleRenderVideo}
+              onSelectFolder={(folderName) => setActiveFolder(folderName)}
+            />
+          ) : (
+            <ScriptsMacListView
+              scripts={filteredScripts}
+              selectedIds={selectedIds}
+              onToggleSelect={handleToggleSelect}
+              onEdit={handleOpenEdit}
+              onDelete={handleDeleteScript}
+              onDownload={handleDownloadScript}
+              onRenderVideo={handleRenderVideo}
+              onSelectFolder={(folderName) => setActiveFolder(folderName)}
+            />
+          )}
         </div>
       )}
 
