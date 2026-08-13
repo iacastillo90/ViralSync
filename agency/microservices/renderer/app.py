@@ -849,6 +849,40 @@ def upload_to_minio(file_path: str, tenant_id: str) -> str:
 
 BACKEND_API_URL = os.getenv("BACKEND_API_URL", "http://backend:8000/api/v1")
 FALLBACK_BACKEND_URL = "http://localhost:8000/api/v1"
+USE_REMOTION = os.getenv("USE_REMOTION", "true").lower() in ["true", "1"]
+
+
+def render_remotion_video(props_dict: dict, output_mp4_path: str) -> bool:
+    """Renderiza un video usando Remotion React Engine CLI."""
+    import json
+    import subprocess
+    remotion_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "remotion_renderer"))
+    if not os.path.exists(remotion_dir):
+        logger.warning(f"Directorio de Remotion no encontrado en {remotion_dir}")
+        return False
+
+    props_file = os.path.join(os.path.dirname(output_mp4_path), "remotion_props.json")
+    try:
+        with open(props_file, "w", encoding="utf-8") as f:
+            json.dump(props_dict, f, ensure_ascii=False)
+
+        cmd = [
+            "npx", "remotion", "render",
+            "src/index.ts", "ViralReel",
+            output_mp4_path,
+            f"--props={props_file}"
+        ]
+        logger.info(f"Ejecutando renderizado Remotion React CLI: {' '.join(cmd)}")
+        res = subprocess.run(cmd, cwd=remotion_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=180)
+        if res.returncode == 0 and os.path.exists(output_mp4_path):
+            logger.info("Renderizado de video en Remotion completado con éxito.")
+            return True
+        else:
+            logger.warning(f"Remotion CLI retornó código {res.returncode}: {res.stderr[:300]}")
+            return False
+    except Exception as exc:
+        logger.warning(f"Error durante el renderizado en Remotion: {exc}")
+        return False
 
 
 def report_render_progress(tenant_id: str, stage: str, message: str, percent: int):
@@ -915,9 +949,23 @@ async def render_video_endpoint(req: RenderRequest):
         report_render_progress(req.tenant_id, "broll", "Buscando y descargando clips B-roll 720p desde Pexels...", 50)
         downloaded_clips = await asyncio.to_thread(download_pexels_videos, req.keywords, temp_dir)
 
-        # 3. Componer video con MoviePy en hilo secundario (Non-blocking CPU-bound)
-        report_render_progress(req.tenant_id, "moviepy", "Componiendo y ajustando formato 9:16 con MoviePy...", 75)
-        duration = await asyncio.to_thread(compose_video_moviepy, audio_path, downloaded_clips, output_mp4_path, req.target_duration)
+        # 3. Componer video con Remotion React Engine (o Fallback a MoviePy)
+        duration = req.target_duration or 30.0
+        remotion_success = False
+        if USE_REMOTION:
+            report_render_progress(req.tenant_id, "remotion", "Componiendo reel dinámico 9:16 con Remotion React Engine...", 75)
+            props = {
+                "videoClips": downloaded_clips,
+                "audioUrl": audio_path,
+                "scriptText": req.script_text,
+                "productImageUrl": req.product_image_url,
+                "durationSeconds": duration,
+            }
+            remotion_success = await asyncio.to_thread(render_remotion_video, props, output_mp4_path)
+
+        if not remotion_success:
+            report_render_progress(req.tenant_id, "moviepy", "Componiendo y ajustando formato 9:16 con MoviePy Engine...", 75)
+            duration = await asyncio.to_thread(compose_video_moviepy, audio_path, downloaded_clips, output_mp4_path, req.target_duration)
 
         # 4. Subir a MinIO
         report_render_progress(req.tenant_id, "minio", "Subiendo video MP4 producido a MinIO Storage...", 90)
