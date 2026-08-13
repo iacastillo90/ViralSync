@@ -341,6 +341,7 @@ export function IdeaApprovalView({ tenantId }) {
           onDelete={handleDeleteIdea}
           onDownload={handleDownloadIdea}
           onApprove={handleApproveIdea}
+          onSelectFolder={(folderName) => setActiveFolder(folderName)}
         />
       ) : (
         <IdeationMacListView
@@ -351,6 +352,7 @@ export function IdeaApprovalView({ tenantId }) {
           onDelete={handleDeleteIdea}
           onDownload={handleDownloadIdea}
           onApprove={handleApproveIdea}
+          onSelectFolder={(folderName) => setActiveFolder(folderName)}
         />
       )}
 

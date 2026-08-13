@@ -47,6 +47,7 @@ export function IdeationMacListView({
   onDelete,
   onDownload,
   onApprove,
+  onSelectFolder,
 }) {
   if (ideas.length === 0) {
     return (
@@ -134,7 +135,11 @@ export function IdeationMacListView({
 
                   {/* Producto o Servicio Dinámico */}
                   <td className="px-3 py-2 whitespace-nowrap">
-                    <span className="bg-slate-900 border border-slate-800 px-2 py-0.5 rounded text-[11px] font-mono text-indigo-300 inline-flex items-center gap-1">
+                    <span
+                      onClick={() => onSelectFolder && onSelectFolder(productName)}
+                      title={`Ver todas las propuestas de ${productName}`}
+                      className="bg-slate-900 hover:bg-indigo-950 border border-slate-800 hover:border-indigo-500/50 px-2 py-0.5 rounded text-[11px] font-mono text-indigo-300 inline-flex items-center gap-1 cursor-pointer transition-colors"
+                    >
                       {isService ? (
                         <Wrench className="w-3 h-3 text-amber-400" />
                       ) : (
