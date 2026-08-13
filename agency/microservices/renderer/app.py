@@ -260,20 +260,36 @@ def compose_video_moviepy(
     audio_path: str,
     video_paths: List[str],
     output_path: str,
-    target_duration: Optional[float] = None
+    target_duration: Optional[float] = None,
+    script_text: str = "",
+    product_image_url: Optional[str] = None,
 ) -> float:
-    """Compone y renderiza el video vertical 9:16 combinando audios y clips con MoviePy."""
+    """Compone y renderiza el video vertical 9:16 combinando audios, clips, subtítulos karaoke y tarjeta de producto."""
     from moviepy.editor import AudioFileClip, VideoFileClip, concatenate_videoclips, ColorClip
 
-    logger.info("Componiendo video final con MoviePy...")
+    logger.info("Componiendo video final con MoviePy (con subtítulos karaoke y producto)...")
     audio_clip = AudioFileClip(audio_path)
     base_audio_dur = audio_clip.duration if audio_clip.duration > 0 else 30.0
     final_duration = target_duration if (target_duration and target_duration > 0) else base_audio_dur
-    # Nunca acceder más allá del final del audio disponible (REQ-VSR-03):
-    # si la duración objetivo excede el audio, el audio define el límite real.
     if base_audio_dur < final_duration:
         final_duration = base_audio_dur
     TARGET_W, TARGET_H = 1080, 1920
+
+    prod_img_obj = None
+    if product_image_url:
+        try:
+            fetch_url = (
+                product_image_url.replace("localhost:9000", "minio:9000")
+                .replace("127.0.0.1:9000", "minio:9000")
+            )
+            headers = {"Host": "localhost:9000"} if "minio:9000" in fetch_url else {}
+            r = requests.get(fetch_url, headers=headers, timeout=8.0)
+            if r.status_code == 200:
+                from io import BytesIO
+                prod_img_obj = Image.open(BytesIO(r.content)).copy()
+                logger.info("Imagen de producto cargada correctamente para overlay.")
+        except Exception as e:
+            logger.warning(f"No se pudo descargar imagen de producto para overlay: {e}")
 
     clip_objects = []
     if video_paths:
@@ -292,19 +308,21 @@ def compose_video_moviepy(
                     y_center = sub_clip.h / 2
                     sub_clip = sub_clip.crop(y1=max(0, y_center - TARGET_H / 2), height=TARGET_H)
 
-                # Ajustar la duración de cada clip para cubrir la duración total requerida
                 if sub_clip.duration < duration_per_clip:
                     sub_clip = sub_clip.loop(duration=duration_per_clip)
                 else:
                     sub_clip = sub_clip.subclip(0, duration_per_clip)
 
-                def _make_overlay_frame(gf, t, dur=duration_per_clip):
+                _txt = script_text
+                _pimg = prod_img_obj
+
+                def _make_overlay_frame(gf, t, dur=duration_per_clip, txt=_txt, p_img=_pimg):
                     try:
                         frame = gf(t)
                         base = Image.fromarray(frame)
                         if base.size != (TARGET_W, TARGET_H):
                             base = base.resize((TARGET_W, TARGET_H), Image.Resampling.LANCZOS)
-                        out_img = draw_overlay_on_image(base, "", None, t, dur)
+                        out_img = draw_overlay_on_image(base, txt, p_img, t, dur)
                         return np.array(out_img)
                     except Exception as exc:
                         logger.warning(f"Error en _make_overlay_frame flat: {exc}")
@@ -969,7 +987,15 @@ async def render_video_endpoint(req: RenderRequest):
 
         if not remotion_success:
             report_render_progress(req.tenant_id, "moviepy", "Componiendo y ajustando formato 9:16 con MoviePy Engine...", 75)
-            duration = await asyncio.to_thread(compose_video_moviepy, audio_path, downloaded_clips, output_mp4_path, req.target_duration)
+            duration = await asyncio.to_thread(
+                compose_video_moviepy,
+                audio_path,
+                downloaded_clips,
+                output_mp4_path,
+                req.target_duration,
+                req.script_text,
+                req.product_image_url,
+            )
 
         # 4. Subir a MinIO
         report_render_progress(req.tenant_id, "minio", "Subiendo video MP4 producido a MinIO Storage...", 90)
