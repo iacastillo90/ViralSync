@@ -674,6 +674,7 @@ def compose_scenes_video_moviepy(segments: List[dict], output_path: str, total_d
 
         # 2. Clips de video de la escena (Shorts transicionales de Pexels)
         block = []
+        clip_start_offset = 0.0
         for path in seg["video_paths"]:
             try:
                 v_clip = VideoFileClip(path)
@@ -688,19 +689,22 @@ def compose_scenes_video_moviepy(segments: List[dict], output_path: str, total_d
                     y_center = sub_clip.h / 2
                     sub_clip = sub_clip.crop(y1=max(0, y_center - TARGET_H / 2), height=TARGET_H)
 
-                sub_clip = sub_clip.subclip(0, min(sub_clip.duration, per_clip))
+                clip_dur = min(sub_clip.duration, per_clip)
+                sub_clip = sub_clip.subclip(0, clip_dur)
 
                 _txt = scene_text
                 _pimg = prod_img_obj
                 _dur = seg_duration
+                _offset = clip_start_offset
 
-                def _make_overlay_frame(gf, t, txt=_txt, p_img=_pimg, dur=_dur):
+                def _make_overlay_frame(gf, t, txt=_txt, p_img=_pimg, dur=_dur, offset=_offset):
                     try:
                         frame = gf(t)
                         base = Image.fromarray(frame)
                         if base.size != (TARGET_W, TARGET_H):
                             base = base.resize((TARGET_W, TARGET_H), Image.Resampling.LANCZOS)
-                        out_img = draw_overlay_on_image(base, txt, p_img, t, dur)
+                        global_t = offset + t
+                        out_img = draw_overlay_on_image(base, txt, p_img, global_t, dur)
                         return np.array(out_img)
                     except Exception as exc:
                         logger.warning(f"Error en _make_overlay_frame: {exc}")
@@ -708,6 +712,7 @@ def compose_scenes_video_moviepy(segments: List[dict], output_path: str, total_d
 
                 sub_clip = sub_clip.fl(_make_overlay_frame)
                 block.append(sub_clip)
+                clip_start_offset += clip_dur
             except Exception as exc:
                 logger.warning(f"Error procesando clip {path}: {exc}")
 
@@ -778,7 +783,7 @@ async def _render_scene_pipeline(req: RenderRequest, temp_dir: str, output_mp4_p
         voice = scene.tts_voice or DEFAULT_VOICE
         scene_audio = os.path.join(temp_dir, f"scene_{idx}.mp3")
         logger.info(f"[{req.tenant_id}] Escena {idx + 1}/{num_scenes} ('{scene.block}') — TTS con voz '{voice}' (Objetivo: {per_scene_duration:.2f}s)")
-        await generate_speech_audio(scene.text, scene_audio, voice)
+        await generate_speech_audio(scene.text, scene_audio, voice, target_duration=per_scene_duration)
         scene_audios.append(scene_audio)
 
         scene_keywords = _keywords_from_prompt(scene.visual_prompt, req.keywords, f"{req.title} {scene.text}")
