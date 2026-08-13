@@ -54,10 +54,11 @@ export default function AdminSistemaPage() {
   const [selectedTenantFilter, setSelectedTenantFilter] = useState("all");
   const [expandedLogId, setExpandedLogId] = useState(null);
 
-  // Paginación y filtro del Registro de Errores LLM
+  // Paginación, filtro y modal interactivo de detalle del Registro de Errores LLM
   const [errorCurrentPage, setErrorCurrentPage] = useState(1);
   const [errorsPerPage, setErrorsPerPage] = useState(5);
   const [errorSearchQuery, setErrorSearchQuery] = useState("");
+  const [selectedLLMErrorForModal, setSelectedLLMErrorForModal] = useState(null);
 
   // Formulario de ingesta de conocimiento en Qdrant
   const [newDocTitle, setNewDocTitle] = useState("");
@@ -477,25 +478,44 @@ export default function AdminSistemaPage() {
                         <tr>
                           <th className="px-4 py-2.5 font-semibold">Timestamp</th>
                           <th className="px-4 py-2.5 font-semibold">Modelo / Proveedor</th>
-                          <th className="px-4 py-2.5 font-semibold">Detalle del Error / Respuesta</th>
+                          <th className="px-4 py-2.5 font-semibold">Detalle del Error (Resumen)</th>
+                          <th className="px-4 py-2.5 font-semibold text-right">Acción</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-800/50 bg-slate-950">
-                        {currentErrors.map((err, idx) => (
-                          <tr key={idx} className="hover:bg-slate-900/60 transition-colors">
-                            <td className="px-4 py-3 font-mono text-[10px] whitespace-nowrap text-slate-400">
-                              {new Date(err.timestamp).toLocaleString("es-ES")}
-                            </td>
-                            <td className="px-4 py-3 whitespace-nowrap">
-                              <span className="bg-rose-950/50 text-rose-300 border border-rose-500/30 px-2 py-1 rounded-md font-mono text-[11px] font-bold">
-                                {err.model}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 font-mono text-[11px] break-words text-rose-400/90 leading-relaxed">
-                              {err.error}
-                            </td>
-                          </tr>
-                        ))}
+                        {currentErrors.map((err, idx) => {
+                          const previewText = (err.error || "").length > 85 ? (err.error || "").slice(0, 85) + "..." : err.error;
+                          return (
+                            <tr
+                              key={idx}
+                              onClick={() => setSelectedLLMErrorForModal(err)}
+                              className="hover:bg-rose-950/20 cursor-pointer transition-colors group"
+                            >
+                              <td className="px-4 py-3 font-mono text-[10px] whitespace-nowrap text-slate-400">
+                                {new Date(err.timestamp).toLocaleString("es-ES")}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span className="bg-rose-950/50 text-rose-300 border border-rose-500/30 px-2 py-1 rounded-md font-mono text-[11px] font-bold">
+                                  {err.model}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 font-mono text-[11px] text-rose-400/90 leading-relaxed group-hover:text-rose-300 transition-colors">
+                                {previewText}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-right">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedLLMErrorForModal(err);
+                                  }}
+                                  className="bg-slate-900 hover:bg-rose-950/80 text-rose-300 border border-slate-800 hover:border-rose-500/50 px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all"
+                                >
+                                  👁️ Ver Log Completo
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1052,6 +1072,96 @@ export default function AdminSistemaPage() {
                       </table>
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Interactivo de Detalle y Log Completo de Error LLM */}
+          {selectedLLMErrorForModal && (
+            <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-rose-500/40 rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                {/* Header del Modal */}
+                <div className="p-6 border-b border-slate-800 bg-slate-900/90 flex justify-between items-center">
+                  <div>
+                    <h2 className="text-lg font-bold text-rose-300 flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5 text-rose-400" /> Log Completo del Error de Proveedor LLM
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Diagnóstico técnico, marca de tiempo y traza de respuesta de la API
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setSelectedLLMErrorForModal(null)}
+                    className="text-xs text-slate-400 hover:text-slate-100 bg-slate-800 p-2 rounded-xl border border-slate-700 transition-colors"
+                  >
+                    ✕ Cerrar
+                  </button>
+                </div>
+
+                <div className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
+                  {/* Ficha Resumen del Error */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-slate-950 border border-slate-800 p-3.5 rounded-xl">
+                      <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">🕒 Timestamp del Evento</div>
+                      <div className="font-mono text-slate-200 font-bold">
+                        {new Date(selectedLLMErrorForModal.timestamp).toLocaleString("es-ES")}
+                      </div>
+                    </div>
+                    <div className="bg-slate-950 border border-slate-800 p-3.5 rounded-xl">
+                      <div className="text-[10px] text-slate-400 font-bold uppercase mb-1">🤖 Modelo / Proveedor Solicitado</div>
+                      <div className="font-mono text-rose-300 font-bold">
+                        {selectedLLMErrorForModal.model}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Log y Traceback Completo */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <h4 className="font-bold text-slate-300 flex items-center gap-1.5">
+                        <Terminal className="w-4 h-4 text-rose-400" /> Traza de Respuesta & Log de Consola
+                      </h4>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(JSON.stringify(selectedLLMErrorForModal, null, 2));
+                          alert("¡Log del error copiado al portapapeles!");
+                        }}
+                        className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded font-mono font-bold border border-slate-700 transition-colors"
+                      >
+                        📋 Copiar Log JSON
+                      </button>
+                    </div>
+
+                    <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 font-mono text-[11px] text-rose-400 whitespace-pre-wrap leading-relaxed shadow-inner overflow-x-auto select-all">
+                      {selectedLLMErrorForModal.error}
+                    </div>
+                  </div>
+
+                  {/* Recomendación Diagnóstica Inteligente */}
+                  <div className="bg-slate-950/80 border border-indigo-500/30 p-4 rounded-xl space-y-1.5">
+                    <h5 className="font-bold text-indigo-300 text-xs flex items-center gap-1.5">
+                      💡 Diagnóstico Inteligente del Sistema
+                    </h5>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">
+                      {(selectedLLMErrorForModal.error || "").includes("429")
+                        ? "Límite de tasa (Rate Limit 429) alcanzado en este proveedor. El router conmutó automáticamente la petición al modelo de respaldo en la cadena directa (Groq / Gemini 1.5 Flash)."
+                        : (selectedLLMErrorForModal.error || "").includes("404")
+                        ? "El identificador del modelo no existe o fue descontinuado por el proveedor. Se actualizó el mapa a identificadores oficial de Google AI Studio (gemini-2.0-flash)."
+                        : (selectedLLMErrorForModal.error || "").includes("credentials") || (selectedLLMErrorForModal.error || "").includes("401")
+                        ? "Falta de credenciales de autenticación o API key inválida. Verifica tus variables en .env."
+                        : "El sistema aplicó failover automático hacia el siguiente proveedor saludable disponible en el pool."}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-900 border-t border-slate-800 flex justify-end">
+                  <button
+                    onClick={() => setSelectedLLMErrorForModal(null)}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all"
+                  >
+                    Entendido / Cerrar
+                  </button>
                 </div>
               </div>
             </div>
