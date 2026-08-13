@@ -136,8 +136,8 @@ export default function AdminSistemaPage() {
     }
   };
 
-  const fetchErrors = async () => {
-    setLoadingErrors(true);
+  const fetchErrors = async (silent = false) => {
+    if (!silent) setLoadingErrors(true);
     try {
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace("/api/v1", "");
       const res = await fetch(`${baseUrl}/system/llm-errors`);
@@ -146,12 +146,12 @@ export default function AdminSistemaPage() {
     } catch (err) {
       console.error("Error fetching LLM errors:", err);
     } finally {
-      setLoadingErrors(false);
+      if (!silent) setLoadingErrors(false);
     }
   };
 
-  const fetchLLMStats = async () => {
-    setLoadingStats(true);
+  const fetchLLMStats = async (silent = false) => {
+    if (!silent) setLoadingStats(true);
     try {
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace("/api/v1", "");
       const res = await fetch(`${baseUrl}/system/llm-stats`);
@@ -160,12 +160,12 @@ export default function AdminSistemaPage() {
     } catch (err) {
       console.error("Error fetching LLM stats:", err);
     } finally {
-      setLoadingStats(false);
+      if (!silent) setLoadingStats(false);
     }
   };
 
-  const fetchWorkersStatus = async () => {
-    setLoadingWorkers(true);
+  const fetchWorkersStatus = async (silent = false) => {
+    if (!silent) setLoadingWorkers(true);
     try {
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace("/api/v1", "");
       const res = await fetch(`${baseUrl}/system/workers-status`);
@@ -174,12 +174,12 @@ export default function AdminSistemaPage() {
     } catch (err) {
       console.error("Error fetching workers status:", err);
     } finally {
-      setLoadingWorkers(false);
+      if (!silent) setLoadingWorkers(false);
     }
   };
 
-  const fetchQdrantStats = async () => {
-    setLoadingQdrant(true);
+  const fetchQdrantStats = async (silent = false) => {
+    if (!silent) setLoadingQdrant(true);
     try {
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace("/api/v1", "");
       const res = await fetch(`${baseUrl}/system/qdrant/stats`);
@@ -188,12 +188,12 @@ export default function AdminSistemaPage() {
     } catch (err) {
       console.error("Error fetching Qdrant stats:", err);
     } finally {
-      setLoadingQdrant(false);
+      if (!silent) setLoadingQdrant(false);
     }
   };
 
-  const fetchSearXNGStats = async () => {
-    setLoadingSearxng(true);
+  const fetchSearXNGStats = async (silent = false) => {
+    if (!silent) setLoadingSearxng(true);
     try {
       const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace("/api/v1", "");
       const res = await fetch(`${baseUrl}/system/searxng/stats`);
@@ -202,7 +202,7 @@ export default function AdminSistemaPage() {
     } catch (err) {
       console.error("Error fetching SearXNG stats:", err);
     } finally {
-      setLoadingSearxng(false);
+      if (!silent) setLoadingSearxng(false);
     }
   };
 
@@ -260,15 +260,15 @@ export default function AdminSistemaPage() {
   };
 
   useEffect(() => {
-    fetchErrors();
-    fetchLLMStats();
-    fetchWorkersStatus();
-    fetchQdrantStats();
+    fetchErrors(false);
+    fetchLLMStats(false);
+    fetchWorkersStatus(false);
+    fetchQdrantStats(false);
     const interval = setInterval(() => {
-      fetchErrors();
-      fetchLLMStats();
-      fetchWorkersStatus();
-      fetchQdrantStats();
+      fetchErrors(true);
+      fetchLLMStats(true);
+      fetchWorkersStatus(true);
+      fetchQdrantStats(true);
     }, 15000);
     return () => clearInterval(interval);
   }, []);
