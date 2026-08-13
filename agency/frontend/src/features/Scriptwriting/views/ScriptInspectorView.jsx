@@ -289,7 +289,15 @@ export function ScriptInspectorView({ tenantId }) {
         tenantId
       );
       const resData = await res.json();
-      if (resData) {
+      if (resData && (resData.id || resData.gancho_0_5s)) {
+        // Agregar el nuevo guion traducido a la lista local para renderizado instantáneo
+        setLocalScripts((prev) => [
+          {
+            ...resData,
+            product_name: script.product_name || script.service_name || "Producto de Campaña",
+          },
+          ...prev,
+        ]);
         setIsTranslateModalOpen(false);
         refresh();
       }

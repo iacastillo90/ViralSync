@@ -113,10 +113,14 @@ async def translate_script(
 
         parsed = {}
         try:
-            translated_json = await llm.acomplete(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                max_tokens=800,
+            import asyncio
+            translated_json = await asyncio.wait_for(
+                llm.acomplete(
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=800,
+                ),
+                timeout=12.0
             )
             import re
             match = re.search(r'\{.*\}', translated_json, re.DOTALL)
@@ -134,7 +138,7 @@ async def translate_script(
 
         # 3. Guardar nuevo guion traducido en DB
         import uuid
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         new_script = Script(
             id=str(uuid.uuid4()),
@@ -145,7 +149,7 @@ async def translate_script(
             moraleja_30_50s=parsed.get("moraleja_30_50s") or orig_script.moraleja_30_50s,
             cta_50_60s=parsed.get("cta_50_60s") or orig_script.cta_50_60s,
             keyword=parsed.get("keyword") or orig_script.keyword,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.utcnow(),
         )
         db.add(new_script)
         await db.commit()
@@ -154,7 +158,7 @@ async def translate_script(
         logger.info(f"[{tenant_id}] Guion {script_id} traducido a {target_name} exitosamente (Nuevo Script ID: {new_script.id})")
         return _script_to_dict(new_script)
     except Exception as exc:
-        logger.error(f"[{tenant_id}] Error en guardado de guion {script_id}: {exc}")
+        logger.error(f"[{tenant_id}] Error en guardado de guion {script_id}: {exc}", exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Error en el motor de traducción: {str(exc)}"
         )
