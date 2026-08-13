@@ -168,7 +168,6 @@ export function IdeaApprovalView({ tenantId }) {
 
     return result;
   }, [localIdeas, folderList, activeFolder, searchQuery, selectedSort]);
-  }, [localIdeas, activeFolder, searchQuery, selectedCategory, selectedCampaign, selectedSort]);
 
   // Controladores de Selección Múltiple
   const handleToggleSelect = (id) => {
