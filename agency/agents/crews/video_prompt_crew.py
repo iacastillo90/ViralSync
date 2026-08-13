@@ -17,17 +17,24 @@ logger = logging.getLogger(__name__)
 
 
 async def run_video_prompt_crew(
-    script: Dict[str, Any], idea: Dict[str, Any], product_image_url: str = ""
+    script: Dict[str, Any], idea: Dict[str, Any], product_image_url: str = "", target_duration: float = 30.0
 ) -> List[Dict[str, Any]]:
     """
-    Desglosa el guion en escenas segundo a segundo con prompts cinematográficos.
+    Desglosa el guion en escenas exactas de 5 segundos con prompts cinematográficos.
+    Para 15s -> 3 escenas de 5s
+    Para 30s -> 6 escenas de 5s
+    Para 45s -> 9 escenas de 5s
+    Para 60s -> 12 escenas de 5s
 
     :param script: Guion de 4 bloques (gancho_0_5s, contexto_5_30s, moraleja_30_50s, cta_50_60s, keyword).
     :param idea: Diccionario con la idea aprobada.
-    :param product_image_url: URL de la foto del producto guardada en MinIO (Image-to-Video).
-    :return: Lista de escenas (Storyboard) con prompts en inglés, marcas de tiempo y estilo de cámara.
+    :param product_image_url: URL de la foto del producto guardada en MinIO.
+    :param target_duration: Duración objetivo en segundos (15.0, 30.0, 45.0, 60.0).
+    :return: Lista de escenas (Storyboard) con 1 prompt de 5s por cada intervalo de 5 segundos.
     """
-    logger.info(f"Ejecutando Crew de Prompting Visual (Image-to-Video active: {bool(product_image_url)})")
+    duration = float(script.get("target_duration") or target_duration or 30.0)
+    num_scenes = max(3, int(round(duration / 5.0)))
+    logger.info(f"Ejecutando Crew de Prompting Visual (Duración: {duration}s -> {num_scenes} escenas de 5s)")
 
     idea_title = idea.get("texto", "Estrategia de Crecimiento")
     niche = idea.get("niche", "B2B Marketing")
@@ -37,12 +44,11 @@ async def run_video_prompt_crew(
     moraleja = script.get("moraleja_30_50s", "")
     cta = script.get("cta_50_60s", "")
 
+    full_script_text = f"{gancho} {contexto} {moraleja} {cta}".strip()
+
     storyboard = []
 
-    # Generación dinámica de prompts cinematográficos vía router LLM compartido
     try:
-        # Contexto dinámico del nicho (D7): umbral RUM de Redis (CVD-03) y
-        # tendencias sanitizadas de la caché (CVD-04). Ambos no-fatal.
         rum_threshold = resolve_rum_threshold(niche)
         trend_section = build_trend_section(niche)
         trend_line = (
@@ -53,31 +59,27 @@ async def run_video_prompt_crew(
 
         system_prompt = (
             "You are an expert AI Video Prompt Engineer and Director of Photography for vertical 9:16 short-form content. "
-            "Generate highly detailed, cinematic Text-to-Video / Image-to-Video visual prompts in English for 4 sequential scenes. "
+            f"Generate exactly {num_scenes} sequential 5-second scene prompts in English for a {duration}-second short video. "
             "CRITICAL: The 'audio_text' field MUST ALWAYS REMAIN EXACTLY IN SPANISH (Español Latino) from the input script. "
             "DO NOT translate 'audio_text' to English! ONLY 'visual_prompt' and 'camera_shot' should be in English. "
-            "Output MUST be strict JSON array with 4 scene objects, without markdown wrapping."
+            f"Output MUST be a strict JSON array with exactly {num_scenes} scene objects, without markdown wrapping."
         )
 
         user_prompt = (
             f"Niche: {niche}\n"
-            f"Target RUM threshold ({niche}): {rum_threshold:.2f}\n"
-            f"{trend_line}"
+            f"Target Duration: {duration} seconds ({num_scenes} scenes of 5s each)\n"
             f"Idea: {idea_title}\n"
             f"Product Image URL: {product_image_url or 'None'}\n"
-            f"Scene 1 (0s-5s - Hook): {gancho}\n"
-            f"Scene 2 (5s-30s - Context): {contexto}\n"
-            f"Scene 3 (30s-50s - Moral/Value): {moraleja}\n"
-            f"Scene 4 (50s-60s - CTA): {cta}\n\n"
-            "Return a JSON array of 4 objects:\n"
+            f"Full Script (Spanish): {full_script_text}\n\n"
+            f"Return a JSON array of exactly {num_scenes} objects:\n"
             "[\n"
             "  {\n"
             '    "scene_index": 1,\n'
             '    "timestamp_range": "0s - 5s",\n'
             '    "block_type": "gancho",\n'
-            '    "audio_text": "...",\n'
+            '    "audio_text": "Spanish spoken audio segment for this 5s shot...",\n'
             '    "camera_shot": "Macro Close-Up / Dynamic Push-In",\n'
-            '    "visual_mode": "IMAGE_TO_VIDEO or TEXT_TO_VIDEO",\n'
+            '    "visual_mode": "TEXT_TO_VIDEO",\n'
             '    "visual_prompt": "Detailed 9:16 vertical cinematic visual prompt in English..."\n'
             "  },\n"
             "  ...\n"
@@ -91,87 +93,55 @@ async def run_video_prompt_crew(
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.7,
-                max_tokens=1500,
+                max_tokens=2500,
             )
         ).strip()
 
         if content.startswith("```"):
             content = content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         parsed = json.loads(content)
-        if isinstance(parsed, list) and len(parsed) == 4:
-            blocks = [gancho, contexto, moraleja, cta]
-            for idx, sc in enumerate(parsed):
+        if isinstance(parsed, list) and len(parsed) >= num_scenes:
+            for sc in parsed:
                 sc["image_url"] = product_image_url if product_image_url else None
-                # Garantizar que el audio_text sea siempre el texto en Español Latino del guion original
-                sc["audio_text"] = blocks[idx] if idx < len(blocks) else sc.get("audio_text", "")
-            storyboard = parsed
+            storyboard = parsed[:num_scenes]
     except Exception as exc:
-        logger.warning(f"Router LLM no disponible para video prompting ({exc}). Usando fallback cinematográfico.")
+        logger.warning(f"Router LLM no disponible para video prompting ({exc}). Generando {num_scenes} escenas de 5s en fallback.")
 
     if not storyboard:
-        # Storyboard estructurado de respaldo por marcas de tiempo
-        storyboard = [
-            {
-                "scene_index": 1,
-                "timestamp_range": "0s - 5s",
-                "block_type": "gancho",
-                "audio_text": gancho,
-                "camera_shot": "Macro Close-Up / Dynamic Push-In",
-                "image_url": product_image_url if product_image_url else None,
-                "visual_mode": "IMAGE_TO_VIDEO" if product_image_url else "TEXT_TO_VIDEO",
-                "visual_prompt": (
-                    f"9:16 vertical video, high resolution 4k cinematic style. "
-                    + (f"Using reference product image from {product_image_url}. " if product_image_url else "")
-                    + f"Intense close-up of a modern entrepreneur reacting in shock while looking at a futuristic digital dashboard showing declining metrics for {niche}. "
-                    f"Dramatic neon-blue and warm lighting, shallow depth of field, 24fps filmic color grading."
-                ),
-            },
-            {
-                "scene_index": 2,
-                "timestamp_range": "5s - 30s",
-                "block_type": "contexto",
-                "audio_text": contexto,
-                "camera_shot": "Medium Tracking Shot",
-                "image_url": product_image_url if product_image_url else None,
-                "visual_mode": "IMAGE_TO_VIDEO" if product_image_url else "TEXT_TO_VIDEO",
-                "visual_prompt": (
-                    f"9:16 vertical video, 4k ultra-detailed. "
-                    + (f"Featuring product from {product_image_url} in focus. " if product_image_url else "")
-                    + f"Fast-paced montage of a sleek modern glass office building, transitioning to hands typing code and analyzing growth charts on a laptop in {niche}. "
-                    f"Professional B2B environment, elegant warm lighting, hyperrealistic, sharp focus."
-                ),
-            },
-            {
-                "scene_index": 3,
-                "timestamp_range": "30s - 50s",
-                "block_type": "moraleja",
-                "audio_text": moraleja,
-                "camera_shot": "Eye-Level Medium Close-Up",
-                "image_url": None,
-                "visual_mode": "TEXT_TO_VIDEO",
-                "visual_prompt": (
-                    f"9:16 vertical video, 4k cinematic portrait. "
-                    f"A confident business strategist looking directly into the camera in a warmly lit modern studio with bokeh background. "
-                    f"Smooth camera slow zoom-in, natural gestures, premium color tone."
-                ),
-            },
-            {
-                "scene_index": 4,
-                "timestamp_range": "50s - 60s",
-                "block_type": "cta",
-                "audio_text": cta,
-                "camera_shot": "Low Angle Shot / Text Overlay",
-                "image_url": product_image_url if product_image_url else None,
-                "visual_mode": "IMAGE_TO_VIDEO" if product_image_url else "TEXT_TO_VIDEO",
-                "visual_prompt": (
-                    f"9:16 vertical video, high impact 4k motion design. "
-                    + (f"Hero shot of product {product_image_url} with glowing text overlay. " if product_image_url else "")
-                    + f"Glowing 3D typography of key concepts floating over a stylish dark gradient background with floating sparks and subtle light leaks. "
-                    f"Vibrant colors, high contrast, commercial quality."
-                ),
-            },
+        # Fallback dinámico de N escenas de 5s
+        blocks = [
+            ("gancho", gancho or "Gancho inicial"),
+            ("contexto_1", contexto[:len(contexto)//2] if contexto else "Contexto del problema"),
+            ("contexto_2", contexto[len(contexto)//2:] if contexto else "Solución propuesta"),
+            ("moraleja_1", moraleja[:len(moraleja)//2] if moraleja else "Demostración de valor"),
+            ("moraleja_2", moraleja[len(moraleja)//2:] if moraleja else "Resultado y beneficio"),
+            ("cta", cta or "Llamado a la acción final"),
         ]
+
+        shots = [
+            "Macro Close-Up / Dynamic Push-In",
+            "Medium Shot / Smooth Panning",
+            "Over-The-Shoulder / Focus Pull",
+            "Low Angle Dynamic Tracking",
+            "Cinematic Product Orbit",
+            "Center Framed / Slow Zoom-Out",
+        ]
+
+        for i in range(num_scenes):
+            start_s = i * 5
+            end_s = (i + 1) * 5
+            b_type, a_txt = blocks[i % len(blocks)]
+            c_shot = shots[i % len(shots)]
+            storyboard.append({
+                "scene_index": i + 1,
+                "timestamp_range": f"{start_s}s - {end_s}s",
+                "block_type": b_type,
+                "audio_text": a_txt,
+                "camera_shot": c_shot,
+                "image_url": product_image_url if product_image_url else None,
+                "visual_mode": "TEXT_TO_VIDEO",
+                "visual_prompt": f"9:16 vertical cinematic shot, 8K resolution, 4k detail. Professional scene showing {a_txt[:40]}, {c_shot}, 5-second clip",
+            })
 
     logger.info(f"Storyboard generado exitosamente con {len(storyboard)} escenas.")
     return storyboard
-
