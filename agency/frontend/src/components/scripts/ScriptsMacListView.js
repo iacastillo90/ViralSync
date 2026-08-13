@@ -13,6 +13,7 @@ import {
   Wrench,
   Calendar,
   Globe,
+  Sparkles,
 } from "lucide-react";
 
 /**
@@ -210,6 +211,16 @@ export function ScriptsMacListView({
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
+
+                      {onViewPrompts && (
+                        <button
+                          onClick={() => onViewPrompts(script)}
+                          title="Ver prompts de video IA desglosados por escenas de 5s"
+                          className="bg-slate-900 hover:bg-indigo-950 text-indigo-300 border border-slate-800 hover:border-indigo-500/50 text-[10px] font-bold px-2 py-1 rounded-md flex items-center gap-1 transition-all ml-1"
+                        >
+                          <Sparkles className="w-3 h-3 text-amber-400" /> Prompts IA
+                        </button>
+                      )}
 
                       {onTranslate && (
                         <button

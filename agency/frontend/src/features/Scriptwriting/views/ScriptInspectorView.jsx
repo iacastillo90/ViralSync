@@ -9,7 +9,9 @@ import { ScriptsMacListView } from "@/components/scripts/ScriptsMacListView";
 import { EditScriptModal } from "@/components/scripts/EditScriptModal";
 import { TranslateScriptModal } from "@/components/scripts/TranslateScriptModal";
 import { Sparkles, Loader2, FolderOpen, ArrowLeft, Folder, Calendar, Wrench, Package, Video, X, CheckCircle2, AlertCircle } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+
+import { ViewScenePromptsModal } from "@/components/scripts/ViewScenePromptsModal";
 
 /**
  * Formateador de fecha y hora pequeña (DD/MM/YYYY HH:mm)
@@ -40,6 +42,7 @@ export function ScriptInspectorView({ tenantId }) {
   const { data: productsData } = useTenantResource("products", tenantId);
   const searchParams = useSearchParams();
   const ideaIdParam = searchParams ? searchParams.get("ideaId") : null;
+  const router = useRouter();
 
   // Estados de interfaz macOS Finder
   const [viewMode, setViewMode] = useState("grid"); // "grid" | "list"
@@ -60,6 +63,12 @@ export function ScriptInspectorView({ tenantId }) {
   const [translatingScript, setTranslatingScript] = useState(null);
   const [isTranslateModalOpen, setIsTranslateModalOpen] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
+
+  // Estado del Modal de Prompts de Video IA por Escenas (5s)
+  const [promptsScript, setPromptsScript] = useState(null);
+  const [isPromptsModalOpen, setIsPromptsModalOpen] = useState(false);
+  const [promptsScenes, setPromptsScenes] = useState([]);
+  const [isPromptsLoading, setIsPromptsLoading] = useState(false);
 
   // Estados de Renderizado de Video
   const [videoUrl, setVideoUrl] = useState(null);
@@ -289,6 +298,63 @@ export function ScriptInspectorView({ tenantId }) {
     setIsEditModalOpen(true);
   };
 
+  const handleOpenPromptsModal = async (script) => {
+    setPromptsScript(script);
+    setIsPromptsModalOpen(true);
+    setIsPromptsLoading(true);
+    setPromptsScenes([]);
+
+    try {
+      const res = await fetchWithTenant(
+        `/tenants/${tenantId}/scripts/${script.id}/prompts`,
+        { method: "POST" },
+        tenantId
+      );
+      if (res && res.scenes) {
+        setPromptsScenes(res.scenes);
+      }
+    } catch (err) {
+      console.error("Error obteniendo prompts de video IA por escenas:", err);
+      // Fallback local por escenas de 5s si ocurre un error
+      setPromptsScenes([
+        {
+          scene_index: 1,
+          timestamp_range: "0s - 5s",
+          block_type: "gancho",
+          audio_text: script.gancho_0_5s || "Gancho de entrada",
+          camera_shot: "Macro Close-Up / Dynamic Push-In",
+          visual_prompt: `Cinematic 9:16 vertical close-up shot, 8K ultra realistic, dramatic studio lighting showcasing ${script.product_name || "product"}, 5-second clip`,
+        },
+        {
+          scene_index: 2,
+          timestamp_range: "5s - 30s",
+          block_type: "contexto",
+          audio_text: script.contexto_5_30s || "Contexto explicativo",
+          camera_shot: "Medium Shot / Smooth Panning",
+          visual_prompt: `Cinematic 9:16 vertical action scene showing professional workflow and problem solving, 8K resolution, volumetric lighting`,
+        },
+        {
+          scene_index: 3,
+          timestamp_range: "30s - 50s",
+          block_type: "moraleja",
+          audio_text: script.moraleja_30_50s || "Valor y moraleja",
+          camera_shot: "Over-The-Shoulder / Focus Pull",
+          visual_prompt: `Cinematic 9:16 vertical high-impact value demonstration, crisp textures, depth of field, 8K professional quality`,
+        },
+        {
+          scene_index: 4,
+          timestamp_range: "50s - 60s",
+          block_type: "cta",
+          audio_text: script.cta_50_60s || "Llamado a la acción",
+          camera_shot: "Center Framed / Slow Zoom-Out",
+          visual_prompt: `Cinematic 9:16 vertical call to action banner, neon glow accents, clean minimal design, 8K render`,
+        },
+      ]);
+    } finally {
+      setIsPromptsLoading(false);
+    }
+  };
+
   const handleSaveEditedScript = (updatedScript) => {
     setLocalScripts((prev) =>
       prev.map((item) => (item.id === updatedScript.id ? updatedScript : item))
@@ -375,6 +441,14 @@ export function ScriptInspectorView({ tenantId }) {
       );
       if (resData && resData.video_url) {
         setVideoUrl(resData.video_url);
+        // Render completado: llevar al usuario a la vista donde se reproduce el video
+        router.push(`/tenants/${tenantId}/aprobaciones/publicacion`);
+      } else {
+        setNotification({
+          type: "error",
+          title: "Error al Solicitar Renderizado",
+          message: "El servicio de renderizado no devolvió un video. Intentá nuevamente en unos segundos.",
+        });
       }
     } catch (err) {
       setNotification({
@@ -575,6 +649,7 @@ export function ScriptInspectorView({ tenantId }) {
               onDelete={handleDeleteScript}
               onDownload={handleDownloadScript}
               onTranslate={handleOpenTranslate}
+              onViewPrompts={handleOpenPromptsModal}
               onRenderVideo={handleRenderVideo}
               onSelectFolder={(folderName) => setActiveFolder(folderName)}
             />
@@ -587,12 +662,23 @@ export function ScriptInspectorView({ tenantId }) {
               onDelete={handleDeleteScript}
               onDownload={handleDownloadScript}
               onTranslate={handleOpenTranslate}
+              onViewPrompts={handleOpenPromptsModal}
               onRenderVideo={handleRenderVideo}
               onSelectFolder={(folderName) => setActiveFolder(folderName)}
             />
           )}
         </div>
       )}
+
+      {/* Modal de Prompts de Video IA por Escenas (5s) */}
+      <ViewScenePromptsModal
+        script={promptsScript}
+        isOpen={isPromptsModalOpen}
+        scenes={promptsScenes}
+        loading={isPromptsLoading}
+        onClose={() => setIsPromptsModalOpen(false)}
+        onRenderVideo={handleRenderVideo}
+      />
 
       {/* Modal de Traducción Multilingüe */}
       <TranslateScriptModal
@@ -602,6 +688,35 @@ export function ScriptInspectorView({ tenantId }) {
         onTranslate={handleTranslateScript}
         isTranslating={isTranslating}
       />
+
+      {/* Modal de carga de renderizado (se muestra mientras el microservicio genera el video) */}
+      {isVideoLoading && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-center animate-fadeIn">
+            <div className="w-14 h-14 rounded-full bg-indigo-950 text-indigo-400 border border-indigo-500/40 flex items-center justify-center mx-auto">
+              <Loader2 className="w-7 h-7 animate-spin" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-100">Generando video...</h3>
+              <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                Estamos renderizando tu reel para <strong className="text-indigo-300">"{renderingScriptTitle}"</strong>.
+                Esto puede tomar unos segundos. Te redirigimos automáticamente cuando esté listo.
+              </p>
+            </div>
+            <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+              <div className="h-full w-1/3 bg-indigo-500 rounded-full animate-pulse" />
+            </div>
+            <button
+              disabled
+              className="w-full py-2 rounded-xl font-bold text-xs bg-slate-800 text-slate-500 cursor-not-allowed"
+            >
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Renderizando...
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Ventana Emergente de Notificación (Pop-up OK / Error) */}
       {notification && (

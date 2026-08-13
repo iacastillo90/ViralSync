@@ -69,6 +69,7 @@ export function ScriptsMacGridView({
   onDelete,
   onDownload,
   onTranslate,
+  onViewPrompts,
   onRenderVideo,
   onSelectFolder,
 }) {
@@ -244,8 +245,18 @@ export function ScriptsMacGridView({
                 </button>
               </div>
 
-              {/* Botones de Acción Principal: Traducir & Renderizar Video */}
+              {/* Botones de Acción Principal: Prompts IA, Traducir & Renderizar Video */}
               <div className="flex items-center gap-1.5">
+                {onViewPrompts && (
+                  <button
+                    onClick={() => onViewPrompts(script)}
+                    className="bg-slate-950 hover:bg-indigo-950 text-indigo-300 border border-slate-800 hover:border-indigo-500/50 text-[11px] font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-all"
+                    title="Ver desglose de Prompts de Video IA por escenas de 5s"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Prompts IA
+                  </button>
+                )}
+
                 {onTranslate && (
                   <button
                     onClick={() => onTranslate(script)}

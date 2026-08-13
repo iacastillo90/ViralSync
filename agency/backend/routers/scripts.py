@@ -214,6 +214,97 @@ async def translate_script(
         )
 
 
+@router.post("/{tenant_id}/scripts/{script_id}/prompts")
+async def generate_script_scene_prompts(
+    tenant_id: str,
+    script_id: str,
+    db=Depends(get_async_db)
+) -> Dict[str, Any]:
+    """Genera desglose de prompts de video IA por escenas de 5s para un guion dado."""
+    if not HAS_SQLALCHEMY or db is None:
+        raise HTTPException(status_code=503, detail="Base de datos no disponible")
+
+    res = await db.execute(
+        select(Script).where(Script.id == script_id, Script.tenant_id == tenant_id)
+    )
+    orig_script = res.scalars().first()
+    if not orig_script:
+        raise HTTPException(status_code=404, detail="Guion no encontrado")
+
+    script_dict = _script_to_dict(orig_script)
+
+    # 1. Obtener idea si está vinculada
+    idea_dict = {"texto": orig_script.gancho_0_5s, "niche": "B2B Marketing"}
+    if orig_script.idea_id:
+        try:
+            from backend.db.models import Idea
+            idea_res = await db.execute(
+                select(Idea).where(Idea.id == orig_script.idea_id)
+            )
+            idea_obj = idea_res.scalars().first()
+            if idea_obj:
+                idea_dict = {
+                    "id": idea_obj.id,
+                    "texto": idea_obj.texto,
+                    "gancho": idea_obj.gancho,
+                    "niche": getattr(idea_obj, "niche", "B2B Marketing"),
+                }
+        except Exception as err:
+            logger.warning(f"[{tenant_id}] No se pudo cargar idea asociada: {err}")
+
+    # 2. Ejecutar video_prompt_crew para desglose de escenas de 5s
+    try:
+        from agents.crews.video_prompt_crew import run_video_prompt_crew
+        storyboard = await run_video_prompt_crew(script=script_dict, idea=idea_dict)
+    except Exception as exc:
+        logger.warning(f"[{tenant_id}] Error ejecutando video_prompt_crew ({exc}). Generando storyboard adaptativo.")
+        storyboard = [
+            {
+                "scene_index": 1,
+                "timestamp_range": "0s - 5s",
+                "block_type": "gancho",
+                "audio_text": orig_script.gancho_0_5s,
+                "camera_shot": "Macro Close-Up / Dynamic Push-In",
+                "visual_mode": "TEXT_TO_VIDEO",
+                "visual_prompt": f"Cinematic 9:16 vertical close-up shot, 8K ultra realistic, dramatic studio lighting showcasing {orig_script.keyword or 'product'}, 5-second clip",
+            },
+            {
+                "scene_index": 2,
+                "timestamp_range": "5s - 30s",
+                "block_type": "contexto",
+                "audio_text": orig_script.contexto_5_30s,
+                "camera_shot": "Medium Shot / Smooth Panning",
+                "visual_mode": "TEXT_TO_VIDEO",
+                "visual_prompt": f"Cinematic 9:16 vertical action scene showing professional workflow and problem solving, 8K resolution, volumetric lighting",
+            },
+            {
+                "scene_index": 3,
+                "timestamp_range": "30s - 50s",
+                "block_type": "moraleja",
+                "audio_text": orig_script.moraleja_30_50s,
+                "camera_shot": "Over-The-Shoulder / Focus Pull",
+                "visual_mode": "TEXT_TO_VIDEO",
+                "visual_prompt": f"Cinematic 9:16 vertical high-impact value demonstration, crisp textures, depth of field, 8K professional quality",
+            },
+            {
+                "scene_index": 4,
+                "timestamp_range": "50s - 60s",
+                "block_type": "cta",
+                "audio_text": orig_script.cta_50_60s,
+                "camera_shot": "Center Framed / Slow Zoom-Out",
+                "visual_mode": "TEXT_TO_VIDEO",
+                "visual_prompt": f"Cinematic 9:16 vertical call to action banner, neon glow accents, clean minimal design, 8K render",
+            },
+        ]
+
+    return {
+        "status": "success",
+        "tenant_id": tenant_id,
+        "script_id": script_id,
+        "scenes": storyboard,
+    }
+
+
 async def _persist_render_video(tenant_id: str, script_id: Optional[str], video_url: Any) -> None:
     """Persiste la fila `videos` del render real (PERSIST-02) sin romper la respuesta.
 
