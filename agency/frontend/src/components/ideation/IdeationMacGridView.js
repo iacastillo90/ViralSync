@@ -152,14 +152,37 @@ export function IdeationMacGridView({
                 <span>{createdAtFormatted}</span>
               </div>
 
-              <h3 className="text-xs font-bold text-slate-100 line-clamp-2 leading-snug group-hover:text-indigo-300 transition-colors">
+              {/* Título / Gancho Principal */}
+              <h3 className="text-xs font-bold text-slate-100 leading-snug group-hover:text-indigo-300 transition-colors">
                 {title}
               </h3>
 
-              {idea.core_message && (
-                <p className="text-[11px] text-slate-400 line-clamp-3 leading-relaxed">
-                  {idea.core_message}
+              {/* Gancho Viral Destacado (si existe) */}
+              {idea.gancho && idea.gancho !== title && (
+                <div className="bg-slate-950/80 border border-indigo-500/30 p-2 rounded-xl text-[11px] text-indigo-200 leading-relaxed">
+                  <span className="text-[10px] text-indigo-400 font-bold uppercase block mb-0.5">🪝 Gancho Viral:</span>
+                  "{idea.gancho}"
+                </div>
+              )}
+
+              {/* Mensaje Central / Texto Narrativo */}
+              {(idea.core_message || idea.texto || idea.contexto_5_30s) && (
+                <p className="text-[11px] text-slate-400 leading-relaxed bg-slate-950/40 p-2 rounded-xl border border-slate-800/60">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">💡 Concepto Narrativo:</span>
+                  {idea.core_message || idea.texto || idea.contexto_5_30s}
                 </p>
+              )}
+
+              {/* Insignia Score RUM */}
+              {idea.rum_score !== undefined && idea.rum_score !== null && (
+                <div className="flex items-center gap-2 pt-1 text-[10px]">
+                  <span className="bg-emerald-950/60 text-emerald-300 border border-emerald-500/40 px-2 py-0.5 rounded font-mono font-bold">
+                    RUM Score: {idea.rum_score}
+                  </span>
+                  {idea.passes_threshold === true && (
+                    <span className="text-emerald-400 font-bold">✓ PASS 5/50</span>
+                  )}
+                </div>
               )}
             </div>
 

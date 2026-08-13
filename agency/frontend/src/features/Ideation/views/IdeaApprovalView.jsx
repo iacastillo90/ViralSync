@@ -93,32 +93,56 @@ export function IdeaApprovalView({ tenantId }) {
     return Array.from(camps);
   }, [localIdeas]);
 
-  // Agrupar ideas en carpetas por producto/lote
+  // Agrupar ideas en carpetas por producto y lote de generación (batch)
   const folderList = useMemo(() => {
     const map = {};
     localIdeas.forEach((idea) => {
-      const cat = idea.category || idea.product_name || "General";
-      if (!map[cat]) {
-        map[cat] = {
-          key: cat,
-          name: cat,
+      const pName = idea.product_name || idea.service_name || idea.category || "Producto de Campaña";
+      const ideaTime = new Date(idea.created_at || Date.now()).getTime();
+
+      // Buscar si existe una carpeta para este producto dentro de una ventana de 2 minutos (batch)
+      let matchedKey = Object.keys(map).find((key) => {
+        const item = map[key];
+        return item.productName === pName && Math.abs(ideaTime - item.timestamp) < 120000;
+      });
+
+      if (!matchedKey) {
+        matchedKey = `batch_${pName}_${ideaTime}`;
+        const timeStr = idea.created_at
+          ? new Date(idea.created_at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
+          : "";
+        map[matchedKey] = {
+          key: matchedKey,
+          productName: pName,
+          name: `${pName}${timeStr ? ` (${timeStr})` : ""}`,
+          timestamp: ideaTime,
+          createdAt: idea.created_at,
           items: [],
         };
       }
-      map[cat].items.push(idea);
+
+      map[matchedKey].items.push(idea);
     });
-    return Object.values(map);
+    return Object.values(map).sort((a, b) => b.timestamp - a.timestamp);
   }, [localIdeas]);
 
-  // Filtrar y ordenar ideas según la carpeta activa y controles Finder
+  // Filtrar las ideaciones que pertenecen a la carpeta activa o búsqueda
   const filteredIdeas = useMemo(() => {
-    let result = [...localIdeas];
+    let result = [];
 
-    // Filtrar por carpeta activa si se está dentro de una
     if (activeFolder) {
-      result = result.filter(
-        (item) => (item.category || item.product_name || "General") === activeFolder
+      const folderObj = folderList.find(
+        (f) => f.key === activeFolder || f.productName === activeFolder || f.name === activeFolder
       );
+      if (folderObj) {
+        result = [...folderObj.items];
+      } else {
+        result = localIdeas.filter(
+          (item) => (item.product_name || item.service_name || item.category) === activeFolder
+        );
+      }
+    } else {
+      result = [...localIdeas];
     }
 
     // Búsqueda por texto
@@ -128,22 +152,11 @@ export function IdeaApprovalView({ tenantId }) {
         (item) =>
           (item.angle || "").toLowerCase().includes(q) ||
           (item.hook || "").toLowerCase().includes(q) ||
+          (item.gancho || "").toLowerCase().includes(q) ||
           (item.title || "").toLowerCase().includes(q) ||
           (item.core_message || "").toLowerCase().includes(q) ||
           (item.texto || "").toLowerCase().includes(q)
       );
-    }
-
-    // Filtro por Categoría / Producto
-    if (selectedCategory !== "all") {
-      result = result.filter(
-        (item) => (item.category || item.product_name) === selectedCategory
-      );
-    }
-
-    // Filtro por Campaña
-    if (selectedCampaign !== "all") {
-      result = result.filter((item) => item.campaign_name === selectedCampaign);
     }
 
     // Ordenamiento
@@ -151,13 +164,10 @@ export function IdeaApprovalView({ tenantId }) {
       result.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
     } else if (selectedSort === "oldest") {
       result.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
-    } else if (selectedSort === "title") {
-      result.sort((a, b) =>
-        (a.angle || a.title || "").localeCompare(b.angle || b.title || "")
-      );
     }
 
     return result;
+  }, [localIdeas, folderList, activeFolder, searchQuery, selectedSort]);
   }, [localIdeas, activeFolder, searchQuery, selectedCategory, selectedCampaign, selectedSort]);
 
   // Controladores de Selección Múltiple
