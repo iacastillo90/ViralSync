@@ -7,17 +7,37 @@ import {
   Download,
   CheckCircle2,
   Clock,
-  Sparkles,
   CheckSquare,
   Square,
   Package,
+  Wrench,
+  Calendar,
 } from "lucide-react";
+
+/**
+ * Formateador de fecha y hora pequeña (DD/MM/YYYY HH:mm)
+ */
+function formatDateTime(isoString) {
+  if (!isoString) return "Fecha N/A";
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleDateString("es-ES", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch (e) {
+    return isoString;
+  }
+}
 
 /**
  * IdeationMacGridView
  * Componente atómico de vista en cuadrícula (Grid Iconos) estilo macOS Finder.
- * Presenta las ideas como carpetas/documentos interactivos con controles de ventana Mac (🔴 🟡 🟢),
- * tarjetas de vista previa, selección múltiple y botones de acción rápida.
+ * Muestra el nombre dinámico del Producto o Servicio del formulario, la fecha/hora de creación,
+ * y controla el botón de aprobación para evitar aprobaciones masivas accidentales.
  */
 export function IdeationMacGridView({
   ideas = [],
@@ -40,12 +60,23 @@ export function IdeationMacGridView({
     );
   }
 
+  // Ocultar botón "Aprobar" si hay más de 1 idea en pantalla para evitar aprobaciones masivas no deseadas
+  const showApproveButton = ideas.length === 1;
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       {ideas.map((idea) => {
         const isSelected = selectedIds.includes(idea.id);
         const title = idea.angle || idea.hook || idea.title || "Concepto de Ideación";
-        const category = idea.category || idea.product_name || "General";
+        const productName =
+          idea.product_name ||
+          idea.service_name ||
+          idea.category ||
+          idea.matched_product_name ||
+          "Producto de Campaña";
+
+        const isService = Boolean(idea.service_name || idea.is_service);
+        const createdAtFormatted = formatDateTime(idea.created_at);
         const estimatedDuration = idea.estimated_duration || 30;
 
         return (
@@ -79,16 +110,27 @@ export function IdeationMacGridView({
               </button>
             </div>
 
-            {/* Cuerpo de la Tarjeta Mac: Icono, Etiqueta y Texto del Gancho */}
+            {/* Cuerpo de la Tarjeta Mac: Nombre Dinámico de Producto/Servicio, Datetime y Duración */}
             <div className="py-3 space-y-2.5 flex-1">
-              <div className="flex items-start justify-between gap-2">
-                <span className="bg-indigo-950/70 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-lg text-[10px] font-bold font-mono uppercase flex items-center gap-1">
-                  <Package className="w-3 h-3 text-indigo-400" /> {category}
+              <div className="flex items-center justify-between gap-2">
+                <span className="bg-indigo-950/70 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-lg text-[10px] font-bold font-mono uppercase flex items-center gap-1 truncate max-w-[65%]">
+                  {isService ? (
+                    <Wrench className="w-3 h-3 text-amber-400 shrink-0" />
+                  ) : (
+                    <Package className="w-3 h-3 text-indigo-400 shrink-0" />
+                  )}
+                  <span className="truncate">{productName}</span>
                 </span>
 
-                <span className="bg-slate-950 text-slate-400 border border-slate-800 px-2 py-0.5 rounded-md text-[10px] font-mono flex items-center gap-1">
+                <span className="bg-slate-950 text-slate-400 border border-slate-800 px-2 py-0.5 rounded-md text-[10px] font-mono flex items-center gap-1 shrink-0">
                   <Clock className="w-3 h-3 text-amber-400" /> ~{estimatedDuration}s
                 </span>
+              </div>
+
+              {/* Fecha y Hora de Creación (Datetime) */}
+              <div className="flex items-center gap-1 text-[10px] font-mono text-slate-400 pt-0.5">
+                <Calendar className="w-3 h-3 text-slate-500" />
+                <span>{createdAtFormatted}</span>
               </div>
 
               <h3 className="text-xs font-bold text-slate-100 line-clamp-2 leading-snug group-hover:text-indigo-300 transition-colors">
@@ -102,7 +144,7 @@ export function IdeationMacGridView({
               )}
             </div>
 
-            {/* Pie de la Tarjeta Mac: Acciones Rápidas (Editar, Descargar, Borrar, Aprobar) */}
+            {/* Pie de la Tarjeta Mac: Acciones Rápidas (Editar, Descargar, Borrar y Aprobar Condicional) */}
             <div className="pt-2.5 border-t border-slate-800/60 flex items-center justify-between gap-1">
               <div className="flex items-center gap-1">
                 <button
@@ -128,7 +170,8 @@ export function IdeationMacGridView({
                 </button>
               </div>
 
-              {onApprove && (
+              {/* Botón Aprobar solo cuando showApproveButton es verdadero (1 sola idea) */}
+              {onApprove && showApproveButton && (
                 <button
                   onClick={() => onApprove(idea)}
                   className="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-md transition-all"

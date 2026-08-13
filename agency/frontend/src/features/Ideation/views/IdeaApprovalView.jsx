@@ -48,9 +48,23 @@ export function IdeaApprovalView({ tenantId }) {
 
   useEffect(() => {
     if (Array.isArray(data)) {
-      setLocalIdeas(data);
+      const products = Array.isArray(productsData) ? productsData : [];
+      const enriched = data.map((item) => {
+        let pName = item.product_name || item.service_name || item.category;
+        if (!pName && products.length > 0) {
+          pName = products[0].name || products[0].title;
+        }
+        if (!pName && urlProduct) {
+          pName = urlProduct;
+        }
+        return {
+          ...item,
+          product_name: pName || "Producto de Campaña",
+        };
+      });
+      setLocalIdeas(enriched);
     }
-  }, [data]);
+  }, [data, productsData, urlProduct]);
 
   // Polling silencioso cada 5s para sincronización de lote
   useEffect(() => {
