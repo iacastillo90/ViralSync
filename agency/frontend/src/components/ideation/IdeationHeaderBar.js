@@ -130,7 +130,7 @@ export function IdeationHeaderBar({
             <span>{isAllSelected ? "Deseleccionar" : "Seleccionar Todo"}</span>
           </button>
 
-          {/* Filtro por Categoría / Producto */}
+          {/* Filtro por Tipo (Producto vs Servicio) o Nombre */}
           <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 px-2.5 py-1 rounded-xl">
             <Filter className="w-3 h-3 text-slate-400" />
             <select
@@ -138,10 +138,12 @@ export function IdeationHeaderBar({
               onChange={(e) => setSelectedCategory(e.target.value)}
               className="bg-transparent text-xs text-slate-200 focus:outline-none cursor-pointer font-medium"
             >
-              <option value="all" className="bg-slate-900">📦 Todas las Categorías</option>
+              <option value="all" className="bg-slate-900">✨ Todos los Tipos (Productos y Servicios)</option>
+              <option value="product" className="bg-slate-900">📦 Solo Productos</option>
+              <option value="service" className="bg-slate-900">🛠️ Solo Servicios</option>
               {categories.map((cat, idx) => (
                 <option key={idx} value={cat} className="bg-slate-900">
-                  {cat}
+                  🏷️ {cat}
                 </option>
               ))}
             </select>

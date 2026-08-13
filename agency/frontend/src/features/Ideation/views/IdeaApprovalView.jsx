@@ -112,11 +112,12 @@ export function IdeaApprovalView({ tenantId }) {
     return Array.from(camps);
   }, [localIdeas]);
 
-  // Agrupar ideas en carpetas por producto y lote de generación (batch)
+  // Agrupar, filtrar y ordenar carpetas por tipo (Producto vs Servicio), búsqueda y fecha
   const folderList = useMemo(() => {
     const map = {};
     localIdeas.forEach((idea) => {
       const pName = idea.product_name || idea.service_name || idea.category || "Producto de Campaña";
+      const isService = Boolean(idea.service_name || idea.is_service);
       const ideaTime = new Date(idea.created_at || Date.now()).getTime();
 
       // Buscar si existe una carpeta para este producto dentro de una ventana de 2 minutos (batch)
@@ -127,13 +128,11 @@ export function IdeaApprovalView({ tenantId }) {
 
       if (!matchedKey) {
         matchedKey = `batch_${pName}_${ideaTime}`;
-        const timeStr = idea.created_at
-          ? new Date(idea.created_at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })
-          : "";
         map[matchedKey] = {
           key: matchedKey,
           productName: pName,
           name: pName,
+          isService: isService,
           timestamp: ideaTime,
           createdAt: idea.created_at,
           items: [],
@@ -142,10 +141,45 @@ export function IdeaApprovalView({ tenantId }) {
 
       map[matchedKey].items.push(idea);
     });
-    return Object.values(map).sort((a, b) => b.timestamp - a.timestamp);
-  }, [localIdeas]);
 
-  // Filtrar las ideaciones que pertenecen a la carpeta activa o búsqueda
+    let folders = Object.values(map);
+
+    // 1. Filtro por Tipo (Producto vs Servicio) o Nombre
+    if (selectedCategory === "product") {
+      folders = folders.filter((f) => !f.isService);
+    } else if (selectedCategory === "service") {
+      folders = folders.filter((f) => f.isService);
+    } else if (selectedCategory !== "all") {
+      folders = folders.filter((f) => f.productName === selectedCategory);
+    }
+
+    // 2. Filtro por Búsqueda en el nombre del producto/servicio o propuestas
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      folders = folders.filter(
+        (f) =>
+          f.productName.toLowerCase().includes(q) ||
+          f.items.some(
+            (i) =>
+              (i.gancho || "").toLowerCase().includes(q) ||
+              (i.texto || "").toLowerCase().includes(q)
+          )
+      );
+    }
+
+    // 3. Ordenamiento Dinámico de Carpetas (Más recientes, Más antiguos, Por Nombre A-Z)
+    if (selectedSort === "newest") {
+      folders.sort((a, b) => b.timestamp - a.timestamp);
+    } else if (selectedSort === "oldest") {
+      folders.sort((a, b) => a.timestamp - b.timestamp);
+    } else if (selectedSort === "title") {
+      folders.sort((a, b) => a.productName.localeCompare(b.productName));
+    }
+
+    return folders;
+  }, [localIdeas, selectedCategory, searchQuery, selectedSort]);
+
+  // Filtrar las ideaciones que pertenecen a la carpeta activa
   const filteredIdeas = useMemo(() => {
     let result = [];
 
@@ -164,21 +198,7 @@ export function IdeaApprovalView({ tenantId }) {
       result = [...localIdeas];
     }
 
-    // Búsqueda por texto
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (item) =>
-          (item.angle || "").toLowerCase().includes(q) ||
-          (item.hook || "").toLowerCase().includes(q) ||
-          (item.gancho || "").toLowerCase().includes(q) ||
-          (item.title || "").toLowerCase().includes(q) ||
-          (item.core_message || "").toLowerCase().includes(q) ||
-          (item.texto || "").toLowerCase().includes(q)
-      );
-    }
-
-    // Ordenamiento
+    // Ordenamiento secundario de propuestas dentro de la carpeta
     if (selectedSort === "newest") {
       result.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
     } else if (selectedSort === "oldest") {
@@ -186,7 +206,7 @@ export function IdeaApprovalView({ tenantId }) {
     }
 
     return result;
-  }, [localIdeas, folderList, activeFolder, searchQuery, selectedSort]);
+  }, [localIdeas, folderList, activeFolder, selectedSort]);
 
   // Controladores de Selección Múltiple
   const handleToggleSelect = (id) => {
@@ -334,11 +354,11 @@ export function IdeaApprovalView({ tenantId }) {
                 Genera propuestas desde el formulario inicial para ver carpetas organizadas por producto o servicio.
               </p>
             </div>
-          ) : (
+          ) : viewMode === "grid" ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {folderList.map((folder) => {
                 const count = folder.items.length;
-                const isService = folder.items.some((i) => i.service_name || i.is_service);
+                const isService = folder.isService;
                 return (
                   <div
                     key={folder.key}
@@ -395,6 +415,70 @@ export function IdeaApprovalView({ tenantId }) {
                   </div>
                 );
               })}
+            </div>
+          ) : (
+            /* VISTA EN LISTA LINEAL COMPACTA PARA CARPETAS MAC */
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl shadow-xl backdrop-blur-md overflow-hidden">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-950/90 border-b border-slate-800 text-slate-400 font-medium select-none">
+                  <tr>
+                    <th className="px-4 py-2.5 font-semibold">Carpeta / Producto o Servicio</th>
+                    <th className="px-3 py-2.5 font-semibold">Tipo</th>
+                    <th className="px-3 py-2.5 font-semibold text-center">Propuestas</th>
+                    <th className="px-3 py-2.5 font-semibold">Fecha y Hora</th>
+                    <th className="px-4 py-2.5 font-semibold text-right">Acción</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/40 bg-slate-950/40">
+                  {folderList.map((folder) => {
+                    const isService = folder.isService;
+                    return (
+                      <tr
+                        key={folder.key}
+                        onClick={() => setActiveFolder(folder.key)}
+                        className="hover:bg-slate-900/80 cursor-pointer transition-colors group"
+                      >
+                        <td className="px-4 py-2.5 font-bold text-slate-200 group-hover:text-indigo-300">
+                          <div className="flex items-center gap-2">
+                            <Folder className="w-4 h-4 text-indigo-400 shrink-0" />
+                            <span>{folder.productName}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                              isService
+                                ? "bg-amber-950/60 text-amber-300 border-amber-500/30"
+                                : "bg-indigo-950/60 text-indigo-300 border-indigo-500/30"
+                            }`}
+                          >
+                            {isService ? (
+                              <Wrench className="w-3 h-3 text-amber-400" />
+                            ) : (
+                              <Package className="w-3 h-3 text-indigo-400" />
+                            )}
+                            <span>{isService ? "Servicio" : "Producto"}</span>
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-center whitespace-nowrap font-mono font-bold text-indigo-300">
+                          {folder.items.length} {folder.items.length === 1 ? "propuesta" : "propuestas"}
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap text-[11px] font-mono text-slate-400">
+                          <div className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-slate-500" />
+                            <span>{formatDateTime(folder.createdAt)}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                          <span className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] px-3 py-1 rounded-lg shadow transition-all">
+                            Abrir Carpeta →
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
