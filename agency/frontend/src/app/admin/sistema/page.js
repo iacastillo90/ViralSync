@@ -21,6 +21,7 @@ import {
   Search,
   ExternalLink,
   Lock,
+  Terminal,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
