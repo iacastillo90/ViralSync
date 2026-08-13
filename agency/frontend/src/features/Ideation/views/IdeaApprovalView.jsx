@@ -8,8 +8,27 @@ import { IdeationHeaderBar } from "@/components/ideation/IdeationHeaderBar";
 import { IdeationMacGridView } from "@/components/ideation/IdeationMacGridView";
 import { IdeationMacListView } from "@/components/ideation/IdeationMacListView";
 import { EditIdeaModal } from "@/components/ideation/EditIdeaModal";
-import { Sparkles, Loader2, FolderOpen, ArrowLeft, Folder } from "lucide-react";
+import { Sparkles, Loader2, FolderOpen, ArrowLeft, Folder, Calendar, Wrench, Package } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
+
+/**
+ * Formateador de fecha y hora pequeña (DD/MM/YYYY HH:mm)
+ */
+function formatDateTime(isoString) {
+  if (!isoString) return "Reciente";
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleDateString("es-ES", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch (e) {
+    return isoString;
+  }
+}
 
 /**
  * IdeaApprovalView
@@ -114,7 +133,7 @@ export function IdeaApprovalView({ tenantId }) {
         map[matchedKey] = {
           key: matchedKey,
           productName: pName,
-          name: `${pName}${timeStr ? ` (${timeStr})` : ""}`,
+          name: pName,
           timestamp: ideaTime,
           createdAt: idea.created_at,
           items: [],
@@ -338,17 +357,39 @@ export function IdeaApprovalView({ tenantId }) {
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-3 py-1">
-                      <div className="bg-indigo-600/20 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white p-3 rounded-xl transition-all">
+                    <div className="flex items-start gap-3 py-1">
+                      <div className="bg-indigo-600/20 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white p-3 rounded-xl transition-all shrink-0">
                         <Folder className="w-6 h-6" />
                       </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-100 group-hover:text-indigo-300 transition-colors">
-                          {folder.name}
+                      <div className="space-y-1.5 flex-1 min-w-0">
+                        {/* 1. Nombre Limpio del Producto / Servicio */}
+                        <h3 className="text-sm font-bold text-slate-100 group-hover:text-indigo-300 transition-colors leading-snug truncate">
+                          {folder.productName || folder.name}
                         </h3>
-                        <p className="text-[11px] text-slate-400 mt-0.5">
-                          {isService ? "🛠️ Servicio" : "📦 Producto"}
-                        </p>
+
+                        {/* 2. Fecha y Hora Completa Formateada (Abajo en letra pequeña) */}
+                        <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-slate-500 shrink-0" />
+                          <span>{formatDateTime(folder.createdAt)}</span>
+                        </div>
+
+                        {/* 3. Insignia Dinámica de Producto o Servicio */}
+                        <div className="pt-0.5">
+                          <span
+                            className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md border ${
+                              isService
+                                ? "bg-amber-950/60 text-amber-300 border-amber-500/30"
+                                : "bg-indigo-950/60 text-indigo-300 border-indigo-500/30"
+                            }`}
+                          >
+                            {isService ? (
+                              <Wrench className="w-3 h-3 text-amber-400" />
+                            ) : (
+                              <Package className="w-3 h-3 text-indigo-400" />
+                            )}
+                            <span>{isService ? "Servicio" : "Producto"}</span>
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
