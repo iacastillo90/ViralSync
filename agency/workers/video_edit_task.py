@@ -169,6 +169,18 @@ def trigger_video_render(
             )
             if video_url:
                 logger.info(f"[{tenant_id}] Renderizado JSON2Video completado exitosamente: {video_url}")
+
+                # Persistencia física en MinIO S3 y PostgreSQL DB
+                try:
+                    import asyncio
+                    from backend.routers.scripts import download_and_persist_rendered_video
+                    script_id = script.get("id")
+                    permanent_url = asyncio.run(download_and_persist_rendered_video(tenant_id, script_id, video_url, "json2video"))
+                    if permanent_url:
+                        video_url = permanent_url
+                except Exception as p_err:
+                    logger.warning(f"[{tenant_id}] Fallo persistencia local de json2video ({p_err}). Se mantiene URL remota.")
+
                 return {
                     "tenant_id": tenant_id,
                     "video_url": video_url,
@@ -181,15 +193,19 @@ def trigger_video_render(
 
     # 3. Fallback / Ejecución local (MoviePy + microservicio local)
     target_url = RENDERER_SERVICE_URL
-    logger.info(f"[{tenant_id}] Ejecutando renderizado con microservicio local en {target_url} (Timeout: 300s)...")
+    logger.info(f"[{tenant_id}] Ejecutando renderizado con microservicio local en {target_url} (Timeout: 600s)...")
 
+    # NOTA: un solo intento deliberado. El render por escenas (MoviePy) tarda
+    # ~7-8 min para 30s, muy por encima del antiguo timeout de 300s; con retry
+    # el worker reintentaba y disparaba renders DUPLICADOS en el renderer, que
+    # luego eran abandonados por el propio worker ("No real rendered video
+    # produced"). Timeout 600s cubre el peor caso de 60s (~15 min).
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(1),
         reraise=True
     )
     def _call_renderer(url):
-        with httpx.Client(timeout=300.0) as client:
+        with httpx.Client(timeout=600.0) as client:
             return client.post(url, json=render_payload)
 
     try:

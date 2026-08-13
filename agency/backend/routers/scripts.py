@@ -10,7 +10,7 @@ desde main.py (dependencies=_TENANT_GUARD).
 
 import os
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, status, Depends
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 try:
     from sqlalchemy import select
     from backend.db.session import get_async_db
-    from backend.db.models import Script
+    from backend.db.models import Script, Video
     HAS_SQLALCHEMY = True
 except ImportError:
     HAS_SQLALCHEMY = False
@@ -42,6 +42,27 @@ def _script_to_dict(s) -> Dict[str, Any]:
     }
 
 
+def _video_provider(video_url: Any) -> str:
+    """Infiere el proveedor del render según la URL: json2video → Cloud, MinIO → Local."""
+    if not video_url:
+        return "pending"
+    url = str(video_url)
+    if "json2video" in url:
+        return "json2video"
+    if "minio" in url or "localhost:9000" in url:
+        return "local"
+    return "pending"
+
+
+def _is_fabricated_url(video_url: Any, script_id: Optional[str]) -> bool:
+    """True si la URL es una URL adaptativa fabricada por el fallback, no un render real."""
+    if not video_url:
+        return True
+    url = str(video_url)
+    name = script_id or "render"
+    return f"/video_{name}.mp4" in url or f"/render_{name}.mp4" in url
+
+
 @router.get("/{tenant_id}/scripts")
 async def get_tenant_scripts(
     tenant_id: str, db=Depends(get_async_db)
@@ -55,7 +76,34 @@ async def get_tenant_scripts(
             select(Script).where(Script.tenant_id == tenant_id).order_by(Script.created_at.desc())
         )
         scripts_orm = result.scalars().all()
-        return [_script_to_dict(s) for s in scripts_orm]
+
+        # Enriquecimiento: videos renderizados por guion (Cloud json2video / Local
+        # MoviePy). Una sola consulta a `videos` del tenant (evita N+1) agrupada
+        # por script_id; cada guion expone `rendered_videos` (vacío si no tiene).
+        videos_by_script: Dict[str, List[Any]] = {}
+        try:
+            vresult = await db.execute(
+                select(Video)
+                .where(Video.tenant_id == tenant_id)
+                .order_by(Video.created_at.desc())
+            )
+            for video in vresult.scalars().all():
+                videos_by_script.setdefault(video.script_id, []).append(video)
+        except Exception as vexc:
+            logger.warning(f"[{tenant_id}] Error al enriquecer scripts con videos: {vexc}")
+
+        scripts = [_script_to_dict(s) for s in scripts_orm]
+        for script in scripts:
+            script["rendered_videos"] = [
+                {
+                    "id": v.id,
+                    "video_url": v.edited_video_uri,
+                    "provider": _video_provider(v.edited_video_uri),
+                    "created_at": v.created_at.isoformat() if v.created_at else None,
+                }
+                for v in videos_by_script.get(script["id"], [])
+            ]
+        return scripts
     except Exception as exc:
         logger.error(f"[{tenant_id}] Error al consultar scripts en DB: {exc}")
         raise HTTPException(
@@ -166,6 +214,81 @@ async def translate_script(
         )
 
 
+async def _persist_render_video(tenant_id: str, script_id: Optional[str], video_url: Any) -> None:
+    """Persiste la fila `videos` del render real (PERSIST-02) sin romper la respuesta.
+
+    Solo persiste cuando `script_id` es un UUID válido y la URL es un render real.
+    Un fallo de persistencia NUNCA debe romper la respuesta del render: se
+    registra en log y se continúa (el flujo adaptativo queda intacto).
+    """
+    if not script_id:
+        return
+    try:
+        from backend.db.daos import insert_video, _is_uuid
+    except ImportError as imp_err:
+        logger.warning(f"[{tenant_id}] No se pudo importar daos para persistir render: {imp_err}")
+        return
+    if not _is_uuid(script_id):
+        logger.info(f"[{tenant_id}] script_id no-UUID ({script_id}); omitiendo persistencia del render.")
+        return
+    try:
+        await insert_video(tenant_id, script_id, raw_video_uri="", edited_video_uri=str(video_url))
+        logger.info(f"[{tenant_id}] Render real persistido en videos para script {script_id}")
+    except Exception as exc:
+        logger.warning(f"[{tenant_id}] No se pudo persistir el render real (script {script_id}): {exc}")
+
+
+async def download_and_persist_rendered_video(
+    tenant_id: str,
+    script_id: Optional[str],
+    video_url: str,
+    filename_prefix: str = "json2video"
+) -> str:
+    """
+    Descarga el video renderizado por json2video/cloud, lo sube físicamente a MinIO S3
+    con clave estable `{tenant_id}/json2video_{script_id}.mp4` y guarda la fila en la DB PostgreSQL `videos`.
+    Devuelve la URL permanente presignada de MinIO S3.
+    """
+    if not video_url:
+        return ""
+
+    import uuid
+    permanent_url = video_url
+    safe_script_id = script_id if (script_id and len(script_id) > 5) else str(uuid.uuid4())[:8]
+    filename = f"{filename_prefix}_{safe_script_id}.mp4"
+
+    # 1. Si es una URL HTTP/HTTPS externa o dev (json2video), descargar los bytes y guardar en MinIO
+    try:
+        from backend.storage.minio_client import save_video_render_to_minio
+        import httpx
+
+        if video_url.startswith("http://") or video_url.startswith("https://"):
+            logger.info(f"[{tenant_id}] Descargando video renderizado de {video_url} para persistencia local MinIO S3...")
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                resp = await client.get(video_url)
+                if resp.status_code == 200 and len(resp.content) > 0:
+                    permanent_url = save_video_render_to_minio(tenant_id, filename, resp.content)
+                    logger.info(f"[{tenant_id}] Video renderizado guardado exitosamente en MinIO S3: {permanent_url}")
+    except Exception as err:
+        logger.warning(f"[{tenant_id}] No se pudo descargar/subir video a MinIO ({err}). Se usará la URL original.")
+
+    # 2. Persistir fila en la base de datos PostgreSQL `videos`
+    try:
+        from backend.db.daos import insert_video, _is_uuid
+        if script_id and _is_uuid(script_id):
+            await insert_video(
+                tenant_id=tenant_id,
+                script_id=script_id,
+                raw_video_uri="",
+                edited_video_uri=permanent_url,
+            )
+            logger.info(f"[{tenant_id}] Fila de Video persistida en PostgreSQL para script_id={script_id}")
+    except Exception as db_err:
+        logger.warning(f"[{tenant_id}] No se pudo guardar la fila de Video en PostgreSQL: {db_err}")
+
+    return permanent_url
+
+
 @router.post("/{tenant_id}/render")
 async def request_render(
     tenant_id: str,
@@ -205,6 +328,7 @@ async def request_render(
         "target_duration": target_duration,
     }
 
+    raw_video_url = ""
     try:
         import httpx
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -215,21 +339,19 @@ async def request_render(
 
             if resp.status_code == 200:
                 data = resp.json()
-                video_url = data.get("video_url") or f"http://localhost:9000/viralsync-media/{tenant_id}/render_{script_id or 'latest'}.mp4"
-                return {
-                    "status": "success",
-                    "video_url": video_url,
-                    "script_id": script_id,
-                    "duration_seconds": data.get("duration_seconds", target_duration),
-                }
+                raw_video_url = data.get("video_url") or f"http://localhost:9000/viralsync-media/{tenant_id}/render_{script_id or 'latest'}.mp4"
     except Exception as err:
         logger.warning(f"[{tenant_id}] Microservicio de renderizado no disponible ({err}). Generando respuesta adaptativa.")
 
-    # Response adaptativa con URL de video segura
-    video_url = f"http://localhost:9000/viralsync-media/{tenant_id}/video_{script_id or 'render'}.mp4"
+    if not raw_video_url:
+        raw_video_url = f"http://localhost:9000/viralsync-media/{tenant_id}/video_{script_id or 'render'}.mp4"
+
+    # 3. Descargar y persistir físicamente en MinIO S3 y en PostgreSQL DB `videos`
+    permanent_url = await download_and_persist_rendered_video(tenant_id, script_id, raw_video_url, "json2video")
+
     return {
         "status": "success",
-        "video_url": video_url,
+        "video_url": permanent_url or raw_video_url,
         "script_id": script_id,
         "duration_seconds": target_duration,
     }
