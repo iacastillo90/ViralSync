@@ -154,6 +154,31 @@ class MinIOStorageClient:
         logger.info(f"[{tenant_id}] Archivo guardado físicamente en MinIO: {object_key}")
         return self.presign(object_key)
 
+    def save_media_bytes(
+        self, tenant_id: str, filename: str, file_bytes: bytes, content_type: str = "video/mp4"
+    ) -> str:
+        """Sube cualquier archivo multimedia (videos/imágenes) a MinIO y retorna la URL presignada."""
+        if not file_bytes:
+            raise RuntimeError("No se subieron bytes válidos a MinIO.")
+        safe_filename = filename.replace(" ", "_")
+        object_key = build_object_key(tenant_id, safe_filename)
+
+        logger.info(f"[{tenant_id}] Guardando media en MinIO: {object_key}")
+        try:
+            self._ensure_bucket()
+            self.minio_client.put_object(
+                bucket_name=self.bucket,
+                object_name=object_key,
+                data=io.BytesIO(file_bytes),
+                length=len(file_bytes),
+                content_type=content_type,
+            )
+        except Exception as exc:
+            logger.error(f"[{tenant_id}] Error al guardar objeto en MinIO: {exc}")
+            raise RuntimeError(f"MinIO error {object_key}: {exc}") from exc
+
+        return self.presign(object_key)
+
     def presign(self, object_key: str) -> str:
         """Presigna el object_key contra el host correcto (public override o default)."""
         signer = self._signer_client or self.minio_client
@@ -293,5 +318,10 @@ def get_tenant_media_list(tenant_id: str) -> List[Dict[str, Any]]:
 
 
 def delete_tenant_media_item(tenant_id: str, media_id: str) -> bool:
-    """Helper global para eliminar un recurso de MinIO (firma preservada)."""
+    """Helper global para eliminar un objeto de MinIO por id/object_key (firma preservada)."""
     return get_client().delete_media(tenant_id, media_id)
+
+
+def save_video_render_to_minio(tenant_id: str, filename: str, file_bytes: bytes) -> str:
+    """Helper global para guardar un video renderizado (json2video) en MinIO."""
+    return get_client().save_media_bytes(tenant_id, filename, file_bytes, content_type="video/mp4")

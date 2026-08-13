@@ -49,8 +49,15 @@ function formatDateTime(isoString) {
  * jerarquía de 2 niveles (Carpetas por Ejecución/Lote -> Archivos Multimedia), vista Iconos/Lista y reproductor/visor modal.
  */
 export function MediaGalleryView({ tenantId }) {
-  const { data: mediaItems, loading: loadingMedia, error: errorMedia, refresh } = useTenantResource("media", tenantId);
+  const { data: mediaItems, loading: loadingMedia, error: errorMedia, refresh: refreshMedia } = useTenantResource("media", tenantId);
+  const { data: scriptsData, refresh: refreshScripts } = useTenantResource("scripts", tenantId);
   const { data: productsData } = useTenantResource("products", tenantId);
+
+  // Función de refresco combinado
+  const refresh = () => {
+    if (refreshMedia) refreshMedia();
+    if (refreshScripts) refreshScripts();
+  };
 
   // Polling automático cada 4s para detectar nuevos renders
   useEffect(() => {
@@ -58,7 +65,7 @@ export function MediaGalleryView({ tenantId }) {
       refresh();
     }, 4000);
     return () => clearInterval(interval);
-  }, [refresh]);
+  }, []);
 
   // Estados de interfaz macOS Finder
   const [viewMode, setViewMode] = useState("grid"); // "grid" | "list"
@@ -74,11 +81,12 @@ export function MediaGalleryView({ tenantId }) {
   const [notification, setNotification] = useState(null);
 
   const rawItems = Array.isArray(mediaItems) ? mediaItems : [];
+  const rawScripts = Array.isArray(scriptsData) ? scriptsData : [];
   const products = Array.isArray(productsData) ? productsData : [];
 
-  // Mapear archivos con datos de productos
+  // Mapear archivos con datos de productos e incluir guiones como items de video
   const localMedia = useMemo(() => {
-    return rawItems.map((item) => {
+    const items = rawItems.map((item) => {
       let pName = item.product_name || item.service_name;
       let isService = Boolean(item.service_name || item.is_service);
 
@@ -94,10 +102,40 @@ export function MediaGalleryView({ tenantId }) {
         ...item,
         product_name: pName || "Producto de Campaña",
         is_service: isService,
-        title: item.title || item.name || (item.media_type === "video" ? "Reel 9:16 Renderizado" : "Foto de Producto"),
+        title: item.title || item.name || (item.media_type === "video" || item.type === "video" ? "Reel 9:16 Renderizado" : "Foto de Producto"),
       };
     });
-  }, [rawItems, products]);
+
+    // Incluir guiones como entradas multimedia de video si no estan presentes
+    rawScripts.forEach((s) => {
+      const alreadyIncluded = items.some((m) => m.id === s.id || (m.filename && m.filename.includes(s.id)));
+      if (!alreadyIncluded) {
+        let pName = s.product_name || s.service_name || s.category;
+        let isService = Boolean(s.service_name || s.is_service);
+        if (!pName && products.length > 0) {
+          const prod = products.find((p) => p.id === s.product_id) || products[0];
+          if (prod) {
+            pName = prod.name;
+            isService = Boolean(prod.is_service);
+          }
+        }
+        items.push({
+          id: s.id,
+          object_key: `script_${s.id}`,
+          title: s.gancho_0_5s || "Video de Ideación",
+          filename: `script_${s.id}.mp4`,
+          type: "video",
+          url: s.video_url || s.edited_video_uri || `http://localhost:9000/viralsync-media/${tenantId}/video_${s.id}.mp4`,
+          product_name: pName || "Producto de Campaña",
+          is_service: isService,
+          created_at: s.created_at,
+          idea_id: s.idea_id,
+        });
+      }
+    });
+
+    return items;
+  }, [rawItems, rawScripts, products, tenantId]);
 
   // Agrupar carpetas por Lote / Producto en Nivel 1
   const folderList = useMemo(() => {

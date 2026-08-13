@@ -49,8 +49,15 @@ function formatDateTime(isoString) {
  */
 export function PublishApprovalView({ tenantId }) {
   const { addLog } = useAgentStore();
-  const { data: scriptsData, loading: loadingScripts, error: errorScripts, refresh } = useTenantResource("scripts", tenantId);
+  const { data: scriptsData, loading: loadingScripts, error: errorScripts, refresh: refreshScripts } = useTenantResource("scripts", tenantId);
+  const { data: mediaData, refresh: refreshMedia } = useTenantResource("media", tenantId);
   const { data: productsData } = useTenantResource("products", tenantId);
+
+  // Función de refresco combinado
+  const refresh = () => {
+    if (refreshScripts) refreshScripts();
+    if (refreshMedia) refreshMedia();
+  };
 
   // Estados de interfaz macOS Finder
   const [viewMode, setViewMode] = useState("grid"); // "grid" | "list"
@@ -66,11 +73,13 @@ export function PublishApprovalView({ tenantId }) {
   const [isProcessing, setIsProcessing] = useState(false);
 
   const rawScripts = Array.isArray(scriptsData) ? scriptsData : [];
+  const rawMedia = Array.isArray(mediaData) ? mediaData : [];
   const products = Array.isArray(productsData) ? productsData : [];
 
-  // Mapear guiones/videos con datos de productos
+  // Mapear guiones/videos locales y videos de json2video en la misma coleccion
   const localVideos = useMemo(() => {
-    return rawScripts.map((s) => {
+    // 1. Mapear guiones
+    const scriptList = rawScripts.map((s) => {
       let pName = s.product_name || s.service_name || s.category;
       let isService = Boolean(s.service_name || s.is_service);
 
@@ -87,9 +96,41 @@ export function PublishApprovalView({ tenantId }) {
         product_name: pName || "Producto de Campaña",
         is_service: isService,
         title: s.title || s.gancho_0_5s || "Reel 9:16 Renderizado",
+        source: s.video_url || s.edited_video_uri ? "json2video" : "script",
       };
     });
-  }, [rawScripts, products]);
+
+    // 2. Mapear videos de json2video guardados en MinIO/Media
+    const mediaVideos = [];
+    rawMedia.forEach((m) => {
+      if (m.type === "video" || (m.filename && m.filename.match(/\.(mp4|mov|webm)$/i))) {
+        const matchedScript = scriptList.find((s) => m.filename.includes(s.id) || m.id.includes(s.id));
+        if (matchedScript) {
+          matchedScript.video_url = m.url || matchedScript.video_url;
+          matchedScript.edited_video_uri = m.url || matchedScript.edited_video_uri;
+          matchedScript.has_rendered_video = true;
+        } else {
+          const prod = products[0];
+          const pName = m.product_name || (prod ? prod.name : "Producto de Campaña");
+          mediaVideos.push({
+            id: m.id || m.object_key,
+            tenant_id: tenantId,
+            product_name: pName,
+            is_service: Boolean(prod?.is_service),
+            title: m.title || m.filename || "Video Renderizado JSON2Video",
+            gancho_0_5s: m.title || "Video Renderizado 9:16",
+            created_at: m.created_at || new Date().toISOString(),
+            video_url: m.url,
+            edited_video_uri: m.url,
+            source: "json2video",
+            has_rendered_video: true,
+          });
+        }
+      }
+    });
+
+    return [...scriptList, ...mediaVideos];
+  }, [rawScripts, rawMedia, products, tenantId]);
 
   // Agrupar carpetas por idea_id / Lote de Ideación en Nivel 1
   const folderList = useMemo(() => {
