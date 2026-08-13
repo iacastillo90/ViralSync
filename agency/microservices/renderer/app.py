@@ -269,6 +269,10 @@ def compose_video_moviepy(
     audio_clip = AudioFileClip(audio_path)
     base_audio_dur = audio_clip.duration if audio_clip.duration > 0 else 30.0
     final_duration = target_duration if (target_duration and target_duration > 0) else base_audio_dur
+    # Nunca acceder más allá del final del audio disponible (REQ-VSR-03):
+    # si la duración objetivo excede el audio, el audio define el límite real.
+    if base_audio_dur < final_duration:
+        final_duration = base_audio_dur
     TARGET_W, TARGET_H = 1080, 1920
 
     clip_objects = []
@@ -313,14 +317,14 @@ def compose_video_moviepy(
 
     if not clip_objects:
         logger.info("Usando fondo dinámico de fallback para el renderizado...")
-        fallback_clip = ColorClip(size=(1080, 1920), color=(15, 23, 42), duration=audio_duration)
+        fallback_clip = ColorClip(size=(1080, 1920), color=(15, 23, 42), duration=final_duration)
         clip_objects.append(fallback_clip)
 
     final_video = concatenate_videoclips(clip_objects, method="chain")
     final_video = final_video.set_audio(audio_clip)
-    final_video = final_video.set_duration(audio_duration)
+    final_video = final_video.set_duration(final_duration)
 
-    logger.info(f"Renderizando archivo final en {output_path} (Duración: {audio_duration:.2f}s)...")
+    logger.info(f"Renderizando archivo final en {output_path} (Duración: {final_duration:.2f}s)...")
     final_video.write_videofile(
         output_path,
         fps=24,
@@ -339,7 +343,7 @@ def compose_video_moviepy(
         except Exception:
             pass
 
-    return audio_duration
+    return final_duration
 
 
 import textwrap
