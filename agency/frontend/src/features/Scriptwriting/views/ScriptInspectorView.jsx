@@ -107,12 +107,39 @@ export function ScriptInspectorView({ tenantId }) {
   // Agrupar, filtrar y ordenar carpetas de guiones en Nivel 1
   const folderList = useMemo(() => {
     const map = {};
+
+    // 1. Identificar la fecha original de cada lote/idea_id
+    const ideaOriginalTimeMap = {};
+    localScripts.forEach((s) => {
+      if (s.idea_id) {
+        const sTime = new Date(s.created_at || Date.now()).getTime();
+        if (!ideaOriginalTimeMap[s.idea_id] || sTime < ideaOriginalTimeMap[s.idea_id]) {
+          ideaOriginalTimeMap[s.idea_id] = sTime;
+        }
+      }
+    });
+
     localScripts.forEach((script) => {
       const pName = script.product_name || script.service_name || script.category || "Producto de Campaña";
       const isService = Boolean(script.service_name || script.is_service);
       const scriptTime = new Date(script.created_at || Date.now()).getTime();
 
-      const matchedKey = pName;
+      // Determinar la clave de la carpeta:
+      // Si el guion proviene de una idea (idea_id), su lote es único para esa ejecución de ideación.
+      // Todas sus traducciones comparten el mismo idea_id y por ende la MISMA carpeta.
+      let matchedKey = null;
+
+      if (script.idea_id) {
+        matchedKey = `idea_${script.idea_id}`;
+      } else {
+        matchedKey = Object.keys(map).find((key) => {
+          const item = map[key];
+          return item.productName === pName && Math.abs(scriptTime - item.timestamp) < 120000;
+        });
+        if (!matchedKey) {
+          matchedKey = `batch_${pName}_${scriptTime}`;
+        }
+      }
 
       if (!map[matchedKey]) {
         map[matchedKey] = {
@@ -120,19 +147,13 @@ export function ScriptInspectorView({ tenantId }) {
           productName: pName,
           name: pName,
           isService,
-          timestamp: scriptTime,
+          timestamp: script.idea_id ? (ideaOriginalTimeMap[script.idea_id] || scriptTime) : scriptTime,
           createdAt: script.created_at,
           items: [],
         };
       }
 
       map[matchedKey].items.push(script);
-
-      // Actualizar a la fecha más reciente cuando se genera una traducción
-      if (scriptTime > map[matchedKey].timestamp) {
-        map[matchedKey].timestamp = scriptTime;
-        map[matchedKey].createdAt = script.created_at;
-      }
     });
 
     let folders = Object.values(map);
