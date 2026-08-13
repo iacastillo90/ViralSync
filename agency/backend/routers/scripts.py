@@ -149,7 +149,7 @@ async def translate_script(
             contexto_5_30s=parsed.get("contexto_5_30s") or orig_script.contexto_5_30s,
             moraleja_30_50s=parsed.get("moraleja_30_50s") or orig_script.moraleja_30_50s,
             cta_50_60s=parsed.get("cta_50_60s") or orig_script.cta_50_60s,
-            keyword=parsed.get("keyword") or orig_script.keyword,
+            keyword=f"LANG:{target_lang.upper()}",
             created_at=datetime.utcnow(),
         )
         db.add(new_script)

@@ -112,13 +112,9 @@ export function ScriptInspectorView({ tenantId }) {
       const isService = Boolean(script.service_name || script.is_service);
       const scriptTime = new Date(script.created_at || Date.now()).getTime();
 
-      let matchedKey = Object.keys(map).find((key) => {
-        const item = map[key];
-        return item.productName === pName && Math.abs(scriptTime - item.timestamp) < 120000;
-      });
+      const matchedKey = pName;
 
-      if (!matchedKey) {
-        matchedKey = `batch_${pName}_${scriptTime}`;
+      if (!map[matchedKey]) {
         map[matchedKey] = {
           key: matchedKey,
           productName: pName,
@@ -131,6 +127,12 @@ export function ScriptInspectorView({ tenantId }) {
       }
 
       map[matchedKey].items.push(script);
+
+      // Actualizar a la fecha más reciente cuando se genera una traducción
+      if (scriptTime > map[matchedKey].timestamp) {
+        map[matchedKey].timestamp = scriptTime;
+        map[matchedKey].createdAt = script.created_at;
+      }
     });
 
     let folders = Object.values(map);

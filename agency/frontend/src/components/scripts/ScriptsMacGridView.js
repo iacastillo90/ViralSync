@@ -35,6 +35,28 @@ function formatDateTime(isoString) {
 }
 
 /**
+ * Helper para detectar el idioma del guion y retornar bandera e insignia
+ */
+function getLanguageInfo(script) {
+  const kw = (script.keyword || "").toUpperCase();
+  const hook = script.gancho_0_5s || script.title || "";
+
+  if (kw.includes("LANG:DE") || kw.includes("GERMAN") || hook.includes("[Alemán") || hook.includes("[German")) {
+    return { label: "Alemán", flag: "🇩🇪", badgeClass: "bg-amber-950/80 text-amber-300 border-amber-500/40" };
+  }
+  if (kw.includes("LANG:EN") || kw.includes("ENGLISH") || hook.includes("[Inglés") || hook.includes("[English")) {
+    return { label: "Inglés", flag: "🇺🇸", badgeClass: "bg-blue-950/80 text-blue-300 border-blue-500/40" };
+  }
+  if (kw.includes("LANG:FR") || kw.includes("FRENCH") || hook.includes("[Francés") || hook.includes("[French")) {
+    return { label: "Francés", flag: "🇫🇷", badgeClass: "bg-purple-950/80 text-purple-300 border-purple-500/40" };
+  }
+  if (kw.includes("LANG:PT") || kw.includes("PORTUGUESE") || hook.includes("[Portugués") || hook.includes("[Portuguese")) {
+    return { label: "Portugués", flag: "🇧🇷", badgeClass: "bg-emerald-950/80 text-emerald-300 border-emerald-500/40" };
+  }
+  return { label: "Español (Original)", flag: "🇪🇸", badgeClass: "bg-indigo-950/80 text-indigo-300 border-indigo-500/40" };
+}
+
+/**
  * ScriptsMacGridView
  * Componente atómico de vista en cuadrícula (Grid Iconos) estilo macOS Finder para Guiones.
  * Despliega los guiones en tarjetas estructuradas en 4 bloques narrativos (Gancho, Contexto, Moraleja, CTA).
@@ -76,6 +98,7 @@ export function ScriptsMacGridView({
         const isService = Boolean(script.service_name || script.is_service);
         const createdAtFormatted = formatDateTime(script.created_at);
         const targetDuration = script.target_duration || script.estimated_duration || 30;
+        const langInfo = getLanguageInfo(script);
 
         return (
           <div
@@ -86,13 +109,19 @@ export function ScriptsMacGridView({
                 : "border-slate-800/80 hover:border-slate-700 hover:shadow-2xl"
             }`}
           >
-            {/* Cabecera Ventana macOS (Puntos 🔴 🟡 🟢 + Checkbox) */}
+            {/* Cabecera Ventana macOS (Puntos 🔴 🟡 🟢 + Insignia de Idioma + Checkbox) */}
             <div className="flex justify-between items-center pb-2 border-b border-slate-800/60">
               <div className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 group-hover:bg-rose-500 transition-colors"></span>
                 <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 group-hover:bg-amber-500 transition-colors"></span>
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 group-hover:bg-emerald-500 transition-colors"></span>
               </div>
+
+              {/* Insignia de Idioma */}
+              <span className={`px-2 py-0.5 rounded border text-[10px] font-mono font-bold flex items-center gap-1 shadow-sm ${langInfo.badgeClass}`}>
+                <span>{langInfo.flag}</span>
+                <span>{langInfo.label}</span>
+              </span>
 
               {/* Checkbox de Selección */}
               <button

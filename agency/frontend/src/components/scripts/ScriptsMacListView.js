@@ -35,6 +35,28 @@ function formatDateTime(isoString) {
 }
 
 /**
+ * Helper para detectar el idioma del guion y retornar bandera e insignia
+ */
+function getLanguageInfo(script) {
+  const kw = (script.keyword || "").toUpperCase();
+  const hook = script.gancho_0_5s || script.title || "";
+
+  if (kw.includes("LANG:DE") || kw.includes("GERMAN") || hook.includes("[Alemán") || hook.includes("[German")) {
+    return { label: "Alemán", flag: "🇩🇪", badgeClass: "bg-amber-950/80 text-amber-300 border-amber-500/40" };
+  }
+  if (kw.includes("LANG:EN") || kw.includes("ENGLISH") || hook.includes("[Inglés") || hook.includes("[English")) {
+    return { label: "Inglés", flag: "🇺🇸", badgeClass: "bg-blue-950/80 text-blue-300 border-blue-500/40" };
+  }
+  if (kw.includes("LANG:FR") || kw.includes("FRENCH") || hook.includes("[Francés") || hook.includes("[French")) {
+    return { label: "Francés", flag: "🇫🇷", badgeClass: "bg-purple-950/80 text-purple-300 border-purple-500/40" };
+  }
+  if (kw.includes("LANG:PT") || kw.includes("PORTUGUESE") || hook.includes("[Portugués") || hook.includes("[Portuguese")) {
+    return { label: "Portugués", flag: "🇧🇷", badgeClass: "bg-emerald-950/80 text-emerald-300 border-emerald-500/40" };
+  }
+  return { label: "Español", flag: "🇪🇸", badgeClass: "bg-indigo-950/80 text-indigo-300 border-indigo-500/40" };
+}
+
+/**
  * ScriptsMacListView
  * Componente atómico de vista en lista detallada lineal estilo macOS Finder para Guiones.
  * Muestra los guiones en filas delgadas de 1 línea, una debajo de otra de forma limpia.
@@ -70,6 +92,7 @@ export function ScriptsMacListView({
                 <span className="sr-only">Selección</span>
               </th>
               <th className="px-4 py-2.5 font-semibold">Gancho / Título del Guion</th>
+              <th className="px-3 py-2.5 font-semibold">Idioma</th>
               <th className="px-3 py-2.5 font-semibold">Producto / Servicio</th>
               <th className="px-3 py-2.5 font-semibold text-center">Duración Est.</th>
               <th className="px-3 py-2.5 font-semibold">Fecha y Hora</th>
@@ -91,6 +114,7 @@ export function ScriptsMacListView({
               const isService = Boolean(script.service_name || script.is_service);
               const targetDuration = script.target_duration || script.estimated_duration || 30;
               const dateStr = formatDateTime(script.created_at);
+              const langInfo = getLanguageInfo(script);
 
               return (
                 <tr
@@ -121,6 +145,14 @@ export function ScriptsMacListView({
                         "{title}"
                       </span>
                     </div>
+                  </td>
+
+                  {/* Insignia de Idioma */}
+                  <td className="px-3 py-2.5 whitespace-nowrap">
+                    <span className={`px-2 py-0.5 rounded border text-[10px] font-mono font-bold inline-flex items-center gap-1 shadow-sm ${langInfo.badgeClass}`}>
+                      <span>{langInfo.flag}</span>
+                      <span>{langInfo.label}</span>
+                    </span>
                   </td>
 
                   {/* Producto o Servicio Dinámico */}
