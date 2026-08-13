@@ -12,6 +12,7 @@ import {
   Package,
   Wrench,
   Calendar,
+  Globe,
 } from "lucide-react";
 
 /**
@@ -45,6 +46,7 @@ export function ScriptsMacGridView({
   onEdit,
   onDelete,
   onDownload,
+  onTranslate,
   onRenderVideo,
   onSelectFolder,
 }) {
@@ -213,15 +215,27 @@ export function ScriptsMacGridView({
                 </button>
               </div>
 
-              {/* Botón de Ordenar Renderizado de Video */}
-              {onRenderVideo && (
-                <button
-                  onClick={() => onRenderVideo(script)}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-md transition-all"
-                >
-                  <Video className="w-3.5 h-3.5" /> Renderizar
-                </button>
-              )}
+              {/* Botones de Acción Principal: Traducir & Renderizar Video */}
+              <div className="flex items-center gap-1.5">
+                {onTranslate && (
+                  <button
+                    onClick={() => onTranslate(script)}
+                    className="bg-slate-950 hover:bg-indigo-950 text-indigo-300 border border-slate-800 hover:border-indigo-500/50 text-[11px] font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-all"
+                    title="Traducir guion a otro idioma (Inglés, Portugués, Francés, Alemán)"
+                  >
+                    <Globe className="w-3.5 h-3.5 text-indigo-400" /> Traducir
+                  </button>
+                )}
+
+                {onRenderVideo && (
+                  <button
+                    onClick={() => onRenderVideo(script)}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-md transition-all"
+                  >
+                    <Video className="w-3.5 h-3.5" /> Renderizar
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         );

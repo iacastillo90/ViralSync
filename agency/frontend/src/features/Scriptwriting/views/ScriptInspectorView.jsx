@@ -7,6 +7,7 @@ import { ScriptsHeaderBar } from "@/components/scripts/ScriptsHeaderBar";
 import { ScriptsMacGridView } from "@/components/scripts/ScriptsMacGridView";
 import { ScriptsMacListView } from "@/components/scripts/ScriptsMacListView";
 import { EditScriptModal } from "@/components/scripts/EditScriptModal";
+import { TranslateScriptModal } from "@/components/scripts/TranslateScriptModal";
 import { Sparkles, Loader2, FolderOpen, ArrowLeft, Folder, Calendar, Wrench, Package, Video, X } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 
@@ -51,6 +52,11 @@ export function ScriptInspectorView({ tenantId }) {
   // Estado del Modal de Edición de Guion
   const [editingScript, setEditingScript] = useState(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  // Estado del Modal de Traducción Multilingüe
+  const [translatingScript, setTranslatingScript] = useState(null);
+  const [isTranslateModalOpen, setIsTranslateModalOpen] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
 
   // Estados de Renderizado de Video
   const [videoUrl, setVideoUrl] = useState(null);
@@ -261,6 +267,37 @@ export function ScriptInspectorView({ tenantId }) {
     setLocalScripts((prev) =>
       prev.map((item) => (item.id === updatedScript.id ? updatedScript : item))
     );
+  };
+
+  // Abrir Modal de Traducción
+  const handleOpenTranslate = (script) => {
+    setTranslatingScript(script);
+    setIsTranslateModalOpen(true);
+  };
+
+  // Ejecutar Traducción con la API Backend del Tenant
+  const handleTranslateScript = async (script, targetLang) => {
+    if (!script || !script.id) return;
+    setIsTranslating(true);
+    try {
+      const res = await fetchWithTenant(
+        `/tenants/${tenantId}/scripts/${script.id}/translate`,
+        {
+          method: "POST",
+          body: JSON.stringify({ target_language: targetLang }),
+        },
+        tenantId
+      );
+      const resData = await res.json();
+      if (resData) {
+        setIsTranslateModalOpen(false);
+        refresh();
+      }
+    } catch (err) {
+      alert(`Error al traducir guion: ${err.message}`);
+    } finally {
+      setIsTranslating(false);
+    }
   };
 
   // Ordenar Renderizado de Video al Microservicio
@@ -480,6 +517,7 @@ export function ScriptInspectorView({ tenantId }) {
               onEdit={handleOpenEdit}
               onDelete={handleDeleteScript}
               onDownload={handleDownloadScript}
+              onTranslate={handleOpenTranslate}
               onRenderVideo={handleRenderVideo}
               onSelectFolder={(folderName) => setActiveFolder(folderName)}
             />
@@ -491,6 +529,7 @@ export function ScriptInspectorView({ tenantId }) {
               onEdit={handleOpenEdit}
               onDelete={handleDeleteScript}
               onDownload={handleDownloadScript}
+              onTranslate={handleOpenTranslate}
               onRenderVideo={handleRenderVideo}
               onSelectFolder={(folderName) => setActiveFolder(folderName)}
             />
@@ -498,7 +537,14 @@ export function ScriptInspectorView({ tenantId }) {
         </div>
       )}
 
-
+      {/* Modal de Traducción Multilingüe */}
+      <TranslateScriptModal
+        script={translatingScript}
+        isOpen={isTranslateModalOpen}
+        onClose={() => setIsTranslateModalOpen(false)}
+        onTranslate={handleTranslateScript}
+        isTranslating={isTranslating}
+      />
     </div>
   );
 }
