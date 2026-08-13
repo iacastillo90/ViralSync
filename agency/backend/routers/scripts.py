@@ -98,17 +98,18 @@ async def translate_script(
         import json
 
         prompt = (
-            f"Eres un traductor y copywriter viral profesional. "
-            f"Traduce el siguiente guion de Reel de 4 bloques al idioma {target_name}. "
-            f"Mantén el tono persuasivo, la estructura de 4 bloques y adapta culturalmente el gancho y el CTA. "
-            f"Responde ÚNICAMENTE en formato JSON con las claves: "
+            f"You are a professional viral copywriter and translator. "
+            f"Translate the following 4-block short video script into {target_name}. "
+            f"IMPORTANT: All generated block contents MUST be written 100% in {target_name}. "
+            f"Culturally adapt the hook (gancho) and CTA for native speakers. "
+            f"Respond ONLY with a raw JSON object containing exact keys: "
             f'"gancho_0_5s", "contexto_5_30s", "moraleja_30_50s", "cta_50_60s", "keyword".\n\n'
-            f"Guion Original:\n"
+            f"Original Script (Spanish):\n"
             f"- Gancho: {orig_script.gancho_0_5s}\n"
             f"- Contexto: {orig_script.contexto_5_30s}\n"
             f"- Moraleja: {orig_script.moraleja_30_50s}\n"
             f"- CTA: {orig_script.cta_50_60s}\n"
-            f"- Keyword original: {orig_script.keyword}"
+            f"- Keyword: {orig_script.keyword}"
         )
 
         parsed = {}
@@ -118,9 +119,9 @@ async def translate_script(
                 llm.acomplete(
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.3,
-                    max_tokens=800,
+                    max_tokens=1024,
                 ),
-                timeout=12.0
+                timeout=30.0
             )
             import re
             match = re.search(r'\{.*\}', translated_json, re.DOTALL)
