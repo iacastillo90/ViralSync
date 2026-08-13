@@ -1,456 +1,548 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Header } from "@/components/layout/Header";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { useState, useEffect, useMemo } from "react";
 import { useTenantResource } from "@/hooks/useTenantResource";
 import { fetchWithTenant } from "@/services/apiConfig";
+import { MediaHeaderBar } from "@/components/media/MediaHeaderBar";
+import { MediaMacGridView } from "@/components/media/MediaMacGridView";
+import { MediaMacListView } from "@/components/media/MediaMacListView";
 import {
   Film,
+  Image as ImageIcon,
+  Loader2,
+  FolderOpen,
+  ArrowLeft,
+  Folder,
+  Calendar,
+  Wrench,
+  Package,
+  X,
   Play,
   Download,
   Trash2,
-  Image as ImageIcon,
   CheckCircle2,
-  X,
-  Sparkles,
-  RefreshCw,
-  FolderOpen,
-  Folder,
-  ArrowLeft,
+  AlertCircle,
 } from "lucide-react";
 
+/**
+ * Formateador de fecha corta (DD/MM/YYYY HH:mm)
+ */
+function formatDateTime(isoString) {
+  if (!isoString) return "Reciente";
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleDateString("es-ES", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch (e) {
+    return isoString;
+  }
+}
+
+/**
+ * MediaGalleryView
+ * Vista principal de Galería de Media y Assets con interfaz estilo macOS Finder,
+ * jerarquía de 2 niveles (Carpetas por Ejecución/Lote -> Archivos Multimedia), vista Iconos/Lista y reproductor/visor modal.
+ */
 export function MediaGalleryView({ tenantId }) {
-  const { data: mediaItems, loading, error, refresh } = useTenantResource("media", tenantId);
+  const { data: mediaItems, loading: loadingMedia, error: errorMedia, refresh } = useTenantResource("media", tenantId);
   const { data: productsData } = useTenantResource("products", tenantId);
 
-  // Polling automático cada 4 segundos para detectar nuevos videos renderizados
+  // Polling automático cada 4s para detectar nuevos renders
   useEffect(() => {
     const interval = setInterval(() => {
       refresh();
     }, 4000);
     return () => clearInterval(interval);
   }, [refresh]);
-  const [items, setItems] = useState([]);
-  const [filter, setFilter] = useState("all"); // "all", "video", "image"
-  const [selectedMedia, setSelectedMedia] = useState(null); // for video modal player
-  const [deleteConfirmId, setDeleteConfirmId] = useState(null);
-  const [deletingId, setDeletingId] = useState(null);
-  const [toastMessage, setToastMessage] = useState(null);
+
+  // Estados de interfaz macOS Finder
+  const [viewMode, setViewMode] = useState("grid"); // "grid" | "list"
+  const [searchQuery, setSearchQuery] = useState("");
+  const [mediaTypeFilter, setMediaTypeFilter] = useState("all"); // "all" | "video" | "image"
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedSort, setSelectedSort] = useState("newest");
+  const [selectedIds, setSelectedIds] = useState([]);
   const [activeFolder, setActiveFolder] = useState(null);
 
-  const rawItems = items.length > 0 ? items : (Array.isArray(mediaItems) ? mediaItems : []);
+  // Modales
+  const [previewItem, setPreviewItem] = useState(null);
+  const [notification, setNotification] = useState(null);
+
+  const rawItems = Array.isArray(mediaItems) ? mediaItems : [];
   const products = Array.isArray(productsData) ? productsData : [];
 
-  // Formateador de fecha y hora pequeña
-  const formatDate = (isoString) => {
-    if (!isoString) return "";
-    try {
-      const d = new Date(isoString);
-      return d.toLocaleDateString("es-ES", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch (e) {
-      return isoString;
-    }
-  };
+  // Mapear archivos con datos de productos
+  const localMedia = useMemo(() => {
+    return rawItems.map((item) => {
+      let pName = item.product_name || item.service_name;
+      let isService = Boolean(item.service_name || item.is_service);
 
-  // Emparejar cada archivo multimedia (foto o video) con su producto correspondiente por orden de creación de campaña
-  const findProductForMedia = (itemCreatedAt) => {
-    if (!products || products.length === 0) return null;
-    if (!itemCreatedAt) return products[0];
-
-    const itemTime = new Date(itemCreatedAt).getTime();
-    const sortedProducts = [...products].sort(
-      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    );
-
-    let matched = sortedProducts[0];
-    for (const prod of sortedProducts) {
-      const prodTime = new Date(prod.created_at).getTime();
-      // Asignar al último producto creado antes o cercano al archivo multimedia
-      if (prodTime <= itemTime + 15000) {
-        matched = prod;
-      }
-    }
-    return matched;
-  };
-
-  // Agrupar archivos en carpetas unificadas por Nombre de Producto (1 sola carpeta por producto con todos sus Reels versionados)
-  const groupedMediaMap = rawItems.reduce((acc, item) => {
-    const matchedProduct = findProductForMedia(item.created_at);
-    const productName = matchedProduct ? matchedProduct.name : "Archivos de Producto";
-    const folderKey = `prod_${productName.replace(/\s+/g, "_").toLowerCase()}`;
-    const itemFormattedDate = formatDate(item.created_at);
-
-    if (!acc[folderKey]) {
-      acc[folderKey] = {
-        key: folderKey,
-        name: productName,
-        createdAt: itemFormattedDate,
-        rawTime: item.created_at ? new Date(item.created_at).getTime() : 0,
-        items: [],
-      };
-    } else {
-      if (item.created_at) {
-        const itemTime = new Date(item.created_at).getTime();
-        if (itemTime > acc[folderKey].rawTime) {
-          acc[folderKey].rawTime = itemTime;
-          acc[folderKey].createdAt = itemFormattedDate;
+      if (!pName && products.length > 0) {
+        const prod = products.find((p) => p.id === item.product_id) || products[0];
+        if (prod) {
+          pName = prod.name;
+          isService = Boolean(prod.is_service);
         }
       }
+
+      return {
+        ...item,
+        product_name: pName || "Producto de Campaña",
+        is_service: isService,
+        title: item.title || item.name || (item.media_type === "video" ? "Reel 9:16 Renderizado" : "Foto de Producto"),
+      };
+    });
+  }, [rawItems, products]);
+
+  // Agrupar carpetas por Lote / Producto en Nivel 1
+  const folderList = useMemo(() => {
+    const map = {};
+
+    const itemOriginalTimeMap = {};
+    localMedia.forEach((m) => {
+      if (m.idea_id || m.batch_id) {
+        const key = m.idea_id || m.batch_id;
+        const mTime = new Date(m.created_at || Date.now()).getTime();
+        if (!itemOriginalTimeMap[key] || mTime < itemOriginalTimeMap[key]) {
+          itemOriginalTimeMap[key] = mTime;
+        }
+      }
+    });
+
+    localMedia.forEach((item) => {
+      const pName = item.product_name || "Producto de Campaña";
+      const isService = Boolean(item.is_service);
+      const itemTime = new Date(item.created_at || Date.now()).getTime();
+
+      let matchedKey = null;
+      if (item.idea_id || item.batch_id) {
+        matchedKey = `batch_${item.idea_id || item.batch_id}`;
+      } else {
+        matchedKey = Object.keys(map).find((key) => {
+          const folderObj = map[key];
+          return folderObj.productName === pName && Math.abs(itemTime - folderObj.timestamp) < 120000;
+        });
+        if (!matchedKey) {
+          matchedKey = `batch_${pName}_${itemTime}`;
+        }
+      }
+
+      if (!map[matchedKey]) {
+        map[matchedKey] = {
+          key: matchedKey,
+          productName: pName,
+          name: pName,
+          isService,
+          timestamp: (item.idea_id || item.batch_id) ? (itemOriginalTimeMap[item.idea_id || item.batch_id] || itemTime) : itemTime,
+          createdAt: item.created_at,
+          items: [],
+        };
+      }
+
+      map[matchedKey].items.push(item);
+    });
+
+    let folders = Object.values(map);
+
+    // 1. Filtro por Formato Media
+    if (mediaTypeFilter === "video") {
+      folders = folders.map((f) => ({
+        ...f,
+        items: f.items.filter((i) => i.media_type === "video" || i.url?.includes(".mp4")),
+      })).filter((f) => f.items.length > 0);
+    } else if (mediaTypeFilter === "image") {
+      folders = folders.map((f) => ({
+        ...f,
+        items: f.items.filter((i) => i.media_type === "image" || !i.url?.includes(".mp4")),
+      })).filter((f) => f.items.length > 0);
     }
 
-    if (item.type === "image") {
-      const alreadyHasImage = acc[folderKey].items.some(
-        (i) => i.type === "image" && i.filename === item.filename
+    // 2. Filtro por Categoría / Tipo de Oferta
+    if (selectedCategory === "product") {
+      folders = folders.filter((f) => !f.isService);
+    } else if (selectedCategory === "service") {
+      folders = folders.filter((f) => f.isService);
+    } else if (selectedCategory !== "all") {
+      folders = folders.filter((f) => f.productName === selectedCategory);
+    }
+
+    // 3. Búsqueda
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      folders = folders.filter(
+        (f) =>
+          f.productName.toLowerCase().includes(q) ||
+          f.items.some((i) => (i.title || "").toLowerCase().includes(q) || (i.product_name || "").toLowerCase().includes(q))
       );
-      if (!alreadyHasImage) {
-        acc[folderKey].items.push(item);
+    }
+
+    // 4. Ordenamiento
+    if (selectedSort === "newest") {
+      folders.sort((a, b) => b.timestamp - a.timestamp);
+    } else if (selectedSort === "oldest") {
+      folders.sort((a, b) => a.timestamp - b.timestamp);
+    } else if (selectedSort === "title") {
+      folders.sort((a, b) => a.productName.localeCompare(b.productName));
+    }
+
+    return folders;
+  }, [localMedia, mediaTypeFilter, selectedCategory, searchQuery, selectedSort]);
+
+  // Filtrar los archivos pertenecientes a la carpeta activa
+  const filteredMedia = useMemo(() => {
+    let result = [];
+    if (activeFolder) {
+      const folderObj = folderList.find((f) => f.key === activeFolder || f.productName === activeFolder);
+      if (folderObj) {
+        result = [...folderObj.items];
+      } else {
+        result = localMedia.filter((m) => m.product_name === activeFolder);
       }
     } else {
-      acc[folderKey].items.push(item);
+      result = [...localMedia];
     }
 
-    return acc;
-  }, {});
+    if (selectedSort === "newest") {
+      result.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    } else if (selectedSort === "oldest") {
+      result.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+    }
 
-  // Ordenar carpetas y elementos por fecha de creación descendente (los más recientes primero)
-  const folderList = Object.values(groupedMediaMap).sort((a, b) => b.rawTime - a.rawTime);
-  folderList.forEach((folder) => {
-    folder.items.sort(
-      (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-    );
-  });
+    return result;
+  }, [localMedia, folderList, activeFolder, selectedSort]);
 
-  const handleDownload = (item) => {
-    // Force download of the file
-    const link = document.createElement("a");
-    link.href = item.url;
-    link.download = item.filename || "media_file";
-    link.target = "_blank";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    setToastMessage(`Descargando ${item.filename}...`);
-    setTimeout(() => setToastMessage(null), 3000);
+  // Selección múltiple
+  const handleToggleSelect = (id) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
   };
 
-  const handleDelete = async (itemId) => {
-    setDeletingId(itemId);
+  // Eliminación de archivo
+  const handleDeleteItem = async (id) => {
+    if (!confirm("¿Eliminar este archivo multimedia?")) return;
     try {
-      await fetchWithTenant(`/tenants/${tenantId}/media/${itemId}`, { method: "DELETE" }, tenantId);
-      const updated = (items.length > 0 ? items : (Array.isArray(mediaItems) ? mediaItems : []))
-        .filter((m) => m.id !== itemId);
-      setItems(updated);
-      setToastMessage("Archivo eliminado de MinIO exitosamente.");
-      setTimeout(() => setToastMessage(null), 3000);
+      await fetchWithTenant(
+        `/tenants/${tenantId}/media/${id}`,
+        { method: "DELETE" },
+        tenantId
+      );
+      setNotification({
+        type: "success",
+        title: "Archivo Eliminado",
+        message: "El elemento ha sido removido de la galería multimedia.",
+      });
+      refresh();
     } catch (err) {
-      console.error("Error al borrar elemento multimedia:", err);
-    } finally {
-      setDeletingId(null);
-      setDeleteConfirmId(null);
+      setNotification({
+        type: "error",
+        title: "Error al Eliminar",
+        message: err.message || "No se pudo eliminar el archivo.",
+      });
     }
   };
+
+  const currentFolderObj = folderList.find((f) => f.key === activeFolder);
 
   return (
     <div className="space-y-6">
-          {/* Header de la Vista */}
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-slate-800">
-            <div>
-              <h1 className="text-xl font-bold flex items-center gap-2">
-                <Film className="w-5 h-5 text-indigo-400" /> Galería de Videos & Multimedia (MinIO S3)
-              </h1>
-              <p className="text-xs text-slate-400">
-                Visualiza, reproduce, descarga y gestiona todos los reels producidos y fotos de productos guardadas en MinIO Storage.
-              </p>
-            </div>
+      {/* 1. Barra de Herramientas Estilo macOS Finder */}
+      <MediaHeaderBar
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        mediaTypeFilter={mediaTypeFilter}
+        setMediaTypeFilter={setMediaTypeFilter}
+        selectedCategory={selectedCategory}
+        setSelectedCategory={setSelectedCategory}
+        selectedSort={selectedSort}
+        setSelectedSort={setSelectedSort}
+        selectedCount={selectedIds.length}
+        products={products}
+      />
 
-            {/* Filtros de Tipo */}
-            <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 p-1 rounded-xl">
-              <button
-                onClick={() => setFilter("all")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  filter === "all" ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30" : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                Todos
-              </button>
-              <button
-                onClick={() => setFilter("video")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1 ${
-                  filter === "video" ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30" : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <Film className="w-3.5 h-3.5" /> Videos MP4
-              </button>
-              <button
-                onClick={() => setFilter("image")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1 ${
-                  filter === "image" ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30" : "text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                <ImageIcon className="w-3.5 h-3.5" /> Imágenes
-              </button>
+      {/* 2. Breadcrumbs Nivel 2 */}
+      {activeFolder && (
+        <div className="flex items-center justify-between bg-slate-900/80 border border-slate-800 p-3 rounded-2xl animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setActiveFolder(null)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all shadow"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Volver a Carpetas</span>
+            </button>
+            <span className="text-slate-600">/</span>
+            <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-300 bg-indigo-950/60 border border-indigo-500/30 px-3 py-1.5 rounded-xl">
+              <FolderOpen className="w-4 h-4 text-indigo-400" />
+              <span>{currentFolderObj ? currentFolderObj.productName : activeFolder}</span>
             </div>
           </div>
+          <span className="text-[11px] font-mono text-slate-400">
+            {filteredMedia.length} {filteredMedia.length === 1 ? "archivo" : "archivos"} en esta carpeta
+          </span>
+        </div>
+      )}
 
-          {/* Toast Notification */}
-          {toastMessage && (
-            <div className="p-3 bg-emerald-950/60 border border-emerald-500/40 rounded-xl text-emerald-300 text-xs flex items-center gap-2 animate-fade-in">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>{toastMessage}</span>
-            </div>
-          )}
-
-          {/* Estado de Carga */}
-          {loading && rawItems.length === 0 && (
-            <div className="flex flex-col items-center justify-center p-12 bg-slate-900/50 border border-slate-800/80 rounded-2xl">
-              <RefreshCw className="w-8 h-8 text-indigo-400 animate-spin mb-3" />
-              <p className="text-sm font-medium text-slate-300">Cargando galería multimedia desde MinIO...</p>
-            </div>
-          )}
-
-          {/* Estado Vacío */}
-          {!loading && rawItems.length === 0 && (
-            <div className="flex flex-col items-center justify-center p-12 bg-slate-900/40 border border-slate-800 rounded-2xl text-center">
-              <FolderOpen className="w-12 h-12 text-slate-600 mb-3" />
-              <h3 className="text-base font-semibold text-slate-300">Sin archivos multimedia aún</h3>
-              <p className="text-xs text-slate-500 max-w-sm mt-1 mb-4">
-                Sube la foto de tu producto en el panel principal o genera un Reel con IA para ver tus videos aquí.
-              </p>
-              <a
-                href="/"
-                className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-xs font-medium transition-all shadow-lg shadow-indigo-600/30 flex items-center gap-1.5"
-              >
-                <Sparkles className="w-4 h-4" /> Crear Nuevo Reel
-              </a>
-            </div>
-          )}
-
+      {/* 3. Contenido Principal */}
+      {loadingMedia ? (
+        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-16 text-center space-y-3">
+          <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mx-auto" />
+          <p className="text-xs text-slate-400">Cargando galería multimedia...</p>
+        </div>
+      ) : errorMedia ? (
+        <div className="bg-rose-950/40 border border-rose-500/30 text-rose-300 rounded-2xl p-6 text-sm">
+          Error al cargar multimedia: {errorMedia.message}
+        </div>
+      ) : (
+        <div>
           {!activeFolder ? (
-            /* VISTA DE CARPETAS DE GALERÍA (FOLDER VIEW) */
-            <div className="space-y-4">
-              <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-                Carpetas de Multimedia por Producto ({folderList.length})
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            /* NIVEL 1: NAVEGACIÓN POR CARPETAS */
+            folderList.length === 0 ? (
+              <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-12 text-center space-y-3">
+                <Film className="w-12 h-12 text-slate-600 mx-auto" />
+                <h3 className="text-sm font-bold text-slate-300">No hay carpetas de multimedia</h3>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  Renderiza guiones o sube imágenes de producto para generar carpetas de assets.
+                </p>
+              </div>
+            ) : viewMode === "grid" ? (
+              /* VISTA DE ICONOS NIVEL 1 */
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {folderList.map((folder) => {
-                  const videosCount = folder.items.filter((i) => i.type === "video").length;
-                  const imagesCount = folder.items.filter((i) => i.type === "image").length;
+                  const count = folder.items.length;
+                  const isService = folder.isService;
                   return (
                     <div
                       key={folder.key}
                       onClick={() => setActiveFolder(folder.key)}
-                      className="bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-2xl p-5 cursor-pointer transition-all hover:shadow-xl hover:shadow-indigo-500/10 group flex items-start gap-4"
+                      className="group bg-slate-900/90 border border-slate-800 hover:border-indigo-500/70 p-5 rounded-2xl cursor-pointer transition-all hover:shadow-2xl flex flex-col justify-between space-y-3 relative overflow-hidden"
                     >
-                      <div className="bg-indigo-600/20 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white p-3 rounded-xl transition-all">
-                        <Folder className="w-6 h-6" />
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-800/60">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 group-hover:bg-rose-500 transition-colors"></span>
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 group-hover:bg-amber-500 transition-colors"></span>
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 group-hover:bg-emerald-500 transition-colors"></span>
+                        </div>
+                        <span className="bg-indigo-950 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded text-[10px] font-mono font-bold">
+                          {count} {count === 1 ? "archivo" : "archivos"}
+                        </span>
                       </div>
-                      <div className="flex-1">
-                        <h3 className="font-bold text-slate-100 group-hover:text-indigo-300 transition-colors">
-                          {folder.name}
-                        </h3>
-                        <div className="flex flex-col gap-0.5 mt-1.5">
-                          <span className="text-xs text-slate-400 font-medium">
-                            {videosCount > 0 && `${videosCount} ${videosCount === 1 ? "Video" : "Videos"}`}
-                            {videosCount > 0 && imagesCount > 0 && ", "}
-                            {imagesCount > 0 && `${imagesCount} ${imagesCount === 1 ? "Foto" : "Fotos"}`}
-                          </span>
-                          {folder.createdAt && (
-                            <span className="text-[11px] text-indigo-400/80 font-mono">
-                              🕒 {folder.createdAt}
+
+                      <div className="flex items-start gap-3 py-1">
+                        <div className="bg-indigo-600/20 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white p-3 rounded-xl transition-all shrink-0">
+                          <Folder className="w-6 h-6" />
+                        </div>
+                        <div className="space-y-1.5 flex-1 min-w-0">
+                          <h3 className="text-sm font-bold text-slate-100 group-hover:text-indigo-300 transition-colors leading-snug truncate">
+                            {folder.productName}
+                          </h3>
+                          <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-slate-500 shrink-0" />
+                            <span>{formatDateTime(folder.createdAt)}</span>
+                          </div>
+                          <div className="pt-0.5">
+                            <span
+                              className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded-md border ${
+                                isService
+                                  ? "bg-amber-950/60 text-amber-300 border-amber-500/30"
+                                  : "bg-indigo-950/60 text-indigo-300 border-indigo-500/30"
+                              }`}
+                            >
+                              {isService ? <Wrench className="w-3 h-3 text-amber-400" /> : <Package className="w-3 h-3 text-indigo-400" />}
+                              <span>{isService ? "Servicio" : "Producto"}</span>
                             </span>
-                          )}
+                          </div>
                         </div>
                       </div>
                     </div>
                   );
                 })}
               </div>
-            </div>
+            ) : (
+              /* VISTA DE LISTA NIVEL 1 */
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl shadow-xl backdrop-blur-md overflow-hidden">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-950/90 border-b border-slate-800 text-slate-400 font-medium select-none">
+                    <tr>
+                      <th className="px-4 py-2.5 font-semibold">Carpeta / Producto o Servicio</th>
+                      <th className="px-3 py-2.5 font-semibold">Tipo</th>
+                      <th className="px-3 py-2.5 font-semibold text-center">Archivos</th>
+                      <th className="px-3 py-2.5 font-semibold">Fecha y Hora</th>
+                      <th className="px-4 py-2.5 font-semibold text-right">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/40 bg-slate-950/40">
+                    {folderList.map((folder) => {
+                      const isService = folder.isService;
+                      return (
+                        <tr
+                          key={folder.key}
+                          onClick={() => setActiveFolder(folder.key)}
+                          className="hover:bg-slate-900/80 cursor-pointer transition-colors group"
+                        >
+                          <td className="px-4 py-2.5 font-bold text-slate-200 group-hover:text-indigo-300">
+                            <div className="flex items-center gap-2">
+                              <Folder className="w-4 h-4 text-indigo-400 shrink-0" />
+                              <span>{folder.productName}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                                isService
+                                  ? "bg-amber-950/60 text-amber-300 border-amber-500/30"
+                                  : "bg-indigo-950/60 text-indigo-300 border-indigo-500/30"
+                              }`}
+                            >
+                              {isService ? <Wrench className="w-3 h-3 text-amber-400" /> : <Package className="w-3 h-3 text-indigo-400" />}
+                              <span>{isService ? "Servicio" : "Producto"}</span>
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-center whitespace-nowrap font-mono font-bold text-indigo-300">
+                            {folder.items.length} {folder.items.length === 1 ? "archivo" : "archivos"}
+                          </td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-[11px] font-mono text-slate-400">
+                            <div className="flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-slate-500" />
+                              <span>{formatDateTime(folder.createdAt)}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                            <span className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] px-3 py-1 rounded-lg shadow transition-all">
+                              Abrir Carpeta →
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )
           ) : (
-            /* VISTA DE ARCHIVOS DENTRO DE LA CARPETA SELECCIONADA */
-            <div className="space-y-4">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
-                <button
-                  onClick={() => setActiveFolder(null)}
-                  className="flex items-center gap-2 text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
-                >
-                  <ArrowLeft className="w-4 h-4" /> Volver a Carpetas
-                </button>
-                <span className="text-xs text-slate-400 flex items-center gap-1.5 font-medium">
-                  <FolderOpen className="w-4 h-4 text-indigo-400" /> Carpeta activa: <strong>{groupedMediaMap[activeFolder]?.name}</strong>
-                </span>
-              </div>
+            /* NIVEL 2: VISTA DE ARCHIVOS MULTIMEDIA EN CARPETA ACTIVA */
+            viewMode === "grid" ? (
+              <MediaMacGridView
+                mediaItems={filteredMedia}
+                selectedIds={selectedIds}
+                onToggleSelect={handleToggleSelect}
+                onOpenPreview={(item) => setPreviewItem(item)}
+                onDelete={handleDeleteItem}
+              />
+            ) : (
+              <MediaMacListView
+                mediaItems={filteredMedia}
+                selectedIds={selectedIds}
+                onToggleSelect={handleToggleSelect}
+                onOpenPreview={(item) => setPreviewItem(item)}
+                onDelete={handleDeleteItem}
+              />
+            )
+          )}
+        </div>
+      )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-                {(groupedMediaMap[activeFolder]?.items || [])
-                  .filter((item) => filter === "all" || item.type === filter)
-                  .map((item) => (
-              <div
-                key={item.id}
-                className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden hover:border-slate-700 transition-all flex flex-col group shadow-lg"
+      {/* Modal de Visor / Reproductor de Media */}
+      {previewItem && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4 animate-fadeIn relative">
+            <button
+              onClick={() => setPreviewItem(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+              {previewItem.media_type === "video" || previewItem.url?.includes(".mp4") ? (
+                <Film className="w-5 h-5 text-indigo-400" />
+              ) : (
+                <ImageIcon className="w-5 h-5 text-emerald-400" />
+              )}
+              <h3 className="text-sm font-bold text-slate-100 truncate pr-6">
+                {previewItem.title || "Visor Multimedia"}
+              </h3>
+            </div>
+
+            <div className="relative aspect-[9/16] max-h-[60vh] bg-slate-950 rounded-xl overflow-hidden border border-slate-800 mx-auto flex items-center justify-center">
+              {previewItem.media_type === "video" || previewItem.url?.includes(".mp4") ? (
+                <video
+                  src={previewItem.url || previewItem.video_url}
+                  controls
+                  autoPlay
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <img
+                  src={previewItem.url || previewItem.image_url}
+                  alt={previewItem.title}
+                  className="w-full h-full object-contain"
+                />
+              )}
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <a
+                href={previewItem.url || previewItem.video_url || previewItem.image_url}
+                download={`media_${previewItem.id}`}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5"
               >
-                {/* Previsualización del Media */}
-                <div className="relative aspect-video bg-slate-950 flex items-center justify-center overflow-hidden">
-                  {item.type === "video" ? (
-                    <div className="relative w-full h-full flex items-center justify-center bg-gradient-to-tr from-slate-950 via-slate-900 to-indigo-950">
-                      <video
-                        src={item.url}
-                        className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity"
-                        preload="metadata"
-                      />
-                      <button
-                        onClick={() => setSelectedMedia(item)}
-                        className="absolute bg-indigo-600/90 hover:bg-indigo-500 text-white p-3 rounded-full shadow-xl shadow-indigo-600/50 backdrop-blur-sm transition-all hover:scale-110"
-                        title="Reproducir Video"
-                      >
-                        <Play className="w-6 h-6 fill-current ml-0.5" />
-                      </button>
-                      <span className="absolute top-2 left-2 bg-indigo-950/80 border border-indigo-500/30 text-indigo-300 text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full backdrop-blur-sm flex items-center gap-1">
-                        <Film className="w-3 h-3" /> VIDEO MP4
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="relative w-full h-full">
-                      <img
-                        src={item.url}
-                        alt={item.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
-                      <span className="absolute top-2 left-2 bg-slate-950/80 border border-slate-700 text-slate-300 text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full backdrop-blur-sm flex items-center gap-1">
-                        <ImageIcon className="w-3 h-3" /> FOTO PRODUCTO
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Información del Objeto */}
-                <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
-                  <div>
-                    <h3 className="font-semibold text-sm text-slate-200 line-clamp-1 group-hover:text-indigo-400 transition-colors">
-                      {item.title || item.filename}
-                    </h3>
-                    <p className="text-[11px] font-mono text-slate-500 truncate mt-0.5">
-                      {item.object_key}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-800/80 pt-2.5">
-                    <span>{(item.size_bytes / (1024 * 1024)).toFixed(1)} MB</span>
-                    <span className="font-mono text-indigo-300 font-semibold flex items-center gap-1">
-                      🕒 {formatDate(item.created_at)}
-                    </span>
-                  </div>
-
-                  {/* Acciones: Ver / Descargar / Borrar */}
-                  <div className="flex items-center gap-2 pt-1">
-                    {item.type === "video" && (
-                      <button
-                        onClick={() => setSelectedMedia(item)}
-                        className="flex-1 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 py-1.5 px-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1 transition-all"
-                      >
-                        <Play className="w-3.5 h-3.5" /> Ver
-                      </button>
-                    )}
-
-                    <button
-                      onClick={() => handleDownload(item)}
-                      className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 py-1.5 px-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1 transition-all"
-                      title="Descargar archivo"
-                    >
-                      <Download className="w-3.5 h-3.5 text-emerald-400" /> Descargar
-                    </button>
-
-                    <button
-                      onClick={() => setDeleteConfirmId(item.id)}
-                      className="p-1.5 bg-red-950/40 hover:bg-red-900/60 text-red-400 border border-red-500/20 rounded-lg text-xs transition-all"
-                      title="Eliminar de MinIO"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-                </div>
-              ))}
-              </div>
+                <Download className="w-4 h-4" /> Descargar Archivo
+              </a>
+              <button
+                onClick={() => setPreviewItem(null)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-all"
+              >
+                Cerrar
+              </button>
             </div>
-          )}
+          </div>
+        </div>
+      )}
 
-          {/* Modal Reproductor de Video MP4 */}
-          {selectedMedia && (
-            <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full p-5 space-y-4 shadow-2xl relative">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                  <div className="flex items-center gap-2">
-                    <Film className="w-5 h-5 text-indigo-400" />
-                    <h3 className="font-bold text-base text-slate-100">{selectedMedia.title}</h3>
-                  </div>
-                  <button
-                    onClick={() => setSelectedMedia(null)}
-                    className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-all"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <div className="aspect-video bg-black rounded-xl overflow-hidden shadow-inner flex items-center justify-center">
-                  <video
-                    controls
-                    autoPlay
-                    src={selectedMedia.url}
-                    className="w-full h-full object-contain"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between text-xs text-slate-400 pt-2 border-t border-slate-800">
-                  <span className="font-mono text-slate-500">Key: {selectedMedia.object_key}</span>
-                  <button
-                    onClick={() => handleDownload(selectedMedia)}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition-all shadow-md shadow-emerald-600/30"
-                  >
-                    <Download className="w-4 h-4" /> Descargar Video MP4
-                  </button>
-                </div>
-              </div>
+      {/* Ventana Emergente de Notificación (OK / Error) */}
+      {notification && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div
+            className={`bg-slate-900 border rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4 text-center animate-fadeIn ${
+              notification.type === "success" ? "border-emerald-500/60" : "border-rose-500/60"
+            }`}
+          >
+            <div
+              className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto ${
+                notification.type === "success"
+                  ? "bg-emerald-950 text-emerald-400 border border-emerald-500/40"
+                  : "bg-rose-950 text-rose-400 border border-rose-500/40"
+              }`}
+            >
+              {notification.type === "success" ? (
+                <CheckCircle2 className="w-6 h-6" />
+              ) : (
+                <AlertCircle className="w-6 h-6" />
+              )}
             </div>
-          )}
-
-          {/* Modal de Confirmación de Borrado */}
-          {deleteConfirmId && (
-            <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-                <div className="flex items-center gap-3 text-red-400">
-                  <Trash2 className="w-6 h-6" />
-                  <h3 className="font-bold text-lg text-slate-100">¿Eliminar archivo de MinIO?</h3>
-                </div>
-                <p className="text-xs text-slate-400">
-                  Esta acción eliminará permanentemente el archivo del bucket de MinIO Storage. Esta operación no se puede deshacer.
-                </p>
-                <div className="flex items-center justify-end gap-3 pt-2">
-                  <button
-                    onClick={() => setDeleteConfirmId(null)}
-                    className="px-4 py-2 rounded-xl text-xs font-medium text-slate-300 hover:bg-slate-800 transition-all"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    onClick={() => handleDelete(deleteConfirmId)}
-                    disabled={deletingId === deleteConfirmId}
-                    className="px-4 py-2 rounded-xl text-xs font-medium bg-red-600 hover:bg-red-500 text-white transition-all shadow-lg shadow-red-600/30 disabled:opacity-50"
-                  >
-                    {deletingId === deleteConfirmId ? "Eliminando..." : "Sí, Eliminar de MinIO"}
-                  </button>
-                </div>
-              </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-100">{notification.title}</h3>
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">{notification.message}</p>
             </div>
-          )}
+            <button
+              onClick={() => setNotification(null)}
+              className={`w-full py-2 rounded-xl font-bold text-xs shadow-md transition-all ${
+                notification.type === "success"
+                  ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                  : "bg-rose-600 hover:bg-rose-500 text-white"
+              }`}
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
