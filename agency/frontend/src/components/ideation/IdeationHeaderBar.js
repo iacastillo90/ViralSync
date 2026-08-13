@@ -52,10 +52,10 @@ export function IdeationHeaderBar({
           </div>
           <div>
             <h1 className="text-base font-bold text-slate-100 flex items-center gap-2">
-              📂 Explorador de Ideas & Conceptos
+              📂 Catálogo de Ángulos Virales
             </h1>
             <p className="text-[11px] text-slate-400">
-              {totalCount} {totalCount === 1 ? "idea encontrada" : "ideas encontradas en el catálogo"}
+              {totalCount} {totalCount === 1 ? "propuesta encontrada" : "propuestas encontradas en el catálogo"}
             </p>
           </div>
         </div>
@@ -65,7 +65,7 @@ export function IdeationHeaderBar({
           <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
           <input
             type="text"
-            placeholder="Buscar por nombre o concepto..."
+            placeholder="Buscar por gancho o enfoque..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-medium transition-colors"

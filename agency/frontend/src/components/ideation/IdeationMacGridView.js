@@ -67,7 +67,14 @@ export function IdeationMacGridView({
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       {ideas.map((idea) => {
         const isSelected = selectedIds.includes(idea.id);
-        const title = idea.angle || idea.hook || idea.title || "Concepto de Ideación";
+        const title =
+          idea.gancho ||
+          idea.angle ||
+          idea.hook ||
+          idea.texto ||
+          idea.title ||
+          idea.enfoque ||
+          `Ángulo Viral #${idea.id ? String(idea.id).slice(0, 5) : "1"}`;
         const productName =
           idea.product_name ||
           idea.service_name ||

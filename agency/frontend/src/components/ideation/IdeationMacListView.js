@@ -70,7 +70,7 @@ export function IdeationMacListView({
               <th className="w-10 px-3 py-2 text-center">
                 <span className="sr-only">Selección</span>
               </th>
-              <th className="px-4 py-2 font-semibold">Concepto / Gancho de Ideación</th>
+              <th className="px-4 py-2 font-semibold">Gancho / Propuesta Viral</th>
               <th className="px-3 py-2 font-semibold">Producto / Servicio</th>
               <th className="px-3 py-2 font-semibold text-center">Duración Est.</th>
               <th className="px-3 py-2 font-semibold">Fecha y Hora</th>
@@ -82,7 +82,14 @@ export function IdeationMacListView({
           <tbody className="divide-y divide-slate-800/40 bg-slate-950/40">
             {ideas.map((idea) => {
               const isSelected = selectedIds.includes(idea.id);
-              const title = idea.angle || idea.hook || idea.title || "Concepto de Ideación";
+              const title =
+                idea.gancho ||
+                idea.angle ||
+                idea.hook ||
+                idea.texto ||
+                idea.title ||
+                idea.enfoque ||
+                `Ángulo Viral #${idea.id ? String(idea.id).slice(0, 5) : "1"}`;
               const productName =
                 idea.product_name ||
                 idea.service_name ||
