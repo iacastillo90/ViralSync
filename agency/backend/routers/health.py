@@ -37,6 +37,66 @@ _raw_qdrant = os.getenv("QDRANT_URL", "http://localhost:6333")
 QDRANT_URL = _raw_qdrant if _raw_qdrant.startswith("http://") or _raw_qdrant.startswith("https://") else f"http://{_raw_qdrant}"
 SEARXNG_URL = os.getenv("SEARXNG_URL", "http://localhost:8080")
 
+# Display metadata for dynamically discovered models (derived from real Redis
+# ``llm_usage:*`` usage keys). Static models in ``models_info`` keep their own
+# curated rows; this map only decorates models that are not listed statically.
+DYNAMIC_MODEL_META = {
+    "gemini-3-flash-preview": {
+        "name": "Gemini 3 Flash Preview",
+        "category": "Modelo de Texto Principal",
+        "task": "Gemini 3 Flash Preview",
+    },
+    "gemini-3.1-flash-lite": {
+        "name": "Gemini 3.1 Flash Lite",
+        "category": "Modelo de Texto Secundario",
+        "task": "Gemini 3.1 Flash Lite",
+    },
+    "gemini-flash-latest": {
+        "name": "Gemini Flash Latest",
+        "category": "Modelo de Texto Principal",
+        "task": "Gemini Flash Latest",
+    },
+    "llama-3.3-70b-versatile": {
+        "name": "Llama 3.3 70B Versatile",
+        "category": "Fallback Ultra-Rápido",
+        "task": "Respuesta Inmediata & Failover",
+    },
+    "llama-3.1-8b-instant": {
+        "name": "Llama 3.1 8B Instant",
+        "category": "Fallback Ultra-Rápido",
+        "task": "Respuesta Inmediata & Failover",
+    },
+    "motor-agencia": {
+        "name": "Motor Agencia (LiteLLM Proxy)",
+        "category": "Gateway Proxy",
+        "task": "Enrutamiento vía LiteLLM Gateway",
+    },
+}
+
+
+def _dynamic_model_entry(model_id: str) -> dict:
+    """Build a frontend-compatible model row for a dynamically discovered model.
+
+    Limits are conservative non-zero defaults so the dashboard's usage-percent
+    math never divides by zero for real models seen in Redis.
+    """
+    meta = DYNAMIC_MODEL_META.get(model_id, {})
+    return {
+        "id": model_id,
+        "name": meta.get("name", model_id.replace("-", " ").title()),
+        "category": meta.get("category", "Modelo Registrado"),
+        "task": meta.get("task", "Uso LLM registrado en Redis"),
+        "rpm_current": 0,
+        "rpm_limit": 15,
+        "tpm_current": 0,
+        "tpm_limit": 250000,
+        "rpd_current": 0,
+        "rpd_limit": 500,
+        "tokens": 0,
+        "status": "ONLINE",
+        "health": "healthy",
+    }
+
 
 class SearXNGSearchRequest(BaseModel):
     query: str
@@ -288,6 +348,31 @@ async def get_system_llm_stats():
                 model["tpm_current"] = int(tpm_val)
             if rpm_val:
                 model["rpm_current"] = int(rpm_val)
+            model.setdefault("tokens", 0)
+
+        # Dynamically discovered models: derive one row per real usage key so
+        # models actually tracked in Redis appear even if not statically listed.
+        usage_by_model: dict[str, dict[str, int]] = {}
+        for key in r.scan_iter(match="llm_usage:*", count=100):
+            try:
+                raw = key.decode() if isinstance(key, bytes) else key
+                metric = raw.rsplit(":", 1)[-1]
+                if metric not in ("rpd", "tpm", "rpm", "tokens"):
+                    continue
+                model_id = raw[len("llm_usage:"):-len(metric) - 1]
+                usage_by_model.setdefault(model_id, {})[metric] = int(r.get(key) or 0)
+            except (ValueError, TypeError):
+                continue
+
+        for model_id, metrics in usage_by_model.items():
+            entry = next((m for m in models_info if m["id"] == model_id), None)
+            if entry is None:
+                entry = _dynamic_model_entry(model_id)
+                models_info.append(entry)
+            entry["rpd_current"] = metrics.get("rpd", entry.get("rpd_current", 0))
+            entry["tpm_current"] = metrics.get("tpm", entry.get("tpm_current", 0))
+            entry["rpm_current"] = metrics.get("rpm", entry.get("rpm_current", 0))
+            entry["tokens"] = metrics.get("tokens", entry.get("tokens", 0))
     except Exception as redis_err:
         logger.debug(f"Redis no disponible para lectura de métricas LLM: {redis_err}")
 

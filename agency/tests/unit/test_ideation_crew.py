@@ -56,11 +56,11 @@ def test_ideation_uses_llm_text_when_provider_responds(monkeypatch):
         ensure_ascii=False,
     )
 
-    async def fake_acomplete(messages, temperature=0.7, max_tokens=1000, **kwargs):
+    async def fake_acomplete(messages, temperature=0.7, max_tokens=8192, **kwargs):
         # La crew preserva la temperatura y max_tokens del call site (design D1)
         # y llama al seam ASYNC (RELIABILITY-003): nunca complete() síncrono.
         assert temperature == 0.7
-        assert max_tokens == 1000
+        assert max_tokens == 8192
         assert messages[0]["role"] == "system"
         return llm_text
 

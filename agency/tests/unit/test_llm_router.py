@@ -138,7 +138,7 @@ def test_completion_returns_first_healthy_provider_text(monkeypatch):
     )
 
     assert text == "TEXTO REAL GENERADO POR EL LLM PARA EL NICHO"
-    assert called_models == ["gemini/gemini-1.5-flash"]
+    assert called_models == ["gemini/gemini-3-flash-preview"]
     assert "3 Errores" not in text  # sin template de respaldo
 
 
@@ -163,9 +163,9 @@ def test_fallback_on_429_tries_next_provider(monkeypatch):
 
     assert text == "RESPUESTA DE GROQ"
     assert called_models == [
-        "gemini/gemini-1.5-flash",
-        "gemini/gemini-1.5-flash-8b",
-        "gemini/gemini-2.0-flash-exp",
+        "gemini/gemini-3-flash-preview",
+        "gemini/gemini-3.1-flash-lite",
+        "gemini/gemini-flash-latest",
         "groq/llama-3.3-70b-versatile",
     ]
 
@@ -263,7 +263,7 @@ def test_proxy_failure_falls_back_to_direct_chain(monkeypatch):
     text = llm.complete([{"role": "user", "content": "hola"}])
 
     assert text == "RESPUESTA DIRECTA GEMINI"
-    assert called_models == ["motor-agencia", "gemini/gemini-1.5-flash"]
+    assert called_models == ["motor-agencia", "gemini/gemini-3-flash-preview"]
 
 
 # --------------------------------------------------------------------------- #

@@ -49,13 +49,15 @@ def _log_llm_error_to_redis(model: str, error_msg: str):
 
 # Direct-chain fallback order: (model id, env var holding its API key).
 # Only providers with a configured key are attempted.
+# NOTA: la API de Google (generativelanguage.googleapis.com) devuelve 404 para
+# gemini-1.5-flash / 1.5-flash-8b / 2.0-flash-exp (familia 3.x en adelante, 1M ctx).
+# mixtral-8x7b-32768 fue retirado de Groq (verificado contra /openai/v1/models).
 DIRECT_CHAIN = (
-    ("gemini/gemini-1.5-flash", "GEMINI_API_KEY"),
-    ("gemini/gemini-1.5-flash-8b", "GEMINI_API_KEY"),
-    ("gemini/gemini-2.0-flash-exp", "GEMINI_API_KEY"),
+    ("gemini/gemini-3-flash-preview", "GEMINI_API_KEY"),
+    ("gemini/gemini-3.1-flash-lite", "GEMINI_API_KEY"),
+    ("gemini/gemini-flash-latest", "GEMINI_API_KEY"),
     ("groq/llama-3.3-70b-versatile", "GROQ_API_KEY"),
     ("groq/llama-3.1-8b-instant", "GROQ_API_KEY"),
-    ("groq/mixtral-8x7b-32768", "GROQ_API_KEY"),
     ("openrouter/openrouter/free", "OPENROUTER_API_KEY"),
 )
 
@@ -88,8 +90,47 @@ def _configured_providers():
     return providers
 
 
+def _normalize_model_id(model: str) -> str:
+    """Strip a litellm provider prefix to get the clean dashboard model id.
+
+    Examples: ``gemini/gemini-3-flash-preview`` -> ``gemini-3-flash-preview``,
+    ``groq/llama-3.3-70b-versatile`` -> ``llama-3.3-70b-versatile``,
+    ``openrouter/openrouter/free`` -> ``openrouter/free``.
+    """
+    if "/" in model:
+        provider, _, rest = model.partition("/")
+        if provider in ("gemini", "groq", "openrouter", "openai") and rest:
+            return rest
+    return model
+
+
+def _track_llm_usage(model: str, completion, tenant_id: str = "system") -> None:
+    """Best-effort record of token usage for a successful completion.
+
+    Never raises and never blocks: Redis outages, missing usage metadata or
+    unexpected response shapes degrade to a silent no-op so token tracking can
+    never break or delay the LLM response path.
+    """
+    try:
+        usage = getattr(completion, "usage", None)
+        prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+        completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+        from backend.services.llm_budget_service import track_llm_token_usage
+
+        track_llm_token_usage(
+            tenant_id, _normalize_model_id(model), prompt_tokens, completion_tokens
+        )
+    except Exception as exc:  # noqa: BLE001 - telemetry must never break the call
+        logger.debug("Failed to track LLM token usage: %s", exc)
+
+
 def complete(messages, temperature=0.7, max_tokens=1000, **kwargs):
-    """Synchronous multi-provider completion returning plain text."""
+    """Synchronous multi-provider completion returning plain text.
+
+    ``tenant_id`` may be passed as a keyword argument for per-tenant token
+    usage tracking; it is consumed here and never forwarded to the provider.
+    """
+    tenant_id = kwargs.pop("tenant_id", "system")
     providers = _configured_providers()
     if not providers:
         missing = ", ".join(env_var for _, env_var in DIRECT_CHAIN)
@@ -115,6 +156,7 @@ def complete(messages, temperature=0.7, max_tokens=1000, **kwargs):
             completion = _call_completion(**call_kwargs)
             content = completion.choices[0].message.content
             if content:
+                _track_llm_usage(model, completion, tenant_id)
                 return content
             raise RuntimeError("empty response content")
         except Exception as exc:  # noqa: BLE001 - any provider error triggers failover

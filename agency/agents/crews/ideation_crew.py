@@ -75,7 +75,7 @@ async def run_ideation_crew(niche: str, market_map: Dict[str, Any]) -> List[Dict
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.7,
-                max_tokens=1000,
+                max_tokens=8192,
             )
         ).strip()
 

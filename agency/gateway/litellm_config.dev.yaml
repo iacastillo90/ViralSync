@@ -1,33 +1,35 @@
 # litellm_config.dev.yaml
 # AGENCY_ENV=dev — Pool de free tiers con alta cuota (500 RPD).
-# Estrategia: Gemini 3.5 Flash Lite (500 RPD) -> Gemini 3.1 Flash Lite (500 RPD) -> Gemini 3.5 Flash -> Groq -> OpenRouter -> Ollama.
+# Estrategia: Gemini 3 Flash Preview (1M ctx) -> Gemini 3.1 Flash Lite -> Gemini Flash Latest -> Groq -> OpenRouter -> Ollama.
+# IMPORTANTE: los modelos 1.5/2.0 devuelven 404 "not found for API version v1beta" en la API generativa
+# (generativelanguage.googleapis.com) — verificado el 2026-08-12. Solo la familia 3.x responde.
 
 model_list:
-  # ── Primarios con Cuota Alta en Google AI Studio (Gemini 2.0 & 1.5) ─── #
+  # ── Primarios con Cuota Alta en Google AI Studio (Gemini 3.x, 1M ctx) ─ #
   - model_name: gemini-flash-20
     litellm_params:
-      model: gemini/gemini-2.0-flash
+      model: gemini/gemini-3-flash-preview
       api_key: "os.environ/GEMINI_API_KEY"
 
   - model_name: gemini-flash-15
     litellm_params:
-      model: gemini/gemini-1.5-flash
+      model: gemini/gemini-3.1-flash-lite
       api_key: "os.environ/GEMINI_API_KEY"
 
   - model_name: motor-agencia
     litellm_params:
-      model: gemini/gemini-2.0-flash
+      model: gemini/gemini-3-flash-preview
       api_key: "os.environ/GEMINI_API_KEY"
 
-  # ── Secundarios (Gemini 1.5 Flash 8B & Gemini 1.5 Pro) ──────────────── #
+  # ── Secundarios (alias estables Gemini Flash / Flash Lite) ───────────── #
   - model_name: gemini-flash-8b
     litellm_params:
-      model: gemini/gemini-1.5-flash-8b
+      model: gemini/gemini-flash-latest
       api_key: "os.environ/GEMINI_API_KEY"
 
   - model_name: gemini-pro-15
     litellm_params:
-      model: gemini/gemini-1.5-pro
+      model: gemini/gemini-flash-lite-latest
       api_key: "os.environ/GEMINI_API_KEY"
 
   # ── Fallbacks Ultra-Rápidos con Cuota Alta en Groq (14,400 RPD) ─── #
@@ -59,16 +61,16 @@ router_settings:
   allowed_fails: 1
   fallbacks:
     - motor-agencia:
-        - gemini-flash-lite-31
-        - gemini-flash-35
-        - gemini-flash-36
+        - gemini-flash-20
+        - gemini-flash-15
+        - gemini-flash-8b
         - motor-agencia-groq
         - motor-agencia-groq-instant
         - motor-agencia-openrouter
         - motor-agencia-ollama
-    - gemini-flash-lite-35:
-        - gemini-flash-lite-31
-        - gemini-flash-35
+    - gemini-flash-20:
+        - gemini-flash-15
+        - gemini-flash-8b
         - motor-agencia-groq
         - motor-agencia-openrouter
 

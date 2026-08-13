@@ -15,13 +15,23 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 MODEL_COST_PER_1M_PROMPT = {
     "gemini-1.5-flash": 0.075,
+    "gemini-3-flash-preview": 0.300,
+    "gemini-3.1-flash-lite": 0.075,
+    "gemini-flash-latest": 0.300,
     "groq-llama-3-70b": 0.590,
+    "llama-3.3-70b-versatile": 0.590,
+    "llama-3.1-8b-instant": 0.050,
     "gpt-4o-mini": 0.150,
 }
 
 MODEL_COST_PER_1M_COMPLETION = {
     "gemini-1.5-flash": 0.300,
+    "gemini-3-flash-preview": 2.500,
+    "gemini-3.1-flash-lite": 0.300,
+    "gemini-flash-latest": 2.500,
     "groq-llama-3-70b": 0.790,
+    "llama-3.3-70b-versatile": 0.790,
+    "llama-3.1-8b-instant": 0.080,
     "gpt-4o-mini": 0.600,
 }
 

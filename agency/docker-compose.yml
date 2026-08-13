@@ -82,9 +82,13 @@ services:
     command: ["--config", "/app/config/litellm_config.${AGENCY_ENV:-dev}.yaml"]
     # env_file apunta al .env en la raíz del workspace (un nivel arriba de agency/).
     # Si no existe, copiar: cp .env.example ../.env && editar valores.
+    # env_file dedicado para litellm (generado con las API keys del .env raíz).
+    # NO usar ../.env completo: su DATABASE_URL postgresql+asyncpg no es soportado
+    # por litellm (solo postgresql://) y su host localhost no es alcanzable desde
+    # el contenedor; al heredarla el proxy se colgaba en el init sin abrir :4000.
     env_file:
-      - path: ../.env
-        required: false
+      - path: ./.env.litellm
+        required: true
     restart: unless-stopped
     depends_on:
       - ollama
