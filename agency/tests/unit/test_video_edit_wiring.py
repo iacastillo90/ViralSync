@@ -114,8 +114,10 @@ def test_trigger_video_render_forwards_scenes_and_curated_fields(monkeypatch):
     assert payload["keywords"] == ["saas", "automation"]
 
 
-def test_trigger_video_render_omits_scenes_when_storyboard_absent(monkeypatch):
-    """VSR-02 (worker side): sin storyboard → NO llega 'scenes' → render flat."""
+def test_trigger_video_render_synthesizes_scenes_when_storyboard_absent(monkeypatch):
+    """VSR-02 (worker side, comportamiento b2dd924): sin storyboard el worker
+    NO deja flat — construye el storyboard desde el guion (modo Low-LLM) y
+    reenvía scenes[] al renderer para animación karaoke/b-roll garantizada."""
     monkeypatch.setattr("agents.llm.acomplete", fake_acomplete)
     monkeypatch.setattr(
         "agents.crews.video_director_crew._tenant_within_llm_budget",
@@ -132,8 +134,11 @@ def test_trigger_video_render_omits_scenes_when_storyboard_absent(monkeypatch):
 
     assert result["status"] == "completed"
     payload = captured["payload"]
-    assert "scenes" not in payload
-    assert payload["script_text"]  # sigue siendo el payload flat clásico
+    assert "scenes" in payload, "el fallback Low-LLM debe sintetizar scenes desde el guion"
+    assert len(payload["scenes"]) == 4  # gancho/contexto/moraleja/cta del guion
+    assert payload["scenes"][0]["block"] == "gancho"
+    assert payload["scenes"][3]["block"] == "cta"
+    assert payload["script_text"]  # sigue enviando el texto del guion
 
 
 def test_storyboard_to_scenes_mapping_happy_path():

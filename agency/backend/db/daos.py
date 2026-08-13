@@ -226,17 +226,38 @@ async def upsert_product(tenant_id: str, product: Dict[str, Any]) -> Product:
         name = product.get("name")
         new_object_key = product.get("object_key")
 
-        # Cada envío del formulario genera una nueva campaña/producto con su ID y marca de tiempo propia
-        row = Product(
-            id=str(uuid.uuid4()),
-            tenant_id=tenant_id,
-            name=name,
-            description=product.get("description"),
-            product_image_url=product.get("product_image_url"),
-            object_key=new_object_key,
-            created_at=datetime.utcnow(),
-        )
-        session.add(row)
+        # REQ-PERSIST-05 / D8: upsert por (tenant_id, name) — re-ingest con el
+        # mismo name actualiza descripción/imagen/object_key en vez de duplicar
+        # filas. Restaurado tras 8267406 (refactor que lo eliminó por error).
+        existing = (
+            await session.execute(
+                select(Product).where(
+                    Product.tenant_id == tenant_id, Product.name == name
+                )
+            )
+        ).scalars().first()
+
+        if existing is not None:
+            if product.get("description") is not None:
+                existing.description = product["description"]
+            if product.get("product_image_url") is not None:
+                existing.product_image_url = product["product_image_url"]
+            if new_object_key is not None:  # None-safe: conserva la key ya guardada
+                existing.object_key = new_object_key
+            row = existing
+        else:
+            # Cada envío del formulario genera una nueva campaña/producto con su
+            # ID y marca de tiempo propia (solo cuando el name es nuevo).
+            row = Product(
+                id=str(uuid.uuid4()),
+                tenant_id=tenant_id,
+                name=name,
+                description=product.get("description"),
+                product_image_url=product.get("product_image_url"),
+                object_key=new_object_key,
+                created_at=datetime.utcnow(),
+            )
+            session.add(row)
         await session.flush()
         return row
 

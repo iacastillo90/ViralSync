@@ -156,16 +156,22 @@ def _stub_render_pipeline(monkeypatch):
         "audio_duration": [],
     }
 
-    async def fake_generate_speech_audio(text, output_path, voice=DEFAULT_VOICE):
-        calls["tts"].append({"text": text, "output_path": output_path, "voice": voice})
+    async def fake_generate_speech_audio(
+        text, output_path, voice=DEFAULT_VOICE, target_duration=None
+    ):
+        calls["tts"].append(
+            {"text": text, "output_path": output_path, "voice": voice, "target_duration": target_duration}
+        )
         return output_path
 
-    def fake_download_pexels_videos(keywords, temp_dir, per_page=4):
+    def fake_download_pexels_videos(keywords, temp_dir, per_page=3):
         calls["search"].append({"keywords": list(keywords), "per_page": per_page})
         return [os.path.join(temp_dir, f"clip_{len(calls['search'])}.mp4")]
 
-    def fake_compose_flat(audio_path, video_paths, output_path):
-        calls["compose_flat"].append({"audio_path": audio_path, "n_clips": len(video_paths)})
+    def fake_compose_flat(audio_path, video_paths, output_path, target_duration=None):
+        calls["compose_flat"].append(
+            {"audio_path": audio_path, "n_clips": len(video_paths), "target_duration": target_duration}
+        )
         return 45.0
 
     def fake_compose_scenes(segments, output_path, total_duration):
@@ -287,7 +293,7 @@ def test_renderer_scenes_unknown_keys_ignored(monkeypatch):
     assert len(calls["tts"]) == 1
     assert calls["tts"][0]["text"] == "Texto de la escena"  # render por escena, no flat
     assert calls["tts"][0]["voice"] == "es-MX-DaliaNeural"
-    assert calls["search"][0]["per_page"] == 2
+    assert calls["search"][0]["per_page"] == 3
 
 
 # --- VSR-01-1: payload de 4 escenas → render por escena ----------------------
@@ -302,7 +308,9 @@ def test_renderer_scenes_4_scene_payload_per_scene_render(monkeypatch):
         {"block": "moraleja", "text": "Texto tres", "duration_s": 10.0},
         {"block": "cta", "text": "Texto cuatro"},
     ]
-    resp = client.post(RENDER_URL, json=_flat_payload(scenes=scenes))
+    # Título neutro: el default "3 Errores al Escalar B2B" dispararía el mapping
+    # de dominio software (trigger "b2b") y ensuciaría la verificación por escena.
+    resp = client.post(RENDER_URL, json=_flat_payload(scenes=scenes, title="Prueba de marketing digital"))
 
     assert resp.status_code == 201
     # VSR-03: TTS por escena, en orden, voz declarada o DEFAULT_VOICE
@@ -314,18 +322,17 @@ def test_renderer_scenes_4_scene_payload_per_scene_render(monkeypatch):
     assert calls["tts"][3]["voice"] == DEFAULT_VOICE
     # VSR-04: b-roll por escena, keywords derivadas de visual_prompt o payload
     assert len(calls["search"]) == 4
-    assert [s["per_page"] for s in calls["search"]] == [2, 2, 2, 2]  # D3: búsquedas acotadas
+    assert [s["per_page"] for s in calls["search"]] == [3, 3, 3, 3]  # D3: búsquedas acotadas
     assert calls["search"][0]["keywords"] == ["business", "technology", "office"]  # VSR-04-2 fallback
-    assert calls["search"][1]["keywords"] == ["Oficina", "moderna", "con", "luz"]  # VSR-04-1 prompt
+    assert calls["search"][1]["keywords"] == ["Oficina", "moderna", "con"]  # VSR-04-1 prompt ([:3] HEAD)
     assert calls["search"][2]["keywords"] == ["business", "technology", "office"]
     assert calls["search"][3]["keywords"] == ["business", "technology", "office"]
-    # VSR-05: duración por escena (duration_s o largo TTS 12.0) y cap total
+    # VSR-05 (HEAD): duración meca-estricta target_duration=30.0 → 7.5s por escena
     segments = calls["compose_scenes"][0]["segments"]
-    assert [s["duration"] for s in segments] == [12.0, 12.0, 10.0, 12.0]
+    assert [s["duration"] for s in segments] == [7.5, 7.5, 7.5, 7.5]
     assert all(segments[i]["audio_path"].endswith(f"scene_{i}.mp3") for i in range(4))
     assert all(len(s["video_paths"]) == 1 for s in segments)
-    # suma = 46 → cap default 45.0 (VSR-05: min(sum, max_duration_seconds or 45.0))
-    assert calls["compose_scenes"][0]["total_duration"] == 45.0
+    assert calls["compose_scenes"][0]["total_duration"] == 30.0
     # el pipeline flat NO se usa para escenas (branch separado D2)
     assert calls["compose_flat"] == []
 
@@ -342,7 +349,7 @@ def test_renderer_scenes_absent_scenes_uses_flat(monkeypatch):
     assert len(calls["tts"]) == 1
     assert calls["tts"][0]["text"] == "El error principal es intentar abarcar todo sin foco."
     assert calls["tts"][0]["voice"] == DEFAULT_VOICE
-    assert calls["search"] == [{"keywords": ["business", "technology", "office"], "per_page": 4}]
+    assert calls["search"] == [{"keywords": ["business", "technology", "office"], "per_page": 3}]
     assert len(calls["compose_flat"]) == 1
     assert calls["compose_scenes"] == []
 
@@ -376,14 +383,14 @@ def test_renderer_flat_byte_identity_legacy_payload(monkeypatch):
         {"stage": "completed", "percent": 100},
     ]
     assert [c["voice"] for c in calls["tts"]] == [DEFAULT_VOICE]
-    assert calls["search"] == [{"keywords": ["business", "technology", "office"], "per_page": 4}]
+    assert calls["search"] == [{"keywords": ["business", "technology", "office"], "per_page": 3}]
     assert len(calls["compose_flat"]) == 1
     assert len(calls["upload"]) == 1
 
 
-# --- VSR-05: cap de duración total -------------------------------------------
+# --- VSR-05: duración meca-estricta (target_duration 15/30/45/60) -------------
 
-def test_renderer_scenes_default_cap_45(monkeypatch):
+def test_renderer_scenes_default_target_duration_30(monkeypatch):
     calls = _stub_render_pipeline(monkeypatch)
     client = TestClient(RENDERER_FASTAPI_APP)
 
@@ -394,11 +401,11 @@ def test_renderer_scenes_default_cap_45(monkeypatch):
     resp = client.post(RENDER_URL, json=_flat_payload(scenes=scenes))
 
     assert resp.status_code == 201
-    assert calls["compose_scenes"][0]["total_duration"] == 45.0  # min(60, 45)
-    assert resp.json()["duration_seconds"] == 45.0
+    assert calls["compose_scenes"][0]["total_duration"] == 30.0  # target_duration default 30.0
+    assert resp.json()["duration_seconds"] == 30.0
 
 
-def test_renderer_scenes_explicit_max_duration_honored(monkeypatch):
+def test_renderer_scenes_explicit_target_duration_60(monkeypatch):
     calls = _stub_render_pipeline(monkeypatch)
     client = TestClient(RENDERER_FASTAPI_APP)
 
@@ -406,17 +413,18 @@ def test_renderer_scenes_explicit_max_duration_honored(monkeypatch):
         {"block": "a", "text": "uno", "duration_s": 30.0},
         {"block": "b", "text": "dos", "duration_s": 30.0},
     ]
-    resp = client.post(RENDER_URL, json=_flat_payload(max_duration_seconds=70.0, scenes=scenes))
+    resp = client.post(RENDER_URL, json=_flat_payload(target_duration=70.0, scenes=scenes))
 
     assert resp.status_code == 201
-    assert calls["compose_scenes"][0]["total_duration"] == 60.0  # 60 <= 70 → sin cap
+    assert calls["compose_scenes"][0]["total_duration"] == 60.0  # raw 70 > 52 → estricto 60.0
 
 
 # --- Helpers puros -----------------------------------------------------------
 
 def test_renderer_keywords_from_prompt():
+    # HEAD: meaningful[:3] con stop-words → "con" entra (no es stop word aún)
     assert renderer_app._keywords_from_prompt("Oficina moderna con luz natural", ["business"]) == [
-        "Oficina", "moderna", "con", "luz", "natural",
+        "Oficina", "moderna", "con",
     ]
     assert renderer_app._keywords_from_prompt("", ["business"]) == ["business"]
     assert renderer_app._keywords_from_prompt(None, ["business", "tech"]) == ["business", "tech"]

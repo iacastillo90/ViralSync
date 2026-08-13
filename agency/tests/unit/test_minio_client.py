@@ -30,6 +30,9 @@ class FakeMinio:
         self.bucket_exists_result = False
         self.put_object_calls = []
         self.presigned_calls = []
+        # MinIOStorageClient precarga la región por bucket (SigV4 us-east-1)
+        # en `_region_map` durante __init__ (ver minio_client.py).
+        self._region_map: dict = {}
 
     def bucket_exists(self, bucket):
         return self.bucket_exists_result

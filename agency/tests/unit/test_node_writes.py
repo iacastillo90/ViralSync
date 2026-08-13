@@ -118,7 +118,7 @@ async def _fake_ideation_crew(niche, market_map):
     return [dict(IDEA_PAYLOAD), dict(IDEA_PAYLOAD, texto="La Verdad Incómoda sobre el SaaS")]
 
 
-async def _fake_scriptwriting_crew(idea, niche_ppp=""):
+async def _fake_scriptwriting_crew(idea, niche_ppp="", **kwargs):
     """Crew mockeada (async tras RELIABILITY-003): guion de 4 bloques sin `id`."""
     return dict(SCRIPT_PAYLOAD)
 
@@ -236,7 +236,7 @@ async def test_node_video_edit_persists_video_row(db_session, node_tenants, monk
     )
     monkeypatch.setattr(
         "agents.nodes.video_edit.trigger_video_render",
-        lambda tenant_id, script, idea, storyboard=None: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
+        lambda tenant_id, script, idea, storyboard=None, **kwargs: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
     )
 
     result = await node_video_edit(
@@ -388,7 +388,7 @@ async def test_node_video_edit_failed_render_propagates_honestly(db_session, nod
     )
     monkeypatch.setattr(
         "agents.nodes.video_edit.trigger_video_render",
-        lambda tenant_id, script, idea, storyboard=None: {
+        lambda tenant_id, script, idea, storyboard=None, **kwargs: {
             "status": "failed",
             "video_url": "",
             "message": "No real rendered video produced",
@@ -428,7 +428,7 @@ async def test_node_video_edit_exposes_video_id_from_insert_video(db_session, no
     )
     monkeypatch.setattr(
         "agents.nodes.video_edit.trigger_video_render",
-        lambda tenant_id, script, idea, storyboard=None: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
+        lambda tenant_id, script, idea, storyboard=None, **kwargs: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
     )
 
     result = await node_video_edit(
@@ -469,7 +469,7 @@ async def test_publish_write_back_persists_on_videos_row(db_session, node_tenant
     )
     monkeypatch.setattr(
         "agents.nodes.video_edit.trigger_video_render",
-        lambda tenant_id, script, idea, storyboard=None: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
+        lambda tenant_id, script, idea, storyboard=None, **kwargs: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
     )
     monkeypatch.setattr(publish_module, "PUBLISHER_URL", "http://test-publisher:8002")
     monkeypatch.setattr(publish_module, "AsyncClient", _FakePublishClient)
@@ -576,7 +576,7 @@ async def test_get_ideas_and_scripts_return_node_written_rows(db_session, node_t
 # --------------------------------------------------------------------------- #
 
 
-async def _boom_scriptwriting_crew(idea, niche_ppp=""):
+async def _boom_scriptwriting_crew(idea, niche_ppp="", **kwargs):
     """Crew que EXPLOTA si se invoca: tras un rechazo, scriptwriting jamás corre."""
     raise AssertionError("scriptwriting crew NO debe invocarse tras un rechazo (D-C)")
 
@@ -586,7 +586,7 @@ async def _boom_video_prompt_crew(script, idea, product_image_url=""):
     raise AssertionError("video_edit crew NO debe invocarse tras un rechazo (D-C)")
 
 
-async def _tracking_scriptwriting_crew(idea, niche_ppp=""):
+async def _tracking_scriptwriting_crew(idea, niche_ppp="", **kwargs):
     """Crew mockeada que registra las invocaciones (para probar que el camino
     legal `approved` SI llega a scriptwriting, PTT-02-3)."""
     idea["_scriptwriting_invoked"] = True
@@ -647,7 +647,7 @@ async def test_resume_rejected_publish_ends_terminal_no_publish(db_session, node
     monkeypatch.setattr("agents.nodes.video_edit.run_video_prompt_crew", _fake_video_prompt_crew)
     monkeypatch.setattr(
         "agents.nodes.video_edit.trigger_video_render",
-        lambda tenant_id, script, idea, storyboard=None: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
+        lambda tenant_id, script, idea, storyboard=None, **kwargs: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
     )
 
     # Write-back y publisher: si node_publish corre, estos fakes explotan/registran
@@ -708,7 +708,7 @@ async def test_resume_approved_idea_reaches_scriptwriting(db_session, node_tenan
     monkeypatch.setattr("agents.nodes.video_edit.run_video_prompt_crew", _fake_video_prompt_crew)
     monkeypatch.setattr(
         "agents.nodes.video_edit.trigger_video_render",
-        lambda tenant_id, script, idea, storyboard=None: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
+        lambda tenant_id, script, idea, storyboard=None, **kwargs: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
     )
 
     app = build_agency_graph(checkpointer=MemorySaver())

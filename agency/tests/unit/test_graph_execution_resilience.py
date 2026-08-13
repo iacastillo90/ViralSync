@@ -42,7 +42,7 @@ async def test_run_graph_failure_emits_graph_error_event(monkeypatch):
     """RESILIENCE-002: fallo en background -> SSE graph_error con thread_id+message."""
     fake_sse = _FakeSSE()
     monkeypatch.setattr(graph_execution, "sse_manager", fake_sse)
-    monkeypatch.setattr(graph_execution, "get_graph_app", lambda: _FakeGraph(error=RuntimeError("boom")))
+    monkeypatch.setattr(graph_execution, "build_agency_graph", lambda *a, **kw: _FakeGraph(error=RuntimeError("boom")))
 
     await _run_graph_background("tenant-resil-1", {"tenant_id": "tenant-resil-1"})
 
@@ -56,8 +56,8 @@ async def test_run_graph_success_broadcasts_complete(monkeypatch):
     monkeypatch.setattr(graph_execution, "sse_manager", fake_sse)
     monkeypatch.setattr(
         graph_execution,
-        "get_graph_app",
-        lambda: _FakeGraph(result={"ideas": ["i1", "i2", "i3"], "tenant_id": "t"}),
+        "build_agency_graph",
+        lambda *a, **kw: _FakeGraph(result={"ideas": ["i1", "i2", "i3"], "tenant_id": "t"}),
     )
 
     await _run_graph_background("tenant-ok", {"tenant_id": "tenant-ok"})
@@ -72,7 +72,7 @@ async def test_run_graph_success_broadcasts_complete(monkeypatch):
 async def test_resume_graph_failure_emits_graph_error(monkeypatch):
     fake_sse = _FakeSSE()
     monkeypatch.setattr(graph_execution, "sse_manager", fake_sse)
-    monkeypatch.setattr(graph_execution, "get_graph_app", lambda: _FakeGraph(error=ValueError("resume failed")))
+    monkeypatch.setattr(graph_execution, "build_agency_graph", lambda *a, **kw: _FakeGraph(error=ValueError("resume failed")))
 
     await _resume_graph_background("tenant-resil-2", {"idea_approved": True})
 

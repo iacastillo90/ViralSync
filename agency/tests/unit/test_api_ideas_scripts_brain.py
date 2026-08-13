@@ -587,8 +587,8 @@ async def test_graph_error_emits_code_for_coded_error(monkeypatch):
     monkeypatch.setattr(graph_execution, "sse_manager", fake_sse)
     monkeypatch.setattr(
         graph_execution,
-        "get_graph_app",
-        lambda: _FakeGraph(error=NoCandidatesError("sin candidatas RUM")),
+        "build_agency_graph",
+        lambda *a, **kw: _FakeGraph(error=NoCandidatesError("sin candidatas RUM")),
     )
 
     await _run_graph_background("tenant-slice2-code", {"tenant_id": "tenant-slice2-code"})
@@ -610,8 +610,8 @@ async def test_graph_complete_emits_terminal_when_present(monkeypatch):
     monkeypatch.setattr(graph_execution, "sse_manager", fake_sse)
     monkeypatch.setattr(
         graph_execution,
-        "get_graph_app",
-        lambda: _FakeGraph(result={"tenant_id": "t", "ideas": ["i1"], "terminal_state": "term_rejected"}),
+        "build_agency_graph",
+        lambda *a, **kw: _FakeGraph(result={"tenant_id": "t", "ideas": ["i1"], "terminal_state": "term_rejected"}),
     )
     await _run_graph_background("tenant-slice2-term", {"tenant_id": "tenant-slice2-term"})
 
@@ -622,7 +622,7 @@ async def test_graph_complete_emits_terminal_when_present(monkeypatch):
     # Escenario 2: final_state None (fake) → guard isinstance, sin crash ni emisión
     fake_sse2 = _SseCapture()
     monkeypatch.setattr(graph_execution, "sse_manager", fake_sse2)
-    monkeypatch.setattr(graph_execution, "get_graph_app", lambda: _FakeGraph(result=None))
+    monkeypatch.setattr(graph_execution, "build_agency_graph", lambda *a, **kw: _FakeGraph(result=None))
     await _run_graph_background("tenant-slice2-none", {"tenant_id": "tenant-slice2-none"})
 
     assert fake_sse2.broadcasts == []

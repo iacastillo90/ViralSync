@@ -79,16 +79,21 @@ def test_build_checkpointer_force_sqlite_returns_memory_saver(monkeypatch):
     )
 
 
-def test_build_checkpointer_without_sqlite_flag_raises_before_setup(monkeypatch):
-    """D2/T-14: sin FORCE_SQLITE y sin setup previo, la factory falla con mensaje claro
-    (el lifespan debe abrir la conexión ANTES de construir el grafo)."""
+def test_build_checkpointer_without_sqlite_flag_uses_fallback(monkeypatch):
+    """D2/T-14 (comportamiento f59f4bf): sin FORCE_SQLITE y sin setup previo,
+    la factory NO crashea — degrada a MemorySaver para que los workers Celery
+    (sin lifespan FastAPI) puedan inicializar el grafo sin fallar."""
     monkeypatch.setenv("FORCE_SQLITE", "false")
     # Limpiar cualquier saver residual de otros tests
     import asyncio
     asyncio.run(checkpointer.close_postgres_checkpointer())
 
-    with pytest.raises(RuntimeError, match="setup"):
-        checkpointer.build_checkpointer()
+    cp = checkpointer.build_checkpointer()
+    from langgraph.checkpoint.memory import MemorySaver
+
+    assert isinstance(cp, MemorySaver), (
+        "sin setup previo la factory debe degradar a MemorySaver, no crashear"
+    )
 
 
 @pytest.mark.anyio

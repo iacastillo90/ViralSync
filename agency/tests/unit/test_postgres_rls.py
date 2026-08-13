@@ -5,6 +5,7 @@ Pruebas unitarias para verificar el helper RLS y la migración SQL 006_enable_rl
 """
 
 import os
+from pathlib import Path
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from backend.db.session import set_tenant_session_context
@@ -27,8 +28,9 @@ async def test_set_tenant_session_context_executes_set_local():
 
 def test_migration_006_file_exists():
     """Verifica que el archivo de migración 006_enable_rls.sql exista y contenga RLS."""
-    migration_path = os.path.join("agency", "migrations", "006_enable_rls.sql")
-    assert os.path.exists(migration_path)
+    repo_root = Path(__file__).resolve().parents[2]  # .../agency (tests/unit → tests)
+    migration_path = repo_root / "migrations" / "006_enable_rls.sql"
+    assert migration_path.exists()
     
     with open(migration_path, "r", encoding="utf-8") as f:
         content = f.read()

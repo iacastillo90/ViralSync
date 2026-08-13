@@ -36,7 +36,7 @@ LLM_STORYBOARD = json.dumps([
 ])
 
 
-def test_video_prompt_crew_storyboard_generation():
+def test_video_prompt_crew_storyboard_generation(monkeypatch):
     script = {
         "gancho_0_5s": "3 errores fatales al escalar tu SaaS en 2026.",
         "contexto_5_30s": "El error principal es la falta de foco en retención.",
@@ -46,11 +46,18 @@ def test_video_prompt_crew_storyboard_generation():
     }
     idea = {"texto": "Escalamiento SaaS", "niche": "B2B Software"}
 
+    # Determinista: router LLM caído → fallback cinematográfico (que garantiza
+    # formato vertical 9:16 en cada visual_prompt). Sin red ni LLM real.
+    async def _boom_llm(*args, **kwargs):
+        raise RuntimeError("LLM down")
+
+    monkeypatch.setattr("agents.llm.acomplete", _boom_llm)
+
     storyboard = asyncio.run(run_video_prompt_crew(script=script, idea=idea))
 
     assert isinstance(storyboard, list)
     assert len(storyboard) == 4
-    
+
     first_scene = storyboard[0]
     assert first_scene["block_type"] == "gancho"
     assert first_scene["timestamp_range"] == "0s - 5s"
@@ -281,7 +288,7 @@ async def test_node_video_edit_resigns_object_key_on_read(db_session, video_path
     )
     monkeypatch.setattr(
         "agents.nodes.video_edit.trigger_video_render",
-        lambda tenant_id, script, idea, storyboard=None: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
+        lambda tenant_id, script, idea, storyboard=None, **kwargs: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
     )
     monkeypatch.setattr(
         video_edit_module,
@@ -331,7 +338,7 @@ async def test_node_video_edit_legacy_null_object_key_falls_back_to_stored_url(d
     )
     monkeypatch.setattr(
         "agents.nodes.video_edit.trigger_video_render",
-        lambda tenant_id, script, idea, storyboard=None: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
+        lambda tenant_id, script, idea, storyboard=None, **kwargs: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
     )
 
     stored_url = "http://minio:9000/viralsync-media/legacy.png?X-Amz-Signature=old"
@@ -460,7 +467,7 @@ async def test_node_video_edit_out_of_tenant_key_falls_back_without_presign(db_s
     )
     monkeypatch.setattr(
         "agents.nodes.video_edit.trigger_video_render",
-        lambda tenant_id, script, idea, storyboard=None: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
+        lambda tenant_id, script, idea, storyboard=None, **kwargs: {"status": "completed", "video_url": f"http://static.viralsync/{tenant_id}/final.mp4"},
     )
     monkeypatch.setattr(video_edit_module, "presign_public_url", _tracking_presign)
 
