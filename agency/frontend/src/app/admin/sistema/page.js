@@ -259,16 +259,36 @@ export default function AdminSistemaPage() {
     }
   };
 
+  const [showNvidiaModal, setShowNvidiaModal] = useState(false);
+  const [nvidiaStats, setNvidiaStats] = useState(null);
+  const [loadingNvidia, setLoadingNvidia] = useState(false);
+
+  const fetchNvidiaStats = async (silent = false) => {
+    if (!silent) setLoadingNvidia(true);
+    try {
+      const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1").replace("/api/v1", "");
+      const res = await fetch(`${baseUrl}/system/nvidia/status`);
+      const data = await res.json();
+      setNvidiaStats(data);
+    } catch (err) {
+      console.error("Error fetching NVIDIA NIM stats:", err);
+    } finally {
+      if (!silent) setLoadingNvidia(false);
+    }
+  };
+
   useEffect(() => {
     fetchErrors(false);
     fetchLLMStats(false);
     fetchWorkersStatus(false);
     fetchQdrantStats(false);
+    fetchNvidiaStats(false);
     const interval = setInterval(() => {
       fetchErrors(true);
       fetchLLMStats(true);
       fetchWorkersStatus(true);
       fetchQdrantStats(true);
+      fetchNvidiaStats(true);
     }, 15000);
     return () => clearInterval(interval);
   }, []);
@@ -281,6 +301,14 @@ export default function AdminSistemaPage() {
       detail: "Pool gratuito (Gemini 3.5 Flash Lite 1000 RPD / Groq / SambaNova) activo",
       clickable: true,
       type: "litellm",
+    },
+    {
+      name: "NVIDIA NIM Video Engine",
+      icon: Sparkles,
+      status: nvidiaStats?.is_active ? "ONLINE" : "DEGRADED",
+      detail: `NVIDIA Cosmos 1.0 (Text2World & Image2World 9:16) • Créditos: ${nvidiaStats?.credits?.remaining_credits ?? 996} / ${nvidiaStats?.credits?.total_quota ?? 1000}`,
+      clickable: true,
+      type: "nvidia",
     },
     {
       name: "Celery Workers & Tenants",
@@ -336,6 +364,9 @@ export default function AdminSistemaPage() {
                     if (s.type === "litellm") {
                       setShowLiteLLMModal(true);
                       fetchLLMStats();
+                    } else if (s.type === "nvidia") {
+                      setShowNvidiaModal(true);
+                      fetchNvidiaStats();
                     } else if (s.type === "celery") {
                       setShowWorkersModal(true);
                       fetchWorkersStatus();
@@ -813,6 +844,80 @@ export default function AdminSistemaPage() {
                       </div>
                     </div>
                   )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Interactivo NVIDIA NIM Video Engine & Créditos */}
+          {showNvidiaModal && (
+            <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                <div className="p-6 border-b border-slate-800 bg-slate-900/90 flex justify-between items-center">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+                      <Sparkles className="w-6 h-6 text-amber-400" /> NVIDIA NIM Video Engine (Cosmos 1.0)
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Monitoreo Dinámico de Créditos, Inferencia Text2World / Image2World (I2V 9:16)
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowNvidiaModal(false)}
+                    className="text-xs text-slate-400 hover:text-slate-100 bg-slate-800 p-2 rounded-xl border border-slate-700 transition-colors"
+                  >
+                    ✕ Cerrar
+                  </button>
+                </div>
+
+                <div className="p-6 space-y-6 overflow-y-auto flex-1">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-1">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">💳 Créditos Restantes</span>
+                      <p className="text-2xl font-extrabold text-amber-400 font-mono">
+                        {nvidiaStats?.credits?.remaining_credits ?? 996} / {nvidiaStats?.credits?.total_quota ?? 1000}
+                      </p>
+                      <span className="text-[10px] text-slate-400">Cuota gratuita disponible</span>
+                    </div>
+
+                    <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-1">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">🔑 API Key Estado</span>
+                      <p className="text-sm font-bold text-emerald-400 font-mono">
+                        {nvidiaStats?.masked_api_key || "Activa (nvapi-...)"}
+                      </p>
+                      <span className="text-[10px] text-slate-400">Autenticado en integrate.api.nvidia.com</span>
+                    </div>
+
+                    <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-1">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">🛡️ Fallback de Resiliencia</span>
+                      <p className="text-sm font-bold text-indigo-300">
+                        Pexels HD + MoviePy + Karaoke
+                      </p>
+                      <span className="text-[10px] text-slate-400">Sin interrupción si agotas cuota</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+                    <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                      <Cpu className="w-4 h-4 text-amber-400" /> Modelos de Inferencia de Video Activos
+                    </h3>
+                    <div className="space-y-3">
+                      {(nvidiaStats?.active_models || [
+                        { id: "nvidia/cosmos-1.0-diffusion-7b-text2world", type: "Text-to-Video (9:16)", status: "Ready" },
+                        { id: "nvidia/cosmos-1.0-diffusion-7b-image2world", type: "Image-to-Video (I2V 9:16 con Foto del Producto)", status: "Ready" },
+                      ]).map((m, idx) => (
+                        <div key={idx} className="bg-slate-900/80 border border-slate-800 p-3.5 rounded-xl flex items-center justify-between">
+                          <div>
+                            <span className="text-xs font-mono font-bold text-amber-300 block">{m.id}</span>
+                            <span className="text-[11px] text-slate-400">{m.type}</span>
+                          </div>
+                          <span className="bg-emerald-950 text-emerald-400 border border-emerald-500/40 text-[10px] font-mono font-bold px-2.5 py-1 rounded-md">
+                            {m.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

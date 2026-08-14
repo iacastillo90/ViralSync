@@ -58,10 +58,10 @@ class VideoEngineAgent:
         self.base_url = NVIDIA_BUILD_BASE_URL.rstrip("/")
         self.model = NVIDIA_COSMOS_MODEL
 
-    def optimize_prompt(self, visual_idea: str, block_type: str) -> str:
+    def optimize_prompt(self, visual_idea: str, block_type: str, image_url: Optional[str] = None) -> str:
         """
         Enriquece la indicación visual de un bloque o escena con modificadores
-        cinematográficos optimizados para NVIDIA Cosmos en formato 9:16.
+        cinematográficos optimizados para NVIDIA Cosmos en formato 9:16 (Text2World / Image2World).
         """
         b_type_upper = (block_type or "HOOK").upper()
 
@@ -74,9 +74,11 @@ class VideoEngineAgent:
         else:
             camera_motion = "Static stable cinematic shot"
 
+        image_ref = f"Using exact product image reference ({image_url}). " if image_url else ""
+
         technical_modifiers = (
             f"Vertical 9:16 aspect ratio, mobile framing, TikTok/Reels style. "
-            f"{camera_motion}. "
+            f"{image_ref}{camera_motion}. "
             f"Cinematic lighting, volumetric light rays, soft shadows, 8k render quality. "
             f"Photorealistic, hyperdetailed, Unreal Engine 5 render, depth of field."
         )
@@ -85,16 +87,19 @@ class VideoEngineAgent:
         optimized = f"{base}, {technical_modifiers}"
         return optimized
 
-    def generate_scene_clip(self, prompt: str, tenant_id: str, scene_index: int = 1) -> Dict[str, Any]:
+    def generate_scene_clip(self, prompt: str, tenant_id: str, scene_index: int = 1, image_url: Optional[str] = None) -> Dict[str, Any]:
         """
-        Realiza la llamada HTTP a la API de NVIDIA NIM para generar un clip de video 9:16.
+        Realiza la llamada HTTP a la API de NVIDIA NIM (Text2World o Image2World) para generar un clip de video 9:16.
         """
+        target_model = "nvidia/cosmos-1.0-diffusion-7b-image2world" if image_url else self.model
+
         if not self.api_key:
-            logger.warning(f"[{tenant_id}] NVIDIA_API_KEY no configurada. Usando respuesta simulada.")
+            logger.warning(f"[{tenant_id}] NVIDIA_API_KEY no configurada. Usando respuesta simulada ({target_model}).")
             return {
                 "status": "FALLBACK",
                 "video_url": f"https://integrate.api.nvidia.com/v1/assets/mock_cosmos_scene_{scene_index}.mp4",
                 "prompt": prompt,
+                "model": target_model,
             }
 
         headers = {
@@ -105,11 +110,13 @@ class VideoEngineAgent:
 
         payload = {
             "prompt": prompt,
-            "model": self.model,
+            "model": target_model,
             "negative_prompt": "text, watermark, logo, deformed faces, blurry, low resolution, artifacts",
             "aspect_ratio": "9:16",
             "duration": 5,
         }
+        if image_url:
+            payload["image_url"] = image_url
 
         candidate_endpoints = [
             f"{self.base_url}/genai/{self.model}",
@@ -159,6 +166,7 @@ class VideoEngineAgent:
         """
         tenant_id = payload.get("tenant_id", "default_tenant")
         script_id = payload.get("script_id", "script_001")
+        product_image_url = payload.get("product_image_url") or payload.get("image_url")
         blocks = payload.get("blocks", [])
 
         generated_assets = []
@@ -166,15 +174,17 @@ class VideoEngineAgent:
         for idx, item in enumerate(blocks, start=1):
             block_name = item.get("block", f"SCENE_{idx}")
             visual_idea = item.get("visual_idea") or item.get("visual_prompt") or item.get("text", "")
+            scene_image_url = item.get("image_url") or product_image_url
 
-            optimized_prompt = self.optimize_prompt(visual_idea, block_name)
-            result = self.generate_scene_clip(optimized_prompt, tenant_id=tenant_id, scene_index=idx)
+            optimized_prompt = self.optimize_prompt(visual_idea, block_name, image_url=scene_image_url)
+            result = self.generate_scene_clip(optimized_prompt, tenant_id=tenant_id, scene_index=idx, image_url=scene_image_url)
 
             generated_assets.append({
                 "block": block_name,
                 "optimized_prompt": optimized_prompt,
                 "video_url": result.get("video_url"),
                 "status": result.get("status"),
+                "model": result.get("model", self.model),
             })
 
         return {
