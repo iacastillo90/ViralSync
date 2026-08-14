@@ -13,6 +13,7 @@ import {
   Wrench,
   Calendar,
   Globe,
+  Play,
   Sparkles,
 } from "lucide-react";
 
@@ -70,7 +71,9 @@ export function ScriptsMacListView({
   onDelete,
   onDownload,
   onTranslate,
+  onViewPrompts,
   onRenderVideo,
+  onViewVideos,
   onSelectFolder,
 }) {
   if (scripts.length === 0) {
@@ -229,6 +232,16 @@ export function ScriptsMacListView({
                           className="bg-slate-900 hover:bg-indigo-950 text-indigo-300 border border-slate-800 hover:border-indigo-500/50 text-[10px] font-bold px-2 py-1 rounded-md flex items-center gap-1 transition-all ml-1"
                         >
                           <Globe className="w-3 h-3 text-indigo-400" /> Traducir
+                        </button>
+                      )}
+
+                      {onViewVideos && (
+                        <button
+                          onClick={() => onViewVideos(script)}
+                          title="Ver versiones de video renderizadas (Cloud json2video / Local MoviePy)"
+                          className="bg-slate-900 hover:bg-emerald-950 text-emerald-300 border border-slate-800 hover:border-emerald-500/50 text-[10px] font-bold px-2 py-1 rounded-md flex items-center gap-1 transition-all ml-1"
+                        >
+                          <Play className="w-3 h-3 text-emerald-400" /> Ver video
                         </button>
                       )}
 

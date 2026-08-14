@@ -13,6 +13,8 @@ import {
   Wrench,
   Calendar,
   Globe,
+  Play,
+  Sparkles,
 } from "lucide-react";
 
 /**
@@ -71,6 +73,7 @@ export function ScriptsMacGridView({
   onTranslate,
   onViewPrompts,
   onRenderVideo,
+  onViewVideos,
   onSelectFolder,
 }) {
   if (scripts.length === 0) {
@@ -264,6 +267,16 @@ export function ScriptsMacGridView({
                     title="Traducir guion a otro idioma (Inglés, Portugués, Francés, Alemán)"
                   >
                     <Globe className="w-3.5 h-3.5 text-indigo-400" /> Traducir
+                  </button>
+                )}
+
+                {onViewVideos && (
+                  <button
+                    onClick={() => onViewVideos(script)}
+                    className="bg-slate-950 hover:bg-emerald-950 text-emerald-300 border border-slate-800 hover:border-emerald-500/50 text-[11px] font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-all"
+                    title="Ver versiones de video renderizadas (Cloud json2video / Local MoviePy)"
+                  >
+                    <Play className="w-3.5 h-3.5 text-emerald-400" /> Ver video
                   </button>
                 )}
 

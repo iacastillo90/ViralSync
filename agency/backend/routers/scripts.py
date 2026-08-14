@@ -67,7 +67,11 @@ def _is_fabricated_url(video_url: Any, script_id: Optional[str]) -> bool:
 async def get_tenant_scripts(
     tenant_id: str, db=Depends(get_async_db)
 ) -> List[Dict[str, Any]]:
-    """Retorna los guiones del tenant consultando la DB real ordenados por fecha de creación desc."""
+    """Retorna los guiones del tenant consultando la DB real ordenados por fecha de creación desc.
+
+    Cada guion expone `rendered_videos` (0..N filas de la tabla `videos`): la versión
+    Cloud (json2video) y/o Local (MoviePy) según el proveedor inferido de la URL.
+    """
     if not HAS_SQLALCHEMY or db is None:
         return []
 
@@ -77,33 +81,28 @@ async def get_tenant_scripts(
         )
         scripts_orm = result.scalars().all()
 
-        # Enriquecimiento: videos renderizados por guion (Cloud json2video / Local
-        # MoviePy). Una sola consulta a `videos` del tenant (evita N+1) agrupada
-        # por script_id; cada guion expone `rendered_videos` (vacío si no tiene).
-        videos_by_script: Dict[str, List[Any]] = {}
-        try:
-            vresult = await db.execute(
-                select(Video)
-                .where(Video.tenant_id == tenant_id)
-                .order_by(Video.created_at.desc())
-            )
-            for video in vresult.scalars().all():
-                videos_by_script.setdefault(video.script_id, []).append(video)
-        except Exception as vexc:
-            logger.warning(f"[{tenant_id}] Error al enriquecer scripts con videos: {vexc}")
-
-        scripts = [_script_to_dict(s) for s in scripts_orm]
-        for script in scripts:
-            script["rendered_videos"] = [
+        # Enriquecer cada guion con sus videos renderizados (0..N filas en `videos`).
+        # Una sola consulta al tenant (evita N+1) agrupada por script_id.
+        videos_by_script: Dict[str, List[Dict[str, Any]]] = {}
+        vids_result = await db.execute(
+            select(Video).where(Video.tenant_id == tenant_id).order_by(Video.created_at.desc())
+        )
+        for v in vids_result.scalars().all():
+            videos_by_script.setdefault(v.script_id, []).append(
                 {
                     "id": v.id,
                     "video_url": v.edited_video_uri,
                     "provider": _video_provider(v.edited_video_uri),
                     "created_at": v.created_at.isoformat() if v.created_at else None,
                 }
-                for v in videos_by_script.get(script["id"], [])
-            ]
-        return scripts
+            )
+
+        scripts_list = []
+        for s in scripts_orm:
+            item = _script_to_dict(s)
+            item["rendered_videos"] = videos_by_script.get(s.id, [])
+            scripts_list.append(item)
+        return scripts_list
     except Exception as exc:
         logger.error(f"[{tenant_id}] Error al consultar scripts en DB: {exc}")
         raise HTTPException(
@@ -439,6 +438,12 @@ async def request_render(
 
     # 3. Descargar y persistir físicamente en MinIO S3 y en PostgreSQL DB `videos`
     permanent_url = await download_and_persist_rendered_video(tenant_id, script_id, raw_video_url, "json2video")
+
+    # 3b. Persistencia best-effort de la fila `videos` del render real (PERSIST-02).
+    # Solo cuando el renderer devolvió una URL real (no la adaptativa fabricada).
+    # Un fallo de persistencia NUNCA rompe la respuesta del render.
+    if permanent_url and not _is_fabricated_url(permanent_url, script_id):
+        await _persist_render_video(tenant_id, script_id, permanent_url)
 
     return {
         "status": "success",
