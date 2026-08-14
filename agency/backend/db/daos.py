@@ -118,6 +118,26 @@ async def insert_script(
     return await _run_with_commit(_work)
 
 
+async def get_script_by_idea(tenant_id: str, idea_id: str) -> Optional[Script]:
+    """Devuelve el guion más reciente de una idea, o None si aún no existe.
+
+    PHASE-2 (dedup reactivación): al re-anudar una corrida ya terminada y
+    re-aprobar una idea que ya tiene guion, `node_scriptwriting` reutiliza la
+    fila existente en vez de insertar un duplicado (y evita gasto LLM).
+    """
+    async def _work(session: AsyncSession) -> Optional[Script]:
+        return (
+            await session.execute(
+                select(Script)
+                .where(Script.tenant_id == tenant_id, Script.idea_id == idea_id)
+                .order_by(Script.created_at.desc())
+                .limit(1)
+            )
+        ).scalars().first()
+
+    return await _run_with_commit(_work)
+
+
 async def insert_video(
     tenant_id: str,
     script_id: str,

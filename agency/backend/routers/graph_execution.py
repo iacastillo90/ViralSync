@@ -58,6 +58,37 @@ def _thread_config(tenant_id: str) -> dict:
     return {"configurable": {"thread_id": tenant_id}}  # noqa: C408
 
 
+async def _build_resume_command(
+    app: Any, config: dict, resume_payload: dict
+) -> Command:
+    """Construye el Command de reanudación del grafo.
+
+    Flujo pausado (checkpoint en human_approval_idea): `Command(update=...)`
+    reanuda la tarea pendiente — comportamiento histórico intacto.
+
+    Thread ya en END (PHASE-2): en LangGraph, un `Command(update=...)` sobre un
+    thread terminado SOLO actualiza el state, NO re-ejecuta nodos (no-op
+    silencioso; verificado en langgraph ~1.2). Para que aprobar OTRA idea de la
+    misma corrida genere su propio guion/video, se re-arranca desde el checkpoint
+    de aprobación con `Command(goto="human_approval_idea", update=...)`, que
+    preserva el estado existente (las `ideas` persistidas) y sigue el camino
+    normal scriptwriting → video_edit → human_approval_publish.
+    """
+    is_idea_resume = "idea_approved" in resume_payload or "idea_rejected" in resume_payload
+    if is_idea_resume:
+        try:
+            snapshot = await app.aget_state(config)
+            # next vacío = thread en END (o nunca corrido); values presente
+            # descarta el caso "thread inexistente" → no saltar a un estado vacío.
+            if not snapshot.next and snapshot.values:
+                return Command(goto="human_approval_idea", update=resume_payload)
+        except Exception as exc:  # noqa: BLE001 - checkpointer no inspeccionable
+            logger.warning(
+                "State inspection failed for resume (%s); using legacy Command", exc
+            )
+    return Command(update=resume_payload)
+
+
 async def _resume_graph_background(tenant_id: str, resume_payload: dict) -> None:
     """Reanuda un grafo pausado en background (RESILIENCE-002)."""
     config = _thread_config(tenant_id)
@@ -66,12 +97,14 @@ async def _resume_graph_background(tenant_id: str, resume_payload: dict) -> None
         if is_force_sqlite():
             from langgraph.checkpoint.memory import MemorySaver
             app = build_agency_graph(checkpointer=MemorySaver())
-            await app.ainvoke(Command(update=resume_payload), config=config)
+            command = await _build_resume_command(app, config, resume_payload)
+            await app.ainvoke(command, config=config)
         else:
             from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
             async with AsyncPostgresSaver.from_conn_string(_psycopg_conninfo()) as cp:
                 app = build_agency_graph(checkpointer=cp)
-                await app.ainvoke(Command(update=resume_payload), config=config)
+                command = await _build_resume_command(app, config, resume_payload)
+                await app.ainvoke(command, config=config)
         logger.info("Graph resumed for tenant %s (update payload: %s)", tenant_id, resume_payload)
     except Exception as exc:  # noqa: BLE001 - absence of logging means silent hang
         logger.error("Graph resume failed for tenant %s: %s", tenant_id, exc, exc_info=True)
@@ -233,6 +266,12 @@ async def approve_idea(tenant_id: str, req: IdeaApproveRequest, background_tasks
         "idea_approved": req.status == "approved",
         "idea_rejected": req.status == "rejected",
     }
+    # PHASE-2: la idea que se aprobó viaja al estado del grafo para que
+    # scriptwriting genere el guion DE ESA idea (antes, ideas[0]). No es
+    # `selected_idea` (Dict) a propósito: el nodo resuelve el dict completo
+    # desde state["ideas"] por id — la crew necesita texto/gancho, no solo un id.
+    if req.status == "approved":
+        payload["selected_idea_id"] = req.idea_id
     try:
         from workers.graph_execution_task import resume_graph_task
         resume_graph_task.delay(tenant_id, payload)

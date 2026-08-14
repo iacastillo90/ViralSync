@@ -26,10 +26,23 @@ class AgencyState(TypedDict, total=False):
     market_map: Dict[str, Any]
     ideas: List[Dict[str, Any]]
     selected_idea: Dict[str, Any]
+    # PHASE-2 (multi-idea): id de la idea que el humano aprobó en el resume —
+    # scriptwriting lo resuelve contra state["ideas"] para generar el guion de
+    # ESA idea (antes el nodo usaba siempre ideas[0]).
+    selected_idea_id: str
     idea_approved: bool
     idea_rejected: bool
     script: Dict[str, Any]
     target_duration: int
+    target_platform: str
+    # Credenciales OAuth request-scoped (nunca persistidas): LangGraph descarta
+    # las keys de input NO declaradas en el TypedDict, así que sin estas
+    # declaraciones node_publish jamás recibía ig_user_id/ig_access_token y el
+    # flujo de publicación fallaba siempre (bug latente, ver FASE-2).
+    ig_user_id: str
+    ig_access_token: str
+    tiktok_access_token: str
+    youtube_access_token: str
     product_name: str
     product_description: str
     product_image_url: str
