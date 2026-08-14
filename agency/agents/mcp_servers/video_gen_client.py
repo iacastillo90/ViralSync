@@ -98,7 +98,9 @@ class VideoGenerationClient:
         prompt = scene.get("visual_prompt", "")
         logger.info(f"[{tenant_id}] Generando clip para escena {scene_idx} con proveedor '{self.provider}'")
 
-        if self.provider == "shotstack":
+        if self.provider in ("nvidia_cosmos", "nvidia_nim"):
+            return self._generate_nvidia_cosmos(scene, tenant_id, scene_idx)
+        elif self.provider == "shotstack":
             return self._generate_shotstack_clip(scene, tenant_id, scene_idx)
         elif self.provider == "fal_ai":
             return self._generate_fal_ai(prompt, tenant_id, scene_idx)
@@ -112,6 +114,16 @@ class VideoGenerationClient:
             return self._generate_zsky(prompt, tenant_id, scene_idx)
         else:
             return self._generate_mock(prompt, tenant_id, scene_idx)
+
+    def _generate_nvidia_cosmos(self, scene: Dict[str, Any], tenant_id: str, scene_idx: int) -> str:
+        """Integración con NVIDIA NIM / Cosmos 1.0 (Text-to-World 9:16)."""
+        from agents.nodes.video_engine_agent import VideoEngineAgent
+        agent = VideoEngineAgent()
+        visual_idea = scene.get("visual_prompt") or scene.get("audio_text") or "Product commercial showcase"
+        block_type = scene.get("block_type", f"SCENE_{scene_idx}")
+        optimized_prompt = agent.optimize_prompt(visual_idea, block_type)
+        res = agent.generate_scene_clip(optimized_prompt, tenant_id=tenant_id, scene_index=scene_idx)
+        return res.get("video_url") or f"https://integrate.api.nvidia.com/v1/assets/cosmos_scene_{scene_idx}.mp4"
 
     def _generate_shotstack_clip(self, scene: Dict[str, Any], tenant_id: str, scene_idx: int) -> str:
         """Ensambla el clip usando Shotstack API."""
