@@ -37,15 +37,30 @@ class Tenant(Base):
 
 
 
+class Campaign(Base):
+    __tablename__ = "campaigns"
+    __table_args__ = (
+        Index("idx_campaigns_tenant", "tenant_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    objective: Mapped[Optional[str]] = mapped_column(Text)
+    target_reels_count: Mapped[int] = mapped_column(Integer, default=8)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
 class Idea(Base):
     __tablename__ = "ideas"
     __table_args__ = (
         Index("idx_ideas_tenant_approval_created", "tenant_id", "approval_status", "created_at"),
     )
 
-
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    campaign_id: Mapped[Optional[str]] = mapped_column(ForeignKey("campaigns.id"))
     niche_id: Mapped[Optional[str]] = mapped_column(ForeignKey("niches.id"))
     texto: Mapped[str] = mapped_column(Text, nullable=False)
     gancho: Mapped[Optional[str]] = mapped_column(Text)

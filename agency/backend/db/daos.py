@@ -21,7 +21,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import AsyncSessionLocal
-from backend.db.models import Idea, Product, Script, Video
+from backend.db.models import Idea, Product, Script, Video, Campaign
 
 logger = logging.getLogger(__name__)
 
@@ -470,6 +470,39 @@ async def get_scripts_by_tenant(
         if idea_id and _is_uuid(idea_id):
             stmt = stmt.where(Script.idea_id == idea_id)
         stmt = stmt.order_by(Script.created_at.desc())
+        return list((await session.execute(stmt)).scalars().all())
+
+    return await _run_with_commit(_work)
+
+
+async def insert_campaign(
+    tenant_id: str,
+    name: str,
+    objective: Optional[str] = None,
+    target_reels_count: int = 8,
+) -> Campaign:
+    """Inserta una nueva campaña comercial para el tenant (migración 009)."""
+    async def _work(session: AsyncSession) -> Campaign:
+        row = Campaign(
+            id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            name=name,
+            objective=objective,
+            target_reels_count=target_reels_count,
+            status="active",
+            created_at=datetime.utcnow(),
+        )
+        session.add(row)
+        await session.flush()
+        return row
+
+    return await _run_with_commit(_work)
+
+
+async def get_campaigns_by_tenant(tenant_id: str) -> List[Campaign]:
+    """Obtiene la lista de campañas comerciales del tenant."""
+    async def _work(session: AsyncSession) -> List[Campaign]:
+        stmt = select(Campaign).where(Campaign.tenant_id == tenant_id).order_by(Campaign.created_at.desc())
         return list((await session.execute(stmt)).scalars().all())
 
     return await _run_with_commit(_work)

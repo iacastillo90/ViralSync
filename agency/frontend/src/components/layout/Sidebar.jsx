@@ -34,6 +34,11 @@ export function Sidebar({ tenantId }) {
       href: effectiveTenantId === "nuevo" ? "/tenants/nuevo" : `/tenants/${effectiveTenantId}`,
     },
     {
+      label: "Campañas Comerciales",
+      icon: Layers,
+      href: "/campanas",
+    },
+    {
       label: "Pipeline Monitor",
       icon: Layers,
       href: effectiveTenantId === "nuevo" ? "/tenants/nuevo" : `/tenants/${effectiveTenantId}/pipeline`,
