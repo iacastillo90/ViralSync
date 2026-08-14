@@ -65,27 +65,47 @@ async def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
         logger.error(f"[{tenant_id}] Fallo honesto de renderizado en node_video_edit: {err_msg}")
         raise RuntimeError(f"Fallo en renderizado de video para tenant '{tenant_id}': {err_msg}")
 
-    edited_uri = render_res.get("video_url")
-    if not edited_uri:
-        logger.error(f"[{tenant_id}] No se obtuvo video_url del microservicio de renderizado.")
-        raise RuntimeError(f"Fallo en renderizado de video para tenant '{tenant_id}'. No se generó URI de salida.")
+    variants = render_res.get("variants")
+    if not variants:
+        # Compatibilidad con retornos legacy (mocks/tests) que no exponen
+        # `variants`: tratar la variante principal como una única variante.
+        # El worker nuevo siempre envía `variants`.
+        variant_url = render_res.get("video_url")
+        if variant_url:
+            variants = [{"provider": render_res.get("provider", "local"), "video_url": variant_url}]
+        else:
+            logger.error(f"[{tenant_id}] Render completado sin variantes para persistir.")
+            raise RuntimeError(f"Render completado sin variantes para persistir para tenant '{tenant_id}'.")
 
     raw_uri = state.get("raw_video_uri", f"s3://viralsync-media-dev/{tenant_id}/raw_input.mp4")
 
-    # 3. Persistencia real (PERSIST-02): fila `videos` FK al guion. Un fallo de
-    # DB se propaga (PERSIST-02-2), nunca un éxito state-only. La fila devuelta
-    # por el DAO ya NO se descarta: su `id` viaja en state como `video_id` para
-    # que node_publish haga el write-back (design D-A, REQ-PTT-01).
-    row = await insert_video(tenant_id, script.get("id"), raw_uri, edited_uri)
+    # 3. Persistencia real (PERSIST-02): UNA fila `videos` POR variante generada
+    # (json2video + local), distinguidas por `provider` (migración 007). El
+    # state del grafo sigue exponiendo UNA sola variante principal
+    # (`edited_video_uri`/`video_id`): la json2video si existe, si no la local,
+    # para no romper el contrato con node_publish. Un fallo de DB se propaga
+    # (PERSIST-02-2), nunca un éxito state-only.
+    primary_provider = render_res.get("provider", "local")
+    primary_uri = render_res.get("video_url", "")
+    video_id = None
+    for variant in variants:
+        url = variant.get("video_url")
+        provider = variant.get("provider", "local")
+        if not url:
+            continue
+        row = await insert_video(tenant_id, script.get("id"), raw_uri, url, provider=provider)
+        if provider == primary_provider:
+            video_id = row.id
+        logger.info(f"[{tenant_id}] Variante '{provider}' persistida en videos (video_id={row.id})")
 
     logs = state.get("logs", [])
     logs.append(f"[video_edit] Storyboard generado con {len(storyboard)} escenas cinematográficas.")
-    logs.append(f"[video_edit] Video procesado exitosamente: '{edited_uri}'")
+    logs.append(f"[video_edit] Video procesado exitosamente: '{primary_uri}' ({len(variants)} variante(s) persistida(s))")
 
     return {
         "video_storyboard": storyboard,
         "raw_video_uri": raw_uri,
-        "edited_video_uri": edited_uri,
-        "video_id": row.id,
+        "edited_video_uri": primary_uri,
+        "video_id": video_id,
         "logs": logs,
     }

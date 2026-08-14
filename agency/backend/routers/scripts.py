@@ -42,8 +42,11 @@ def _script_to_dict(s) -> Dict[str, Any]:
     }
 
 
-def _video_provider(video_url: Any) -> str:
-    """Infiere el proveedor del render según la URL: json2video → Cloud, MinIO → Local."""
+def _video_provider(video_url: Any, provider: Optional[str] = None) -> str:
+    """Devuelve el provider del render: la columna `provider` (migración 007) si
+    está poblada, con fallback a inferencia por URL para filas legacy (NULL)."""
+    if provider:
+        return str(provider)
     if not video_url:
         return "pending"
     url = str(video_url)
@@ -92,7 +95,7 @@ async def get_tenant_scripts(
                 {
                     "id": v.id,
                     "video_url": v.edited_video_uri,
-                    "provider": _video_provider(v.edited_video_uri),
+                    "provider": _video_provider(v.edited_video_uri, getattr(v, "provider", None)),
                     "created_at": v.created_at.isoformat() if v.created_at else None,
                 }
             )
@@ -322,7 +325,9 @@ async def _persist_render_video(tenant_id: str, script_id: Optional[str], video_
         logger.info(f"[{tenant_id}] script_id no-UUID ({script_id}); omitiendo persistencia del render.")
         return
     try:
-        await insert_video(tenant_id, script_id, raw_video_uri="", edited_video_uri=str(video_url))
+        # El render manual siempre termina en MinIO (almacenamiento local), por
+        # eso provider='local' (migración 007).
+        await insert_video(tenant_id, script_id, raw_video_uri="", edited_video_uri=str(video_url), provider="local")
         logger.info(f"[{tenant_id}] Render real persistido en videos para script {script_id}")
     except Exception as exc:
         logger.warning(f"[{tenant_id}] No se pudo persistir el render real (script {script_id}): {exc}")
@@ -332,12 +337,19 @@ async def download_and_persist_rendered_video(
     tenant_id: str,
     script_id: Optional[str],
     video_url: str,
-    filename_prefix: str = "json2video"
+    filename_prefix: str = "json2video",
+    persist_db: bool = True,
 ) -> str:
     """
     Descarga el video renderizado por json2video/cloud, lo sube físicamente a MinIO S3
     con clave estable `{tenant_id}/json2video_{script_id}.mp4` y guarda la fila en la DB PostgreSQL `videos`.
     Devuelve la URL permanente presignada de MinIO S3.
+
+    ``persist_db``: cuando es False solo descarga y sube a MinIO y NO inserta la
+    fila `videos` — el flujo del worker (dual-render) persiste una fila por
+    variante desde el nodo, y un insert acá duplicaría la variante json2video.
+    Los usos manuales (endpoint /render) dejan el default True. La fila se
+    persiste con provider='local' porque el archivo termina alojado en MinIO.
     """
     if not video_url:
         return ""
@@ -362,19 +374,21 @@ async def download_and_persist_rendered_video(
     except Exception as err:
         logger.warning(f"[{tenant_id}] No se pudo descargar/subir video a MinIO ({err}). Se usará la URL original.")
 
-    # 2. Persistir fila en la base de datos PostgreSQL `videos`
-    try:
-        from backend.db.daos import insert_video, _is_uuid
-        if script_id and _is_uuid(script_id):
-            await insert_video(
-                tenant_id=tenant_id,
-                script_id=script_id,
-                raw_video_uri="",
-                edited_video_uri=permanent_url,
-            )
-            logger.info(f"[{tenant_id}] Fila de Video persistida en PostgreSQL para script_id={script_id}")
-    except Exception as db_err:
-        logger.warning(f"[{tenant_id}] No se pudo guardar la fila de Video en PostgreSQL: {db_err}")
+    # 2. Persistir fila en la base de datos PostgreSQL `videos` (opcional, ver persist_db)
+    if persist_db:
+        try:
+            from backend.db.daos import insert_video, _is_uuid
+            if script_id and _is_uuid(script_id):
+                await insert_video(
+                    tenant_id=tenant_id,
+                    script_id=script_id,
+                    raw_video_uri="",
+                    edited_video_uri=permanent_url,
+                    provider="local",
+                )
+                logger.info(f"[{tenant_id}] Fila de Video persistida en PostgreSQL para script_id={script_id}")
+        except Exception as db_err:
+            logger.warning(f"[{tenant_id}] No se pudo guardar la fila de Video en PostgreSQL: {db_err}")
 
     return permanent_url
 

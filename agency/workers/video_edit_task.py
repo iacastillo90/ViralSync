@@ -57,6 +57,45 @@ def _storyboard_to_scenes(storyboard: Optional[List[Dict[str, Any]]]) -> List[Di
     return scenes
 
 
+def _render_local_via_renderer(tenant_id: str, render_payload: Dict[str, Any]) -> str:
+    """Ejecuta el render local (MoviePy) contra el microservicio y devuelve la URL o ``""``.
+
+    Best-effort deliberado: un fallo acá no debe abortar una variante json2video
+    ya generada (dual-render, ver ``trigger_video_render``). Un solo intento por
+    endpoint: el render por escenas (MoviePy) tarda ~7-8 min para 30s, muy por
+    encima del antiguo timeout de 300s; con retry el worker reintentaba y
+    disparaba renders DUPLICADOS en el renderer, que luego eran abandonados por
+    el propio worker ("No real rendered video produced"). Timeout 600s cubre el
+    peor caso de 60s (~15 min).
+    """
+    target_url = RENDERER_SERVICE_URL
+    logger.info(f"[{tenant_id}] Ejecutando renderizado con microservicio local en {target_url} (Timeout: 600s)...")
+
+    @retry(stop=stop_after_attempt(1), reraise=True)
+    def _call_renderer(url):
+        with httpx.Client(timeout=600.0) as client:
+            return client.post(url, json=render_payload)
+
+    video_url = ""
+    try:
+        response = _call_renderer(target_url)
+        if response.status_code == 201:
+            video_url = response.json().get("video_url", "")
+            logger.info(f"[{tenant_id}] Renderizado local completado exitosamente: {video_url}")
+        else:
+            logger.warning(f"Respuesta no esperada del microservicio local ({response.status_code}): {response.text}")
+    except Exception as exc:
+        logger.warning(f"No se pudo conectar a {target_url} ({exc}). Intentando fallback local...")
+        try:
+            response = _call_renderer(FALLBACK_RENDERER_URL)
+            if response.status_code == 201:
+                video_url = response.json().get("video_url", "")
+        except Exception as fallback_exc:
+            logger.error(f"Fallo definitivo conectando al microservicio de renderizado local: {fallback_exc}")
+
+    return video_url
+
+
 @celery_app.task(name="workers.video_edit_task.trigger_video_render")
 def trigger_video_render(
     tenant_id: str,
@@ -151,81 +190,58 @@ def trigger_video_render(
             render_payload = {**render_payload, "scenes": scenes}
             logger.info(f"[{tenant_id}] Reenviando {len(scenes)} escenas del storyboard al renderer.")
 
-    video_url = ""
+    # 2/3. Dual-render: un guion puede producir DOS variantes que se persisten
+    # juntas (1 fila por `provider`, migración 007). Antes el flujo era OR
+    # excluyente: con VIDEO_RENDERER_PROVIDER=json2video se hacía return temprano
+    # y NUNCA se generaba el render local. Ahora se recolectan ambas variantes y
+    # el nodo video_edit persiste una fila por cada una. El render local es
+    # best-effort: si falla no tira abajo una variante json2video ya generada.
+    variants: List[Dict[str, Any]] = []
     video_renderer_provider = os.getenv("VIDEO_RENDERER_PROVIDER", "local")
     json2video_api_key = os.getenv("JSON2VIDEO_API_KEY", "")
 
-    # 2. Si se elige json2video y hay api key, intentar renderizar en la nube
+    # 2. Variante json2video (cloud): solo si el provider configurado lo pide.
     if video_renderer_provider == "json2video" and json2video_api_key:
         logger.info(f"[{tenant_id}] Intentando renderizado en la nube usando JSON2Video...")
         try:
             from agents.mcp_servers.json2video_client import JSON2VideoClient
             client = JSON2VideoClient(api_key=json2video_api_key)
-            video_url = client.render_video(
+            json2video_url = client.render_video(
                 script=script,
                 keywords=render_payload.get("keywords", []),
                 tenant_id=tenant_id,
                 title=render_payload.get("title", "ViralSync Marketing Video")
             )
-            if video_url:
-                logger.info(f"[{tenant_id}] Renderizado JSON2Video completado exitosamente: {video_url}")
-
-                # Persistencia física en MinIO S3 y PostgreSQL DB
+            if json2video_url:
+                # Migrar a MinIO para una URL permanente (la CDN de json2video
+                # expira). persist_db=False: la fila `videos` la persiste el nodo
+                # (1 por variante); si download_and_persist insertara, la
+                # variante json2video quedaría duplicada con el insert del nodo.
                 try:
                     import asyncio
                     from backend.routers.scripts import download_and_persist_rendered_video
                     script_id = script.get("id")
-                    permanent_url = asyncio.run(download_and_persist_rendered_video(tenant_id, script_id, video_url, "json2video"))
+                    permanent_url = asyncio.run(download_and_persist_rendered_video(
+                        tenant_id, script_id, json2video_url, "json2video", persist_db=False,
+                    ))
                     if permanent_url:
-                        video_url = permanent_url
+                        json2video_url = permanent_url
                 except Exception as p_err:
                     logger.warning(f"[{tenant_id}] Fallo persistencia local de json2video ({p_err}). Se mantiene URL remota.")
 
-                return {
-                    "tenant_id": tenant_id,
-                    "video_url": video_url,
-                    "payload": render_payload,
-                    "status": "completed",
-                    "provider": "json2video"
-                }
+                variants.append({"provider": "json2video", "video_url": json2video_url})
+                logger.info(f"[{tenant_id}] Renderizado JSON2Video completado exitosamente: {json2video_url}")
         except Exception as exc:
             logger.error(f"[{tenant_id}] Fallo en renderizado de JSON2Video ({exc}). Ejecutando fallback al microservicio local...")
 
-    # 3. Fallback / Ejecución local (MoviePy + microservicio local)
-    target_url = RENDERER_SERVICE_URL
-    logger.info(f"[{tenant_id}] Ejecutando renderizado con microservicio local en {target_url} (Timeout: 600s)...")
+    # 3. Variante local (MoviePy + microservicio local): se ejecuta SIEMPRE —
+    # como fallback si json2video no está configurado o falló, y como
+    # complemento cuando json2video tuvo éxito.
+    local_url = _render_local_via_renderer(tenant_id, render_payload)
+    if local_url:
+        variants.append({"provider": "local", "video_url": local_url})
 
-    # NOTA: un solo intento deliberado. El render por escenas (MoviePy) tarda
-    # ~7-8 min para 30s, muy por encima del antiguo timeout de 300s; con retry
-    # el worker reintentaba y disparaba renders DUPLICADOS en el renderer, que
-    # luego eran abandonados por el propio worker ("No real rendered video
-    # produced"). Timeout 600s cubre el peor caso de 60s (~15 min).
-    @retry(
-        stop=stop_after_attempt(1),
-        reraise=True
-    )
-    def _call_renderer(url):
-        with httpx.Client(timeout=600.0) as client:
-            return client.post(url, json=render_payload)
-
-    try:
-        response = _call_renderer(target_url)
-        if response.status_code == 201:
-            data = response.json()
-            video_url = data.get("video_url", "")
-            logger.info(f"[{tenant_id}] Renderizado local completado exitosamente: {video_url}")
-        else:
-            logger.warning(f"Respuesta no esperada del microservicio local ({response.status_code}): {response.text}")
-    except Exception as exc:
-        logger.warning(f"No se pudo conectar a {target_url} ({exc}). Intentando fallback local...")
-        try:
-            response = _call_renderer(FALLBACK_RENDERER_URL)
-            if response.status_code == 201:
-                video_url = response.json().get("video_url", "")
-        except Exception as fallback_exc:
-            logger.error(f"Fallo definitivo conectando al microservicio de renderizado local: {fallback_exc}")
-
-    if not video_url:
+    if not variants:
         # RELIABILITY-001 fix: never fabricate a default rendered video URL.
         # Without a real render (json2video or local renderer), report an
         # honest failure so downstream nodes do not persist a lie as
@@ -236,18 +252,25 @@ def trigger_video_render(
             "payload": render_payload,
             "status": "failed",
             "provider": "local",
+            "variants": [],
             "message": (
                 "No real rendered video produced: json2video and local "
-                f"renderer ({target_url}) did not deliver a video_url."
+                f"renderer ({RENDERER_SERVICE_URL}) did not deliver a video_url."
             ),
         }
 
+    # Principal: json2video si existe, si no la local. Mantiene el contrato del
+    # state con node_publish (que usa `video_url`); las variantes completas van
+    # en `variants` para que el nodo video_edit persista una fila por cada una.
+    primary = next((v for v in variants if v["provider"] == "json2video"), variants[0])
+
     return {
         "tenant_id": tenant_id,
-        "video_url": video_url,
+        "video_url": primary["video_url"],
         "payload": render_payload,
         "status": "completed",
-        "provider": "local"
+        "provider": primary["provider"],
+        "variants": variants,
     }
 
 

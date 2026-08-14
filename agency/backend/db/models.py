@@ -157,6 +157,8 @@ class Video(Base):
     script_id: Mapped[str] = mapped_column(ForeignKey("scripts.id"), nullable=False)
     raw_video_uri: Mapped[Optional[str]] = mapped_column(Text)
     edited_video_uri: Mapped[Optional[str]] = mapped_column(Text)
+    # Motor que generó el render (migración 007): 'json2video' | 'local'.
+    provider: Mapped[Optional[str]] = mapped_column(String(20))
     publish_approval_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     instagram_post_id: Mapped[Optional[str]] = mapped_column(Text)
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

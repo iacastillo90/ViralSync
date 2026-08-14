@@ -123,8 +123,14 @@ async def insert_video(
     script_id: str,
     raw_video_uri: str,
     edited_video_uri: str,
+    provider: Optional[str] = None,
 ) -> Video:
-    """Persiste una fila `videos` FK al script, capturando URIs crudo/editado (PERSIST-02-1)."""
+    """Persiste una fila `videos` FK al script, capturando URIs crudo/editado (PERSIST-02-1).
+
+    ``provider`` ('json2video' | 'local') es opcional: cada variante generada
+    para un mismo guion se persiste como su propia fila (dual-render, migración
+    007). Las llamadas existentes que no lo pasan siguen funcionando.
+    """
     async def _work(session: AsyncSession) -> Video:
         row = Video(
             id=str(uuid.uuid4()),
@@ -132,6 +138,7 @@ async def insert_video(
             script_id=script_id,
             raw_video_uri=raw_video_uri,
             edited_video_uri=edited_video_uri,
+            provider=provider,
             publish_approval_status="pending",
         )
         session.add(row)
