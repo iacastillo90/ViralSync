@@ -191,6 +191,23 @@ class Video(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
+class ScriptVariant(Base):
+    __tablename__ = "script_variants"
+    __table_args__ = (
+        Index("idx_script_variants_script", "script_id", "tenant_id"),
+    )
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    script_id: Mapped[str] = mapped_column(ForeignKey("scripts.id"), nullable=False)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    variant_label: Mapped[str] = mapped_column(String(10), default="B")
+    gancho_0_5s_variant: Mapped[str] = mapped_column(Text, nullable=False)
+    views_72h: Mapped[int] = mapped_column(Integer, default=0)
+    conversion_72h: Mapped[int] = mapped_column(Integer, default=0)
+    winner: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
 class VideoMetric(Base):
     __tablename__ = "video_metrics"
     __table_args__ = (
