@@ -1,13 +1,18 @@
 "use client";
 
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useTenantStore } from "@/stores/useTenantStore";
 import { useAgentStore } from "@/stores/useAgentStore";
-import { Sparkles, DollarSign, Building2 } from "lucide-react";
+import { useRealtimeNotifications } from "@/hooks/useRealtimeNotifications";
+import { NotificationPanel } from "@/components/notifications/NotificationPanel";
+import { Sparkles, DollarSign, Building2, Bell } from "lucide-react";
 
 export function Header() {
   const { activeTenant, availableTenants, setActiveTenant, setAvailableTenants } = useTenantStore();
   const { setTenantId } = useAgentStore();
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+
+  const { notifications, unreadCount, markAllAsRead, clearAll } = useRealtimeNotifications(activeTenant?.id);
 
   useEffect(() => {
     const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -89,7 +94,31 @@ export function Header() {
             )}
           </select>
         </div>
+
+        {/* Campana de Notificaciones SSE */}
+        <button
+          onClick={() => setIsNotificationOpen(true)}
+          className="relative p-2 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl text-slate-300 transition-colors"
+          title="Notificaciones en Tiempo Real"
+        >
+          <Bell className="w-4 h-4 text-indigo-400" />
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[9px] font-mono font-bold rounded-full flex items-center justify-center animate-pulse">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          )}
+        </button>
       </div>
+
+      <NotificationPanel
+        isOpen={isNotificationOpen}
+        onClose={() => setIsNotificationOpen(false)}
+        notifications={notifications}
+        unreadCount={unreadCount}
+        onMarkAllRead={markAllAsRead}
+        onClearAll={clearAll}
+        tenantId={activeTenant?.id}
+      />
     </header>
   );
 }

@@ -37,6 +37,16 @@ async def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
 
     logger.info(f"[{tenant_id}] Ejecutando nodo 'video_edit' con Agente de Prompting Visual")
 
+    # Notificar inicio de renderizado vía SSE
+    try:
+        from backend.sse_manager import sse_manager
+        sse_manager.publish_event(tenant_id, "video_render_started", {
+            "script_id": script.get("id"),
+            "title": (script.get("gancho_0_5s") or "Reel 9:16")[:50],
+        })
+    except Exception as sse_err:
+        logger.debug(f"SSE notify bypass: {sse_err}")
+
     # 1. Ejecutar Crew de Prompting Visual segundo a segundo (Image-to-Video si existe foto)
     storyboard = await run_video_prompt_crew(
         script=script, idea=selected_idea, product_image_url=product_image_url
@@ -55,14 +65,21 @@ async def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
     if render_status == "rejected_quality":
         err_msg = render_res.get("message", "El guion no superó la calidad RUM requerida.")
         logger.error(f"[{tenant_id}] Fallo explícito en node_video_edit: {err_msg}")
+        try:
+            from backend.sse_manager import sse_manager
+            sse_manager.publish_event(tenant_id, "video_render_failed", {"script_id": script.get("id"), "error": err_msg})
+        except Exception:
+            pass
         raise ValueError(f"Edición de video rechazada por calidad: {err_msg}")
 
     if render_status == "failed":
-        # RELIABILITY-001 fix: a render failure must propagate honestly. The
-        # fabricated default_rendered_output.mp4 URL was removed from the worker,
-        # so this node never persists a lie as edited_video_uri.
         err_msg = render_res.get("message", "El renderizado de video falló.")
         logger.error(f"[{tenant_id}] Fallo honesto de renderizado en node_video_edit: {err_msg}")
+        try:
+            from backend.sse_manager import sse_manager
+            sse_manager.publish_event(tenant_id, "video_render_failed", {"script_id": script.get("id"), "error": err_msg})
+        except Exception:
+            pass
         raise RuntimeError(f"Fallo en renderizado de video para tenant '{tenant_id}': {err_msg}")
 
     variants = render_res.get("variants")
@@ -101,6 +118,18 @@ async def node_video_edit(state: Dict[str, Any]) -> Dict[str, Any]:
     logs = state.get("logs", [])
     logs.append(f"[video_edit] Storyboard generado con {len(storyboard)} escenas cinematográficas.")
     logs.append(f"[video_edit] Video procesado exitosamente: '{primary_uri}' ({len(variants)} variante(s) persistida(s))")
+
+    # Emitir evento SSE de renderizado completado
+    try:
+        from backend.sse_manager import sse_manager
+        sse_manager.publish_event(tenant_id, "video_render_completed", {
+            "script_id": script.get("id"),
+            "video_id": video_id,
+            "video_url": primary_uri,
+            "provider": primary_provider,
+        })
+    except Exception as sse_err:
+        logger.debug(f"SSE completed notify bypass: {sse_err}")
 
     return {
         "video_storyboard": storyboard,
