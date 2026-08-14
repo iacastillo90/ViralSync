@@ -1,0 +1,92 @@
+[
+  {
+    "id": "podcast_audio",
+    "name": "Podcast & Audio Profesional",
+    "description": "Micrófonos dinámicos, interfaces de audio, tratamiento acústico y software de grabación para creadores de contenido.",
+    "objections": "Es muy costoso, no sé cómo configurarlo, ocupa mucho espacio.",
+    "target_desires": "Audio profesional con sonido de estudio sin ruido de fondo.",
+    "limiting_beliefs": "Pensar que se necesita un estudio de miles de dólares para sonar bien.",
+    "suggested_keyword": "AUDIO"
+  },
+  {
+    "id": "ecommerce_retail",
+    "name": "E-commerce & Producto Físico",
+    "description": "Tienda en línea de productos de alto impacto visual y envíos rápidos a todo el país.",
+    "objections": "Tardará mucho en llegar, el producto no será igual a la foto.",
+    "target_desires": "Recibir un producto premium en empaque elegante en menos de 48h.",
+    "limiting_beliefs": "Comprar por internet es inseguro o confuso.",
+    "suggested_keyword": "OFERTA"
+  },
+  {
+    "id": "saas_tech",
+    "name": "SaaS B2B & Software",
+    "description": "Plataforma en la nube para automatización de procesos empresariales y análisis de datos en tiempo real.",
+    "objections": "La migración es compleja, mi equipo no se adaptará al nuevo sistema.",
+    "target_desires": "Ahorrar 15 horas semanales de trabajo manual y tener métricas claras.",
+    "limiting_beliefs": "El software empresarial requiere meses de implementación.",
+    "suggested_keyword": "DEMO"
+  },
+  {
+    "id": "fitness_wellness",
+    "name": "Fitness, Salud & Wellness",
+    "description": "Programa de entrenamiento personalizado y suplementación nutricional de alta pureza.",
+    "objections": "No tengo tiempo para entrenar, he probado dietas y no funcionan.",
+    "target_desires": "Perder grasa corporal, ganar energía y sentirse satisfecho en 30 días.",
+    "limiting_beliefs": "Para estar en forma hay que pasar 2 horas en el gimnasio.",
+    "suggested_keyword": "CAMBIO"
+  },
+  {
+    "id": "education_courses",
+    "name": "Educación & Cursos Online",
+    "description": "Formación práctica en habilidades digitales de alta demanda con acompañamiento en vivo.",
+    "objections": "No tengo conocimientos previos, los cursos online no se terminan.",
+    "target_desires": "Conseguir un empleo remoto o lanzar servicios independientes en 60 días.",
+    "limiting_beliefs": "Necesito un título universitario para trabajar en tecnología.",
+    "suggested_keyword": "ACADEMIA"
+  },
+  {
+    "id": "gastronomy_food",
+    "name": "Gastronomía & Restaurantes",
+    "description": "Experiencia culinaria gourmet con insumos locales frescos y recetas exclusivas.",
+    "objections": "Los platos gourmet sirven porciones muy pequeñas.",
+    "target_desires": "Disfrutar una cena memorable con sabores únicos y excelente servicio.",
+    "limiting_beliefs": "Comer bien fuera de casa siempre es costoso.",
+    "suggested_keyword": "MENU"
+  },
+  {
+    "id": "real_estate",
+    "name": "Bienes Raíces & Inmobiliaria",
+    "description": "Propiedades residenciales de alta plusvalía y apartamentos de inversión con rentabilidad garantizada.",
+    "objections": "Los precios están sobrevalorados, los trámites bancarios son eternos.",
+    "target_desires": "Asegurar el patrimonio familiar y generar rentas mensuales pasivas.",
+    "limiting_beliefs": "Invertir en inmuebles es solo para millonarios.",
+    "suggested_keyword": "INMUEBLE"
+  },
+  {
+    "id": "digital_agency",
+    "name": "Marketing & Agencia Digital",
+    "description": "Estrategias de adquisición de clientes con contenido corto automatizado por IA.",
+    "objections": "Ya pagué agencias antes y no vi resultados en ventas.",
+    "target_desires": "Llenar la agenda de llamadas con clientes calificados listos para comprar.",
+    "limiting_beliefs": "Crear contenido requiere grabar videos todos los días.",
+    "suggested_keyword": "AGENCIA"
+  },
+  {
+    "id": "fashion_lifestyle",
+    "name": "Moda & Lifestyle",
+    "description": "Prendas de vestuario de diseño independiente con telas sustentables de alta durabilidad.",
+    "objections": "La ropa de diseño no es cómoda para el uso diario.",
+    "target_desires": "Vestir con estilo propio sin perder la comodidad ni el confort.",
+    "limiting_beliefs": "La moda sustentable carece de diseños modernos.",
+    "suggested_keyword": "ESTILO"
+  },
+  {
+    "id": "gaming_entertainment",
+    "name": "Gaming & Entretenimiento",
+    "description": "Periféricos gaming de alta precisión con luces RGB configurables y respuesta ultrarrápida.",
+    "objections": "Los periféricos profesionales no mejoran el desempeño real en juego.",
+    "target_desires": "Tener la máxima ventaja competitiva en partidas en línea sin latencia.",
+    "limiting_beliefs": "Cualquier teclado o mouse funciona igual para jugar.",
+    "suggested_keyword": "GAMER"
+  }
+]

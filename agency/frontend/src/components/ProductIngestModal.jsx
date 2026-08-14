@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Upload, Sparkles, Image as ImageIcon, CheckCircle2, Box, Layers, ArrowRight } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Upload, Sparkles, Image as ImageIcon, CheckCircle2, Box, Layers, ArrowRight, Wand2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAgentStore } from "@/stores/useAgentStore";
 
@@ -18,7 +18,34 @@ export default function ProductIngestModal({ onIngested }) {
   const [ingestedResult, setIngestedResult] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [isGeneratingIdeas, setIsGeneratingIdeas] = useState(false);
+  const [nicheTemplates, setNicheTemplates] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const router = useRouter();
+
+  useEffect(() => {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+    fetch(`${apiBase}/niche-templates`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) setNicheTemplates(data);
+      })
+      .catch((err) => console.error("Error cargando plantillas de nicho:", err));
+  }, []);
+
+  const handleSelectTemplate = (templateId) => {
+    setSelectedTemplateId(templateId);
+    if (!templateId) return;
+    const tpl = nicheTemplates.find((t) => t.id === templateId);
+    if (tpl) {
+      setProductName(tpl.name);
+      setDescription(
+        `${tpl.description}\n\n` +
+        `• Deseos del Target: ${tpl.target_desires}\n` +
+        `• Objeciones Frecuentes: ${tpl.objections}\n` +
+        `• Creencia Limitante: ${tpl.limiting_beliefs}`
+      );
+    }
+  };
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -102,6 +129,28 @@ export default function ProductIngestModal({ onIngested }) {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Selector Rápido de Plantillas de Nicho */}
+        <div className="bg-indigo-950/40 border border-indigo-500/30 rounded-xl p-3.5 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+              <Wand2 className="w-4 h-4 text-indigo-400" /> Cargar Plantilla de Nicho (Autocompletar 1-Click)
+            </span>
+            <span className="text-[10px] text-indigo-400 font-mono">10 Nichos Disponibles</span>
+          </div>
+          <select
+            value={selectedTemplateId}
+            onChange={(e) => handleSelectTemplate(e.target.value)}
+            className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-indigo-200 focus:outline-none focus:border-indigo-400 cursor-pointer"
+          >
+            <option value="">-- Seleccionar Plantilla de Nicho pre-configurada --</option>
+            {nicheTemplates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-semibold text-slate-300 uppercase mb-1.5">
