@@ -297,6 +297,46 @@ export function ScriptInspectorView({ tenantId }) {
     a.click();
   };
 
+  const handleExportZip = async (script) => {
+    if (!script || !script.id) return;
+    try {
+      setNotification({
+        type: "success",
+        title: "📦 Generando Paquete ZIP",
+        message: "Empaquetando guion, prompts, copy y video...",
+      });
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
+      const response = await fetch(`${baseUrl}/tenants/${tenantId}/scripts/${script.id}/export`, {
+        method: "POST",
+      });
+      if (!response.ok) throw new Error("Error al empaquetar el archivo ZIP.");
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `guion_${script.id.slice(0, 8)}_pack.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+      setNotification({
+        type: "success",
+        title: "✅ Paquete Descargado",
+        message: "ZIP descargado exitosamente con todos los elementos creativos.",
+      });
+      setTimeout(() => setNotification(null), 4000);
+    } catch (err) {
+      setNotification({
+        type: "error",
+        title: "Error al Exportar",
+        message: err.message || "No se pudo generar el paquete ZIP.",
+      });
+      setTimeout(() => setNotification(null), 4000);
+    }
+  };
+
   const handleOpenEdit = (script) => {
     setEditingScript(script);
     setIsEditModalOpen(true);
@@ -744,6 +784,7 @@ export function ScriptInspectorView({ tenantId }) {
               onViewVideos={handleViewVideos}
               onSelectFolder={(folderName) => setActiveFolder(folderName)}
               onApprove={handleApproveScript}
+              onExportZip={handleExportZip}
             />
           ) : (
             <ScriptsMacListView

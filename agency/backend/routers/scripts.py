@@ -561,3 +561,77 @@ async def request_render(
         "script_id": script_id,
         "duration_seconds": target_duration,
     }
+
+
+@router.post("/{tenant_id}/scripts/{script_id}/export")
+async def export_script_package(
+    tenant_id: str,
+    script_id: str,
+    db=Depends(get_async_db),
+):
+    """
+    Exporta el paquete creativo completo (guion TXT, guion JSON, prompts de escenas,
+    copy para redes sociales y video MP4 opcional) en un único archivo ZIP.
+    """
+    if not HAS_SQLALCHEMY or db is None:
+        raise HTTPException(status_code=503, detail="DB no disponible.")
+
+    try:
+        from fastapi.responses import Response
+        from backend.services.script_exporter import create_script_export_zip
+
+        res = await db.execute(
+            select(Script).where(Script.id == script_id, Script.tenant_id == tenant_id)
+        )
+        script_row = res.scalars().first()
+        if not script_row:
+            raise HTTPException(status_code=404, detail="Guión no encontrado.")
+
+        script_dict = _script_to_dict(script_row)
+
+        # Buscar si existe un video renderizado asociado
+        vids_res = await db.execute(
+            select(Video).where(Video.script_id == script_id, Video.tenant_id == tenant_id).order_by(Video.created_at.desc())
+        )
+        video_row = vids_res.scalars().first()
+
+        video_bytes = None
+        video_name = "video.mp4"
+
+        if video_row and video_row.edited_video_uri:
+            # Si el video está alojado en MinIO o URL accesible, intentar traerlo
+            video_uri = str(video_row.edited_video_uri)
+            if video_uri.startswith("http://") or video_uri.startswith("https://"):
+                try:
+                    import httpx
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        v_resp = await client.get(video_uri)
+                        if v_resp.status_code == 200 and len(v_resp.content) > 100:
+                            video_bytes = v_resp.content
+                except Exception as v_err:
+                    logger.warning(f"No se pudo adjuntar video al ZIP export: {v_err}")
+
+        zip_bytes = create_script_export_zip(
+            script=script_dict,
+            video_bytes=video_bytes,
+            video_filename=video_name,
+        )
+
+        filename = f"guion_{script_id[:8]}_pack.zip"
+        return Response(
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition",
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"[{tenant_id}] Error exportando ZIP para script {script_id}: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Error al empaquetar el ZIP del guión.",
+        )

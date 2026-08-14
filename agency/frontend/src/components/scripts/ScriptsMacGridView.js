@@ -79,6 +79,7 @@ export function ScriptsMacGridView({
   onViewVideos,
   onSelectFolder,
   onApprove,
+  onExportZip,
 }) {
   if (scripts.length === 0) {
     return (
@@ -301,6 +302,15 @@ export function ScriptsMacGridView({
                 >
                   <Download className="w-3.5 h-3.5" />
                 </button>
+                {onExportZip && (
+                  <button
+                    onClick={() => onExportZip(script)}
+                    title="Exportar Paquete Creativo Completo (ZIP: Guion, Prompts, Copy, Video)"
+                    className="p-1.5 bg-slate-950 hover:bg-sky-950 text-sky-300 hover:text-sky-200 border border-slate-800 hover:border-sky-500/50 rounded-lg text-xs transition-colors flex items-center gap-1 font-bold"
+                  >
+                    <Package className="w-3.5 h-3.5 text-sky-400" /> ZIP
+                  </button>
+                )}
                 <button
                   onClick={() => onDelete(script.id)}
                   title="Eliminar guion"
