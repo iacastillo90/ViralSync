@@ -1,6 +1,6 @@
-import { redirect } from "next/navigation";
+import { DashboardView } from "@/features/Dashboard/views/DashboardView";
 
 export default async function TenantRootPage({ params }) {
   const { tenantId } = await params;
-  redirect(`/tenants/${tenantId}/pipeline`);
+  return <DashboardView tenantId={tenantId} />;
 }
