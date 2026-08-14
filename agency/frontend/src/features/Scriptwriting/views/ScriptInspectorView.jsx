@@ -365,6 +365,66 @@ export function ScriptInspectorView({ tenantId }) {
     );
   };
 
+  /**
+   * handleApproveScript — Migración 008
+   * Aprueba un guión como ganador del lote:
+   *   1. Llama a POST /scripts/{id}/approve con { idea_id, niche }.
+   *   2. Actualiza el estado local de forma optimista: approved para el ganador,
+   *      rejected para todos los demás guiones pending.
+   *   3. Muestra notificación de éxito con el trend_score si fue calculado.
+   */
+  const handleApproveScript = async (script) => {
+    if (!script || !script.id) return;
+    const ideaId = script.idea_id;
+
+    try {
+      const result = await fetchWithTenant(
+        `/tenants/${tenantId}/scripts/${script.id}/approve`,
+        {
+          method: "POST",
+          body: JSON.stringify({ idea_id: ideaId, niche: script.product_name || "Marketing" }),
+        },
+        tenantId
+      );
+
+      // Actualización optimista local
+      setLocalScripts((prev) =>
+        prev.map((s) => {
+          if (s.id === script.id) {
+            return {
+              ...s,
+              approval_status: "approved",
+              trend_score: result?.trend_score ?? s.trend_score,
+              trend_rationale: result?.trend_rationale ?? s.trend_rationale,
+            };
+          }
+          if (s.approval_status === "pending") {
+            return { ...s, approval_status: "rejected" };
+          }
+          return s;
+        })
+      );
+
+      const scoreMsg = result?.trend_score != null
+        ? ` | Score Viral: ${Math.round(result.trend_score)}/100`
+        : "";
+
+      setNotification({
+        type: "success",
+        title: "✅ Guión Aprobado",
+        message: `El guión "${script.gancho_0_5s?.slice(0, 50)}..." fue marcado como ganador.${scoreMsg}`,
+      });
+      setTimeout(() => setNotification(null), 5000);
+    } catch (err) {
+      setNotification({
+        type: "error",
+        title: "Error al Aprobar",
+        message: err.message || "No se pudo aprobar el guión. Intenta de nuevo.",
+      });
+      setTimeout(() => setNotification(null), 4000);
+    }
+  };
+
   // Abrir Modal de Traducción
   const handleOpenTranslate = (script) => {
     setTranslatingScript(script);
@@ -683,6 +743,7 @@ export function ScriptInspectorView({ tenantId }) {
               onRenderVideo={handleRenderVideo}
               onViewVideos={handleViewVideos}
               onSelectFolder={(folderName) => setActiveFolder(folderName)}
+              onApprove={handleApproveScript}
             />
           ) : (
             <ScriptsMacListView

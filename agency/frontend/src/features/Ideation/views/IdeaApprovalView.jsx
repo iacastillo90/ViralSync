@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useAgentStore } from "@/stores/useAgentStore";
 import { useTenantResource } from "@/hooks/useTenantResource";
 import { fetchWithTenant } from "@/services/apiConfig";
@@ -57,6 +57,8 @@ export function IdeaApprovalView({ tenantId }) {
   const [queuedIds, setQueuedIds] = useState([]);
   const [isWritingScript, setIsWritingScript] = useState(false);
   const [approvedIdeaTitle, setApprovedIdeaTitle] = useState("");
+  const [progressStep, setProgressStep] = useState(0); // 0-4
+  const progressTimerRef = useRef(null);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -273,7 +275,16 @@ export function IdeaApprovalView({ tenantId }) {
     addLog(`Idea ${updatedIdea.id} editada y recalculada a ~${updatedIdea.estimated_duration}s`);
   };
 
-  // Aprobar Idea y Generar Guion
+  // Pasos del progreso de generación de guión
+  const PROGRESS_STEPS = [
+    { label: "Analizando tendencias del nicho...", icon: "🔍" },
+    { label: "Estructurando narrativa 4 bloques...", icon: "📝" },
+    { label: "Optimizando ganchos virales...", icon: "⚡" },
+    { label: "Calculando score de impacto...", icon: "📊" },
+    { label: "¡Guión listo! Abriendo carpeta...", icon: "✅" },
+  ];
+
+  // Aprobar Idea y Generar Guión con progreso real
   const handleApproveIdea = async (idea) => {
     if (!idea || !idea.id) return;
     if (queuedIds.includes(idea.id) || idea.approval_status === "approved") return;
@@ -282,6 +293,15 @@ export function IdeaApprovalView({ tenantId }) {
     setQueuedIds((prev) => [...prev, idea.id]);
     setIsWritingScript(true);
     setApprovedIdeaTitle(idea.angle || idea.hook || idea.title || "Concepto");
+    setProgressStep(0);
+
+    // Avanzar pasos de UI mientras el backend procesa
+    let step = 0;
+    const intervals = [1800, 3200, 5000, 7000];
+    const timers = [];
+    intervals.forEach((delay, idx) => {
+      timers.push(setTimeout(() => setProgressStep(idx + 1), delay));
+    });
 
     try {
       await fetchWithTenant(
@@ -296,15 +316,23 @@ export function IdeaApprovalView({ tenantId }) {
         tenantId
       );
 
+      // Paso final: navegar a la carpeta de guión
       setTimeout(() => {
-        setIsWritingScript(false);
-        router.push(`/tenants/${tenantId}/guiones?ideaId=${idea.id}`);
+        timers.forEach(clearTimeout);
+        setProgressStep(4);
+        setTimeout(() => {
+          setIsWritingScript(false);
+          router.push(`/tenants/${tenantId}/guiones?ideaId=${idea.id}`);
+        }, 1000);
       }, 8000);
     } catch (err) {
-      alert(`Error al aprobar idea: ${err.message}`);
+      timers.forEach(clearTimeout);
       setIsWritingScript(false);
+      setProgressStep(0);
+      alert(`Error al aprobar idea: ${err.message}`);
     }
   };
+
 
   return (
     <div className="space-y-6">
@@ -532,19 +560,56 @@ export function IdeaApprovalView({ tenantId }) {
         onSave={handleSaveEditedIdea}
       />
 
-      {/* Modal Bloqueante de Generación de Guion */}
+      {/* Modal de Progreso de Generación de Guión */}
       {isWritingScript && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full shadow-2xl p-6 text-center">
-            <div className="w-12 h-12 bg-indigo-500/20 text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-3 animate-spin">
-              <Sparkles className="w-6 h-6" />
+          <div className="bg-slate-900 border border-indigo-500/30 rounded-2xl max-w-md w-full shadow-2xl p-7 space-y-5">
+            {/* Icono animado */}
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-14 h-14 bg-indigo-500/20 border border-indigo-500/40 text-indigo-400 rounded-full flex items-center justify-center text-2xl animate-pulse">
+                {PROGRESS_STEPS[progressStep]?.icon}
+              </div>
+              <h3 className="text-base font-bold text-slate-100 text-center">
+                Generando Guión Viral
+              </h3>
+              <p className="text-xs text-slate-400 text-center">
+                Para: <strong className="text-indigo-300">{approvedIdeaTitle}</strong>
+              </p>
             </div>
-            <h3 className="text-lg font-bold text-slate-100 mb-1">Redactando Guion Viral...</h3>
-            <p className="text-slate-400 mb-4 text-xs">
-              Estructurando narrativa para "<strong>{approvedIdeaTitle}</strong>"
-            </p>
-            <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-              <div className="bg-indigo-500 h-full animate-pulse w-3/4 rounded-full"></div>
+
+            {/* Pasos de progreso */}
+            <div className="space-y-2.5">
+              {PROGRESS_STEPS.map((step, idx) => (
+                <div key={idx} className={`flex items-center gap-3 px-3 py-2 rounded-xl transition-all ${
+                  idx < progressStep
+                    ? "bg-emerald-950/60 border border-emerald-500/30"
+                    : idx === progressStep
+                    ? "bg-indigo-950/70 border border-indigo-500/40"
+                    : "opacity-40"
+                }`}>
+                  <span className="text-base shrink-0">{step.icon}</span>
+                  <span className={`text-xs font-medium ${
+                    idx < progressStep ? "text-emerald-300" :
+                    idx === progressStep ? "text-indigo-200" : "text-slate-500"
+                  }`}>
+                    {step.label}
+                  </span>
+                  {idx < progressStep && (
+                    <span className="ml-auto text-emerald-400 text-[10px] font-bold">✓</span>
+                  )}
+                  {idx === progressStep && (
+                    <Loader2 className="ml-auto w-3.5 h-3.5 text-indigo-400 animate-spin shrink-0" />
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Barra de progreso */}
+            <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+              <div
+                className="bg-indigo-500 h-full rounded-full transition-all duration-700"
+                style={{ width: `${Math.round((progressStep / (PROGRESS_STEPS.length - 1)) * 100)}%` }}
+              />
             </div>
           </div>
         </div>

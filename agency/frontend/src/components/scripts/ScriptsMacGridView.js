@@ -15,6 +15,9 @@ import {
   Globe,
   Play,
   Sparkles,
+  CheckCircle2,
+  XCircle,
+  TrendingUp,
 } from "lucide-react";
 
 /**
@@ -75,6 +78,7 @@ export function ScriptsMacGridView({
   onRenderVideo,
   onViewVideos,
   onSelectFolder,
+  onApprove,
 }) {
   if (scripts.length === 0) {
     return (
@@ -98,22 +102,65 @@ export function ScriptsMacGridView({
           script.service_name ||
           script.category ||
           "Producto de Campaña";
-
         const isService = Boolean(script.service_name || script.is_service);
         const createdAtFormatted = formatDateTime(script.created_at);
         const targetDuration = script.target_duration || script.estimated_duration || 30;
         const langInfo = getLanguageInfo(script);
 
+        // Migración 008: Estado de aprobación y score de tendencias
+        const approvalStatus = script.approval_status || "pending";
+        const trendScore = script.trend_score != null ? Math.round(script.trend_score) : null;
+        const trendRationale = script.trend_rationale || null;
+        const isApproved = approvalStatus === "approved";
+        const isRejected = approvalStatus === "rejected";
+
+        // Color del indicador de score (rojo < 40, ámbar 40-69, verde ≥70)
+        const scoreColorClass = trendScore == null
+          ? "text-slate-500"
+          : trendScore >= 70
+          ? "text-emerald-400"
+          : trendScore >= 40
+          ? "text-amber-400"
+          : "text-rose-400";
+
+        const scoreBgClass = trendScore == null
+          ? "bg-slate-950"
+          : trendScore >= 70
+          ? "bg-emerald-950/60 border-emerald-500/40"
+          : trendScore >= 40
+          ? "bg-amber-950/60 border-amber-500/40"
+          : "bg-rose-950/60 border-rose-500/40";
+
+        // Borde de la tarjeta según estado
+        const cardBorder = isApproved
+          ? "border-emerald-500/50 ring-2 ring-emerald-500/20"
+          : isRejected
+          ? "border-slate-700/50 opacity-70"
+          : isSelected
+          ? "border-indigo-500 ring-2 ring-indigo-500/30 bg-slate-900"
+          : "border-slate-800/80 hover:border-slate-700 hover:shadow-2xl";
+
         return (
           <div
             key={script.id}
-            className={`group bg-slate-900/95 border rounded-2xl p-5 shadow-xl backdrop-blur-md flex flex-col justify-between transition-all relative overflow-hidden space-y-3 ${
-              isSelected
-                ? "border-indigo-500 ring-2 ring-indigo-500/30 bg-slate-900"
-                : "border-slate-800/80 hover:border-slate-700 hover:shadow-2xl"
-            }`}
+            className={`group bg-slate-900/95 border rounded-2xl p-5 shadow-xl backdrop-blur-md flex flex-col justify-between transition-all relative overflow-hidden space-y-3 ${cardBorder}`}
           >
-            {/* Cabecera Ventana macOS (Puntos 🔴 🟡 🟢 + Insignia de Idioma + Checkbox) */}
+            {/* Badge de Estado de Aprobación */}
+            {isApproved && (
+              <div className="absolute top-2 right-2 z-10">
+                <span className="bg-emerald-950 border border-emerald-500/60 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> Aprobado
+                </span>
+              </div>
+            )}
+            {isRejected && (
+              <div className="absolute top-2 right-2 z-10">
+                <span className="bg-slate-950 border border-slate-700 text-slate-400 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <XCircle className="w-3 h-3" /> Descartado
+                </span>
+              </div>
+            )}
+            {/* Cabecera Ventana macOS (🔴 🟡 🟢 + Insignia de Idioma + Checkbox) */}
             <div className="flex justify-between items-center pb-2 border-b border-slate-800/60">
               <div className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 group-hover:bg-rose-500 transition-colors"></span>
@@ -143,6 +190,21 @@ export function ScriptsMacGridView({
                 )}
               </button>
             </div>
+
+            {/* Indicador de Trend Score */}
+            {trendScore != null && (
+              <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl border ${scoreBgClass}`}>
+                <TrendingUp className={`w-3.5 h-3.5 shrink-0 ${scoreColorClass}`} />
+                <span className={`text-[11px] font-bold font-mono ${scoreColorClass}`}>
+                  Score Viral: {trendScore}/100
+                </span>
+                {trendRationale && (
+                  <span className="text-slate-500 text-[10px] truncate" title={trendRationale}>
+                    {trendRationale.slice(0, 55)}{trendRationale.length > 55 ? "..." : ""}
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* Insignias de Producto/Servicio, Duración y Fecha/Hora */}
             <div className="space-y-2">
@@ -277,6 +339,16 @@ export function ScriptsMacGridView({
                     title="Ver versiones de video renderizadas (Cloud json2video / Local MoviePy)"
                   >
                     <Play className="w-3.5 h-3.5 text-emerald-400" /> Ver video
+                  </button>
+                )}
+
+                {onApprove && !isApproved && (
+                  <button
+                    onClick={() => onApprove(script)}
+                    className="bg-emerald-700 hover:bg-emerald-600 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-md transition-all"
+                    title="Aprobar este guión como el ganador del lote. Los demás quedarán disponibles."
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Aprobar Guión
                   </button>
                 )}
 
