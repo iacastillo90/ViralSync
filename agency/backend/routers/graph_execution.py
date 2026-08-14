@@ -9,7 +9,12 @@ from fastapi import APIRouter, status, BackgroundTasks, HTTPException
 from pydantic import BaseModel, field_validator
 from backend.sse_manager import sse_manager
 from agents.graph import build_agency_graph
-from backend.db.daos import update_idea_approval
+from backend.db.daos import (
+    update_idea_approval,
+    get_video_by_id,
+    set_video_approval_status,
+    reject_pending_sibling_variants,
+)
 from backend.db.checkpointer import build_checkpointer
 from langgraph.types import Command
 import asyncio
@@ -205,6 +210,11 @@ class IdeaApproveRequest(BaseModel):
 
 class PublishApproveRequest(BaseModel):
     status: Literal["approved", "rejected"] = "approved"
+    # FASE-3 (elegir variante): id de la fila `videos` que el usuario elige para
+    # publicar. Opcional — el front viejo manda {script_id, status} (script_id se
+    # ignora como hasta ahora); la FASE-4 enviará video_id. Sin él, el resume y la
+    # publicación conservan el comportamiento legacy (variante "principal" del state).
+    video_id: Optional[str] = None
 
 
 @router.post("/{tenant_id}/progress")
@@ -289,20 +299,57 @@ async def approve_idea(tenant_id: str, req: IdeaApproveRequest, background_tasks
 
 @router.post("/{tenant_id}/publish/approve", status_code=status.HTTP_202_ACCEPTED)
 async def approve_publish(tenant_id: str, req: PublishApproveRequest, background_tasks: BackgroundTasks):
-    """Checkpoint Humano: Aprobar o Rechazar Publicación de Video y reanudar grafo."""
-    await sse_manager.broadcast(
-        tenant_id,
-        "publish_checkpoint",
-        {
-            "status": req.status,
-            "tenant_id": tenant_id,
-        },
-    )
-    
+    """Checkpoint Humano: Aprobar o Rechazar Publicación de Video y reanudar grafo.
+
+    FASE-3 (elegir variante): si el front manda `video_id`, la fila `videos`
+    elegida se marca `approved`/`rejected` (commit real, precedente approve_idea)
+    y la elección viaja en el payload del resume para que node_publish publique
+    ESA variante (no la "principal" del state). Un video_id inexistente o de otro
+    tenant → 404 HONESTO ANTES del broadcast + resume: un no-op no puede parecer
+    progreso. Sin `video_id` (legacy) → comportamiento histórico intacto.
+    """
+    chosen_video_uri = None
+    if req.video_id is not None:
+        video = await get_video_by_id(tenant_id, req.video_id)
+        if video is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="video not found or stale",
+            )
+        # La variante elegida queda en el estado que el usuario decidió; el CHECK
+        # 001 (pending|approved|rejected) lo garantiza.
+        await set_video_approval_status(tenant_id, req.video_id, req.status)
+        if req.status == "approved" and video.script_id:
+            rejected = await reject_pending_sibling_variants(
+                tenant_id, video.script_id, req.video_id
+            )
+            logger.info(
+                "[%s] Variante %s aprobada; %s variante(s) pendiente(s) del script %s marcadas rejected",
+                tenant_id, req.video_id, rejected, video.script_id,
+            )
+        chosen_video_uri = video.edited_video_uri
+
+    broadcast_payload = {
+        "status": req.status,
+        "tenant_id": tenant_id,
+    }
+    if req.video_id is not None:
+        broadcast_payload["video_id"] = req.video_id
+    await sse_manager.broadcast(tenant_id, "publish_checkpoint", broadcast_payload)
+
     payload = {
         "publish_approved": req.status == "approved",
         "publish_rejected": req.status == "rejected",
     }
+    # FASE-3: la variante elegida viaja al estado del grafo. El Command(update=...)
+    # del resume inyecta `video_id` (y la URI real de ESA fila) para que
+    # node_publish publique ESA variante. OJO: este payload NO contiene
+    # idea_approved/idea_rejected, así que _build_resume_command jamás entra en el
+    # goto="human_approval_idea" (esa rama es sólo para aprobación de idea).
+    if req.video_id is not None:
+        payload["video_id"] = req.video_id
+        if chosen_video_uri:
+            payload["edited_video_uri"] = chosen_video_uri
     try:
         from workers.graph_execution_task import resume_graph_task
         resume_graph_task.delay(tenant_id, payload)
@@ -310,11 +357,14 @@ async def approve_publish(tenant_id: str, req: PublishApproveRequest, background
         logger.warning("Celery dispatch failed for resume_publish (%s), falling back to background_tasks", exc)
         background_tasks.add_task(_resume_graph_background, tenant_id, payload)
 
-    return {
+    response = {
         "status": "accepted",
         "kind": "publish_approval",
         "queued": True,
     }
+    if req.video_id is not None:
+        response["video_id"] = req.video_id  # eco del id real, nunca fabricado
+    return response
 
 
 @router.post("/{tenant_id}/graph/run")

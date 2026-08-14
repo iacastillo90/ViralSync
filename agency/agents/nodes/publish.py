@@ -24,7 +24,7 @@ from typing import Dict, Any
 import httpx
 from httpx import AsyncClient
 
-from backend.db.daos import update_video_publish
+from backend.db.daos import update_video_publish, get_video_by_id
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,25 @@ async def node_publish(state: Dict[str, Any]) -> Dict[str, Any]:
     """Nodo que efectúa la publicación final vía el publisher HTTP real (:8002)."""
     tenant_id = state.get("tenant_id", "default_tenant")
     edited_uri = state.get("edited_video_uri")
+
+    # FASE-3 (elegir variante): si el resume trajo `video_id` (la variante que el
+    # usuario aprobó), la URI a publicar es la de ESA fila `videos` — no
+    # necesariamente la "principal" del state. Si la fila no existe o el lookup
+    # falla, se cae al comportamiento actual (URI del state) sin romper el publish;
+    # el write-back posterior (REQ-PTT-01) escribe igual sobre el video_id del state.
+    video_id = state.get("video_id")
+    if video_id:
+        try:
+            video_row = await get_video_by_id(tenant_id, video_id)
+        except Exception as exc:  # noqa: BLE001 - el lookup no debe abortar el publish
+            logger.warning(
+                f"[{tenant_id}] get_video_by_id falló para video_id {video_id} "
+                f"({exc}); usando edited_video_uri del state"
+            )
+            video_row = None
+        if video_row and video_row.edited_video_uri:
+            edited_uri = video_row.edited_video_uri
+
     if not edited_uri:
         raise ValueError(
             f"[{tenant_id}] edited_video_uri ausente en state: no hay video "

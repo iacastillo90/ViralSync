@@ -196,6 +196,76 @@ async def update_idea_approval(tenant_id: str, idea_id: str, status: str) -> boo
     return await _run_with_commit(_work)
 
 
+async def get_video_by_id(tenant_id: str, video_id: str) -> Optional[Video]:
+    """Devuelve la fila `videos` por (id, tenant_id), o None si no existe.
+
+    FASE-3 (elegir variante): el endpoint de aprobación y node_publish resuelven
+    la variante elegida desde la DB (`edited_video_uri` real de ESA fila), nunca
+    de un id no-UUID ni de otro tenant (anti-IDOR: siempre scoped por tenant_id).
+    """
+    if not _is_uuid(video_id):
+        return None
+
+    async def _work(session: AsyncSession) -> Optional[Video]:
+        return (
+            await session.execute(
+                select(Video).where(Video.id == video_id, Video.tenant_id == tenant_id)
+            )
+        ).scalars().first()
+
+    return await _run_with_commit(_work)
+
+
+async def set_video_approval_status(tenant_id: str, video_id: str, status: str) -> bool:
+    """Fija `publish_approval_status` de UNA fila `videos` por (id, tenant_id).
+
+    FASE-3: la aprobación de publicación marca la variante elegida. Sólo admite
+    los valores del CHECK 001 (pending|approved|rejected) — el call site decide
+    cuál. Un video_id no-UUID es un no-op `False`, nunca un error (T-08).
+    """
+    if not _is_uuid(video_id):
+        return False
+
+    async def _work(session: AsyncSession) -> bool:
+        result = await session.execute(
+            update(Video)
+            .where(Video.id == video_id, Video.tenant_id == tenant_id)
+            .values(publish_approval_status=status)
+        )
+        return result.rowcount > 0
+
+    return await _run_with_commit(_work)
+
+
+async def reject_pending_sibling_variants(
+    tenant_id: str, script_id: str, chosen_video_id: str
+) -> int:
+    """Marca como `rejected` las variantes PENDIENTES del mismo guion salvo la elegida.
+
+    FASE-3 (política de marcado): al aprobar una variante, las demás del mismo
+    `script_id` quedan `rejected` para que la elección sea unívoca en la DB. El
+    WHERE exige `publish_approval_status='pending'`: filas ya aprobadas/rechazadas
+    (ciclo previo de una re-aprobación) nunca se pisan. Devuelve nº de filas tocadas.
+    """
+    if not _is_uuid(script_id) or not _is_uuid(chosen_video_id):
+        return 0
+
+    async def _work(session: AsyncSession) -> int:
+        result = await session.execute(
+            update(Video)
+            .where(
+                Video.tenant_id == tenant_id,
+                Video.script_id == script_id,
+                Video.id != chosen_video_id,
+                Video.publish_approval_status == "pending",
+            )
+            .values(publish_approval_status="rejected")
+        )
+        return result.rowcount or 0
+
+    return await _run_with_commit(_work)
+
+
 async def update_video_publish(
     tenant_id: str,
     video_id: str,
