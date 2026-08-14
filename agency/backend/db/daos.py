@@ -373,3 +373,103 @@ async def get_latest_product(tenant_id: str) -> Optional[Product]:
             )
         ).scalars().first()
     return await _run_with_commit(_work)
+
+
+async def update_script_trend_score(
+    tenant_id: str,
+    script_id: str,
+    score: float,
+    rationale: str,
+) -> bool:
+    """
+    Persiste el score de tendencias y su justificación en un guion existente.
+
+    Migración 008: columnas `trend_score` y `trend_rationale`. El UPDATE siempre
+    está scoped por (id, tenant_id) para evitar escrituras cross-tenant.
+    Retorna True si actualizó exactamente 1 fila.
+    """
+    if not _is_uuid(script_id):
+        return False
+
+    async def _work(session: AsyncSession) -> bool:
+        result = await session.execute(
+            update(Script)
+            .where(Script.id == script_id, Script.tenant_id == tenant_id)
+            .values(
+                trend_score=round(score, 2),
+                trend_rationale=rationale[:300] if rationale else None,
+            )
+        )
+        return result.rowcount > 0
+
+    return await _run_with_commit(_work)
+
+
+async def approve_script_and_idea(
+    tenant_id: str,
+    script_id: str,
+    idea_id: str,
+) -> Dict[str, bool]:
+    """
+    Aprueba un guion y su idea como pareja ganadora.
+
+    Reglas de exclusión (migración 008):
+      1. El guion `script_id` pasa a approval_status='approved'.
+      2. La idea `idea_id` pasa a approval_status='approved'.
+      3. TODOS los demás guiones del tenant que estén en 'pending' pasan a 'rejected'
+         (excepto el aprobado), para que la UI los marque como descartados.
+         Las otras ideas del tenant permanecen en su estado original (pending),
+         dejándolas disponibles para que el cliente elija una en el futuro.
+
+    Retorna dict: {'script_approved': bool, 'idea_approved': bool}
+    """
+    if not _is_uuid(script_id) or not _is_uuid(idea_id):
+        return {"script_approved": False, "idea_approved": False}
+
+    async def _work(session: AsyncSession) -> Dict[str, bool]:
+        # 1. Aprobar el guion seleccionado
+        r_script = await session.execute(
+            update(Script)
+            .where(Script.id == script_id, Script.tenant_id == tenant_id)
+            .values(approval_status="approved")
+        )
+        # 2. Rechazar los demás guiones pending del tenant (exclusión)
+        await session.execute(
+            update(Script)
+            .where(
+                Script.tenant_id == tenant_id,
+                Script.id != script_id,
+                Script.approval_status == "pending",
+            )
+            .values(approval_status="rejected")
+        )
+        # 3. Aprobar la idea vinculada
+        r_idea = await session.execute(
+            update(Idea)
+            .where(Idea.id == idea_id, Idea.tenant_id == tenant_id)
+            .values(approval_status="approved")
+        )
+        return {
+            "script_approved": r_script.rowcount > 0,
+            "idea_approved": r_idea.rowcount > 0,
+        }
+
+    return await _run_with_commit(_work)
+
+
+async def get_scripts_by_tenant(
+    tenant_id: str,
+    idea_id: Optional[str] = None,
+) -> List[Script]:
+    """
+    Lista todos los guiones de un tenant, opcionalmente filtrados por idea_id.
+    Incluye `approval_status` y `trend_score` (migración 008).
+    """
+    async def _work(session: AsyncSession) -> List[Script]:
+        stmt = select(Script).where(Script.tenant_id == tenant_id)
+        if idea_id and _is_uuid(idea_id):
+            stmt = stmt.where(Script.idea_id == idea_id)
+        stmt = stmt.order_by(Script.created_at.desc())
+        return list((await session.execute(stmt)).scalars().all())
+
+    return await _run_with_commit(_work)

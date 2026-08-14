@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/v1/tenants", tags=["Scripts 4 Bloques"])
 
 
 def _script_to_dict(s) -> Dict[str, Any]:
-    """Proyección de una fila Script a los keys del DDL 001 (design D3)."""
+    """Proyección de una fila Script a los keys del DDL 001 + migración 008 (design D3)."""
     return {
         "id": s.id,
         "tenant_id": s.tenant_id,
@@ -38,6 +38,10 @@ def _script_to_dict(s) -> Dict[str, Any]:
         "moraleja_30_50s": s.moraleja_30_50s,
         "cta_50_60s": s.cta_50_60s,
         "keyword": s.keyword,
+        # Migración 008: aprobación de guión + scoring de tendencias
+        "approval_status": getattr(s, "approval_status", "pending"),
+        "trend_score": float(s.trend_score) if getattr(s, "trend_score", None) is not None else None,
+        "trend_rationale": getattr(s, "trend_rationale", None),
         "created_at": s.created_at.isoformat() if s.created_at else None,
     }
 
@@ -115,6 +119,95 @@ async def get_tenant_scripts(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Error temporal de base de datos al obtener scripts.",
         )
+
+
+@router.post("/{tenant_id}/scripts/{script_id}/approve")
+async def approve_script(
+    tenant_id: str,
+    script_id: str,
+    payload: Dict[str, Any],
+    db=Depends(get_async_db),
+) -> Dict[str, Any]:
+    """
+    Aprueba un guión y su idea vinculada (migración 008).
+
+    - Marca el guión seleccionado como 'approved'.
+    - Marca la idea vinculada como 'approved'.
+    - Rechaza los demás guiones pending del tenant (exclusión).
+    - Calcula y persiste el trend_score asíncronamente si no existe.
+    - Las otras ideas permanecen en su estado para que el cliente pueda elegirlas después.
+
+    Body: { "idea_id": str, "niche": str (opcional) }
+    """
+    if not HAS_SQLALCHEMY or db is None:
+        raise HTTPException(status_code=503, detail="DB no disponible.")
+
+    idea_id = payload.get("idea_id")
+    if not idea_id:
+        raise HTTPException(status_code=422, detail="Se requiere 'idea_id' en el body.")
+
+    niche = payload.get("niche", "Marketing y Negocios")
+
+    try:
+        from backend.db.daos import approve_script_and_idea, update_script_trend_score
+        from backend.db.models import Script as ScriptModel
+        from sqlalchemy import select as sa_select
+
+        # Aprobar guión + idea en una sola transacción
+        result = await approve_script_and_idea(
+            tenant_id=tenant_id,
+            script_id=script_id,
+            idea_id=idea_id,
+        )
+
+        if not result.get("script_approved"):
+            raise HTTPException(status_code=404, detail="Guión no encontrado o no pertenece al tenant.")
+
+        # Calcular trend_score asíncronamente si no tiene score todavía
+        try:
+            script_row = (
+                await db.execute(
+                    sa_select(ScriptModel)
+                    .where(ScriptModel.id == script_id, ScriptModel.tenant_id == tenant_id)
+                )
+            ).scalars().first()
+
+            needs_score = script_row and getattr(script_row, "trend_score", None) is None
+            if needs_score:
+                from backend.services.trend_scorer import score_script
+                script_dict = {
+                    "gancho_0_5s": script_row.gancho_0_5s,
+                    "contexto_5_30s": script_row.contexto_5_30s,
+                    "moraleja_30_50s": script_row.moraleja_30_50s,
+                    "cta_50_60s": script_row.cta_50_60s,
+                }
+                score_result = await score_script(script_dict, niche=niche)
+                await update_script_trend_score(
+                    tenant_id=tenant_id,
+                    script_id=script_id,
+                    score=score_result["score"],
+                    rationale=score_result["rationale"],
+                )
+                result["trend_score"] = score_result["score"]
+                result["trend_rationale"] = score_result["rationale"]
+        except Exception as score_exc:
+            # El scoring es best-effort: no bloquea la aprobación
+            logger.warning(f"[{tenant_id}] Error calculando trend_score: {score_exc}")
+
+        logger.info(
+            f"[{tenant_id}] Guión {script_id} aprobado | Idea {idea_id} aprobada."
+        )
+        return {"status": "approved", **result}
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"[{tenant_id}] Error al aprobar guión {script_id}: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Error temporal al procesar la aprobación del guión.",
+        )
+
 
 
 @router.post("/{tenant_id}/scripts/{script_id}/translate")

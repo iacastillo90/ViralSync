@@ -71,6 +71,9 @@ class Idea(Base):
 
 class Script(Base):
     __tablename__ = "scripts"
+    __table_args__ = (
+        Index("idx_scripts_tenant_approval", "tenant_id", "approval_status"),
+    )
 
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
@@ -80,6 +83,10 @@ class Script(Base):
     moraleja_30_50s: Mapped[str] = mapped_column(Text, nullable=False)
     cta_50_60s: Mapped[str] = mapped_column(Text, nullable=False)
     keyword: Mapped[str] = mapped_column(String(64), default="SOLICITUD")
+    # Migración 008: aprobación de guion y scoring de tendencias
+    approval_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    trend_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2))
+    trend_rationale: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
