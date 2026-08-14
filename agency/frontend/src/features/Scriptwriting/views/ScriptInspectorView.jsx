@@ -99,11 +99,11 @@ export function ScriptInspectorView({ tenantId }) {
     }
   }, [data, productsData]);
 
-  // Polling silencioso cada 5s para sincronización de nuevos guiones
+  // Polling silencioso cada 15s para sincronización fluida de nuevos guiones
   useEffect(() => {
     const interval = setInterval(() => {
       refresh();
-    }, 5000);
+    }, 15000);
     return () => clearInterval(interval);
   }, [refresh]);
 

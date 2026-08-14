@@ -59,13 +59,13 @@ export function MediaGalleryView({ tenantId }) {
     if (refreshScripts) refreshScripts();
   };
 
-  // Polling automático cada 4s para detectar nuevos renders
+  // Polling automático cada 12s para detectar nuevos renders de forma fluida
   useEffect(() => {
     const interval = setInterval(() => {
       refresh();
-    }, 4000);
+    }, 12000);
     return () => clearInterval(interval);
-  }, []);
+  }, [refresh]);
 
   // Estados de interfaz macOS Finder
   const [viewMode, setViewMode] = useState("grid"); // "grid" | "list"

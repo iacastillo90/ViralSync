@@ -29,7 +29,11 @@ export function useTenantResource(endpoint, tenantId) {
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
+    // Solo activamos estado de carga inicial si data es null,
+    // evitando el parpadeo constante y desmontaje de la interfaz al refrescar en segundo plano.
+    if (data === null) {
+      setLoading(true);
+    }
     setError(null);
 
     if (
@@ -53,7 +57,7 @@ export function useTenantResource(endpoint, tenantId) {
       })
       .catch((err) => {
         if (err.name !== "AbortError") {
-          console.warn(`[useTenantResource] Reintento automático en /${endpoint}:`, err.message);
+          console.warn(`[useTenantResource] Reintento en /${endpoint}:`, err.message);
           setError(err);
         }
       })
