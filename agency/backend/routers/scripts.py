@@ -97,6 +97,9 @@ async def get_tenant_scripts(
                     "video_url": v.edited_video_uri,
                     "provider": _video_provider(v.edited_video_uri, getattr(v, "provider", None)),
                     "created_at": v.created_at.isoformat() if v.created_at else None,
+                    # Estado real por variante (FASE-4): la vista de aprobación muestra
+                    # el badge aprobado/rechazado de CADA fila `videos`, no del guion.
+                    "publish_approval_status": getattr(v, "publish_approval_status", "pending"),
                 }
             )
 

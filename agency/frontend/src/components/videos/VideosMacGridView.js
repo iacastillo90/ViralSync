@@ -36,6 +36,21 @@ export function VideosMacGridView({
         const productName = vid.product_name || vid.service_name || vid.category || "Producto de Campaña";
         const isService = Boolean(vid.service_name || vid.is_service);
         const isApproved = vid.status === "approved" || vid.approved;
+        // Insignia de variante (FASE-4): distingue la fila `videos` elegida por provider.
+        const variantLabel =
+          vid.source === "json2video"
+            ? "☁️ Json2Video"
+            : vid.source === "local"
+            ? "🎬 Local"
+            : vid.video_url
+            ? "🎬 Local"
+            : "⏳ Sin render";
+        const variantCls =
+          vid.source === "json2video"
+            ? "bg-indigo-950/60 text-indigo-300 border-indigo-500/30"
+            : vid.source === "local"
+            ? "bg-emerald-950/60 text-emerald-300 border-emerald-500/40"
+            : "bg-slate-950/60 text-slate-400 border-slate-600/40";
 
         return (
           <div
@@ -116,19 +131,27 @@ export function VideosMacGridView({
                 "{title}"
               </h3>
 
-              <div className="flex items-center justify-between pt-1">
-                <span
-                  className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
-                    isService
-                      ? "bg-amber-950/60 text-amber-300 border-amber-500/30"
-                      : "bg-indigo-950/60 text-indigo-300 border-indigo-500/30"
-                  }`}
-                >
-                  {isService ? <Wrench className="w-3 h-3 text-amber-400" /> : <Package className="w-3 h-3 text-indigo-400" />}
-                  <span>{productName}</span>
-                </span>
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                  <span
+                    className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                      isService
+                        ? "bg-amber-950/60 text-amber-300 border-amber-500/30"
+                        : "bg-indigo-950/60 text-indigo-300 border-indigo-500/30"
+                    }`}
+                  >
+                    {isService ? <Wrench className="w-3 h-3 text-amber-400" /> : <Package className="w-3 h-3 text-indigo-400" />}
+                    <span>{productName}</span>
+                  </span>
 
-                <span className="text-[10px] font-mono text-slate-500">
+                  <span
+                    className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded border shrink-0 ${variantCls}`}
+                  >
+                    {variantLabel}
+                  </span>
+                </div>
+
+                <span className="text-[10px] font-mono text-slate-500 shrink-0">
                   {vid.duration || 30}s
                 </span>
               </div>

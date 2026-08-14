@@ -120,6 +120,7 @@ export function PublishApprovalView({ tenantId }) {
         video_url: rv.video_url,
         edited_video_uri: rv.video_url,
         source: rv.provider === "local" ? "local" : "json2video",
+        status: rv.publish_approval_status || "pending",
         has_rendered_video: true,
       }));
     });
@@ -277,14 +278,19 @@ export function PublishApprovalView({ tenantId }) {
     setIsProcessing(true);
     addLog(`Publicación de video ${vid.id} ${approved ? "APROBADA" : "RECHAZADA"}`);
     try {
+      // FASE-3/4: la decisión se marca sobre la VARIANTE elegida (`video_id` = id real
+      // de la fila `videos`). Solo los items "script" pendientes de render (sin
+      // has_rendered_video) usan `script_id` legacy, porque no tienen fila `videos`
+      // y el backend responde 404 ante un video_id inexistente.
       await fetchWithTenant(
         `/tenants/${tenantId}/publish/approve`,
         {
           method: "POST",
-          body: JSON.stringify({
-            script_id: vid.id,
-            status: approved ? "approved" : "rejected",
-          }),
+          body: JSON.stringify(
+            vid.has_rendered_video
+              ? { video_id: vid.id, status: approved ? "approved" : "rejected" }
+              : { script_id: vid.id, status: approved ? "approved" : "rejected" }
+          ),
         },
         tenantId
       );
@@ -313,9 +319,17 @@ export function PublishApprovalView({ tenantId }) {
     setIsProcessing(true);
     try {
       for (const id of selectedIds) {
+        // Los selectedIds son vid.id: para items con render es el id REAL de la fila
+        // `videos` (la variante elegida, FASE-3); para items "script" sin render es el
+        // id del guion y se manda `script_id` legacy (video_id inexistente → 404).
+        const item = localVideos.find((v) => v.id === id);
+        const body =
+          item && item.has_rendered_video
+            ? { video_id: id, status: "approved" }
+            : { script_id: id, status: "approved" };
         await fetchWithTenant(
           `/tenants/${tenantId}/publish/approve`,
-          { method: "POST", body: JSON.stringify({ script_id: id, status: "approved" }) },
+          { method: "POST", body: JSON.stringify(body) },
           tenantId
         );
       }
@@ -337,9 +351,14 @@ export function PublishApprovalView({ tenantId }) {
     setIsProcessing(true);
     try {
       for (const id of selectedIds) {
+        const item = localVideos.find((v) => v.id === id);
+        const body =
+          item && item.has_rendered_video
+            ? { video_id: id, status: "rejected" }
+            : { script_id: id, status: "rejected" };
         await fetchWithTenant(
           `/tenants/${tenantId}/publish/approve`,
-          { method: "POST", body: JSON.stringify({ script_id: id, status: "rejected" }) },
+          { method: "POST", body: JSON.stringify(body) },
           tenantId
         );
       }
