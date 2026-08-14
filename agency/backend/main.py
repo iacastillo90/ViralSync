@@ -35,6 +35,7 @@ from backend.routers.brain import router as brain_router
 from backend.routers.calendar import router as calendar_router
 from backend.routers.dashboard import router as dashboard_router
 from backend.routers.templates import router as templates_router
+from backend.routers.rag import router as rag_router
 from backend.db.checkpointer import is_force_sqlite, setup_postgres_checkpointer, close_postgres_checkpointer
 
 setup_logging()
@@ -106,6 +107,7 @@ app.include_router(scripts_router, dependencies=_TENANT_GUARD)
 app.include_router(brain_router, dependencies=_TENANT_GUARD)
 app.include_router(calendar_router, dependencies=_TENANT_GUARD)
 app.include_router(dashboard_router, dependencies=_TENANT_GUARD)
+app.include_router(rag_router, dependencies=_TENANT_GUARD)
 app.include_router(templates_router)
 
 INSTAGRAM_APP_SECRET = os.getenv("INSTAGRAM_APP_SECRET", "secreto_meta_app_dev")

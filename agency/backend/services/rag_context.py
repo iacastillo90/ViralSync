@@ -16,7 +16,8 @@ from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
+_raw_qdrant = os.getenv("QDRANT_URL", "http://qdrant:6333")
+QDRANT_URL = _raw_qdrant if _raw_qdrant.startswith("http://") or _raw_qdrant.startswith("https://") else f"http://{_raw_qdrant}"
 COLLECTION_NAME = "marketing_brain"
 VECTOR_DIM = 384
 

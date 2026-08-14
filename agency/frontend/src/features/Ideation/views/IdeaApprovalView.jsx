@@ -8,6 +8,7 @@ import { IdeationHeaderBar } from "@/components/ideation/IdeationHeaderBar";
 import { IdeationMacGridView } from "@/components/ideation/IdeationMacGridView";
 import { IdeationMacListView } from "@/components/ideation/IdeationMacListView";
 import { EditIdeaModal } from "@/components/ideation/EditIdeaModal";
+import { HooksLibraryPanel } from "@/components/ideation/HooksLibraryPanel";
 import { Sparkles, Loader2, FolderOpen, ArrowLeft, Folder, Calendar, Wrench, Package } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -356,6 +357,12 @@ export function IdeaApprovalView({ tenantId }) {
         onToggleSelectAll={handleToggleSelectAll}
         onBulkDelete={handleBulkDelete}
         onBulkDownload={handleBulkDownload}
+      />
+
+      {/* 1.5. Biblioteca RAG de Ganchos Ganadores (Memoria Qdrant 384-dim) */}
+      <HooksLibraryPanel
+        tenantId={tenantId}
+        niche={selectedCategory !== "all" ? selectedCategory : "General"}
       />
 
       {/* 2. NIVEL 1: Si no se ha ingresado a ninguna carpeta, mostrar la cuadrícula de Carpetas */}
