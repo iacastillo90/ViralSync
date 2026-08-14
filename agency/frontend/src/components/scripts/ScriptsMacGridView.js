@@ -223,8 +223,8 @@ export function ScriptsMacGridView({
             </div>
 
             {/* Pie de la Tarjeta Mac: Acciones Rápidas */}
-            <div className="pt-3 border-t border-slate-800/60 flex items-center justify-between gap-1">
-              <div className="flex items-center gap-1">
+            <div className="mt-4 pt-4 border-t border-slate-800/60 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => onEdit(script)}
                   title="Editar guion y recalcular tiempo"
@@ -249,7 +249,7 @@ export function ScriptsMacGridView({
               </div>
 
               {/* Botones de Acción Principal: Prompts IA, Traducir & Renderizar Video */}
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 {onViewPrompts && (
                   <button
                     onClick={() => onViewPrompts(script)}

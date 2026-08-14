@@ -58,7 +58,25 @@ async def run_video_prompt_crew(
         )
 
         system_prompt = (
-            "You are an expert AI Video Prompt Engineer and Director of Photography for vertical 9:16 short-form content. "
+            "You are an award-winning Director of Photography and AI Video Prompt Engineer for vertical 9:16 short-form "
+            "content (Instagram Reels / TikTok / YouTube Shorts). Your prompts must read like a professional film set "
+            "briefing, not a hobbyist description. "
+            "For every scene you MUST specify, in the visual_prompt, the following craft layers, adapting them to the scene:\n"
+            "1. LENS & OPTICS: concrete focal length (e.g. 24mm, 35mm, 50mm, 85mm, 100mm macro) and aperture (e.g. f/1.4, "
+            "f/2.8) with the resulting look (shallow depth of field, creamy bokeh, anamorphic flaring, distortion).\n"
+            "2. CAMERA & MOTION: exact move (e.g. slow dolly-in, gimbal tracking, crane rise, whip pan, orbital rotation, "
+            "rack focus pull, handheld micro-jitter for energy) and frame rate feel (24fps cinematic or 30fps punchy).\n"
+            "3. LIGHTING & MOOD: motivated light design (e.g. Rembrandt key with softbox, golden hour backlight, practical "
+            "neon rim light, high-key product beauty, dramatic chiaroscuro, volumetric haze).\n"
+            "4. COMPOSITION & BLOCKING: framing rule (rule of thirds, centered symmetry, leading lines, negative space), "
+            "camera height, subject placement and depth staging (foreground/midground/background).\n"
+            "5. COLOR & GRADE: palette and finish (teal-and-orange, warm skin-tone falloff, muted loyal-to-brand colors, "
+            "film emulation with halation and subtle grain, high contrast punch).\n"
+            "6. PRODUCTION QUALITY: photorealistic, 4K/8K detail, clean motion, consistent subject identity across scenes, "
+            "no warping, no morphing artifacts.\n"
+            "Also include the model-friendly cues in English (camera_shot and visual_prompt), and the subject/scene rhythm "
+            "so the 5-second shots cut together as one coherent edit (same product, consistent brand colors, continuous "
+            "action across scenes).\n"
             f"Generate exactly {num_scenes} sequential 5-second scene prompts in English for a {duration}-second short video. "
             "CRITICAL: The 'audio_text' field MUST ALWAYS REMAIN EXACTLY IN SPANISH (Español Latino) from the input script. "
             "DO NOT translate 'audio_text' to English! ONLY 'visual_prompt' and 'camera_shot' should be in English. "
@@ -71,16 +89,24 @@ async def run_video_prompt_crew(
             f"Idea: {idea_title}\n"
             f"Product Image URL: {product_image_url or 'None'}\n"
             f"Full Script (Spanish): {full_script_text}\n\n"
-            f"Return a JSON array of exactly {num_scenes} objects:\n"
+            "Direct the 5-second scenes so they read as ONE professionally produced vertical spot: consistent product, "
+            "consistent color palette, continuous motion/blocking across scene boundaries (180-degree rule respected, "
+            "no disorienting jumps).\n\n"
+            "Use the following craft template as reference quality, adapting lens/mood/grade to each block:\n"
+            "  visual_prompt: \"85mm f/1.8, shallow depth of field with creamy bokeh, slow dolly-in push on the subject, "
+            "Rembrandt key lighting with softbox plus warm practical rim light, rule-of-thirds composition, subject staged "
+            "mid-frame with foreground haze, teal-and-orange film grade with subtle halation and gentle grain, photorealistic, "
+            "8K detail, consistent skin textures, 24fps cinematic motion, no warping, 5-second clip\"\n\n"
+            "Return a JSON array of exactly " + str(num_scenes) + " objects:\n"
             "[\n"
             "  {\n"
             '    "scene_index": 1,\n'
             '    "timestamp_range": "0s - 5s",\n'
             '    "block_type": "gancho",\n'
             '    "audio_text": "Spanish spoken audio segment for this 5s shot...",\n'
-            '    "camera_shot": "Macro Close-Up / Dynamic Push-In",\n'
+            '    "camera_shot": "85mm Close-Up, f/1.8, slow dolly-in (Rembrandt key)",\n'
             '    "visual_mode": "TEXT_TO_VIDEO",\n'
-            '    "visual_prompt": "Detailed 9:16 vertical cinematic visual prompt in English..."\n'
+            '    "visual_prompt": "Detailed 9:16 vertical cinematic visual prompt in English following the craft template..."\n'
             "  },\n"
             "  ...\n"
             "]"
@@ -119,12 +145,12 @@ async def run_video_prompt_crew(
         ]
 
         shots = [
-            "Macro Close-Up / Dynamic Push-In",
-            "Medium Shot / Smooth Panning",
-            "Over-The-Shoulder / Focus Pull",
-            "Low Angle Dynamic Tracking",
-            "Cinematic Product Orbit",
-            "Center Framed / Slow Zoom-Out",
+            "85mm f/1.8 Close-Up, shallow depth of field, slow dolly-in push, Rembrandt key with softbox",
+            "35mm f/2.8 Medium Shot, smooth gimbal pan, golden-hour backlight rim, leading lines",
+            "50mm f/1.4 Over-Shoulder, rack focus pull, neutral practical light, layered depth",
+            "24mm f/2.8 Low-Angle Dynamic Tracking, dramatic upward tilt, strong foreground parallax",
+            "100mm macro Product Orbit, ring-light beauty sweep, crisp textures, seamless rotation",
+            "40mm f/2 Center Framed, slow zoom-out reveal, soft volumetric haze, high-key product glow",
         ]
 
         for i in range(num_scenes):
@@ -140,7 +166,13 @@ async def run_video_prompt_crew(
                 "camera_shot": c_shot,
                 "image_url": product_image_url if product_image_url else None,
                 "visual_mode": "TEXT_TO_VIDEO",
-                "visual_prompt": f"9:16 vertical cinematic shot, 8K resolution, 4k detail. Professional scene showing {a_txt[:40]}, {c_shot}, 5-second clip",
+                "visual_prompt": (
+                    f"9:16 vertical cinematic production shot, {c_shot}. "
+                    f"Motivated lighting with key/rim separation, rule-of-thirds composition, "
+                    "clean color grade with film emulation (subtle grain and halation), "
+                    "photorealistic 8K detail, consistent subject identity, 24fps cinematic motion, "
+                    f"5-second clip showing: {a_txt[:40]}"
+                ),
             })
 
     logger.info(f"Storyboard generado exitosamente con {len(storyboard)} escenas.")
