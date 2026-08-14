@@ -13,6 +13,8 @@ import {
   Brain,
   Film,
   ShieldCheck,
+  Building2,
+  LayoutDashboard,
 } from "lucide-react";
 
 export function Sidebar({ tenantId }) {
@@ -26,6 +28,11 @@ export function Sidebar({ tenantId }) {
       : activeTenant?.id || storeTenantId || "nuevo";
 
   const navItems = [
+    {
+      label: "Dashboard General",
+      icon: LayoutDashboard,
+      href: effectiveTenantId === "nuevo" ? "/tenants/nuevo" : `/tenants/${effectiveTenantId}`,
+    },
     {
       label: "Pipeline Monitor",
       icon: Layers,
@@ -66,6 +73,7 @@ export function Sidebar({ tenantId }) {
       icon: Film,
       href: effectiveTenantId === "nuevo" ? "/tenants/nuevo" : `/tenants/${effectiveTenantId}/media`,
     },
+    { label: "Clientes Multi-Tenant", icon: Building2, href: "/admin/tenants" },
     { label: "Admin Sistema", icon: ShieldCheck, href: "/admin/sistema" },
   ];
 
