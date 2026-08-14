@@ -65,13 +65,19 @@ class PerformanceAnalyticsAgent:
             "rag_feedback_status": rag_feedback_status,
         }
 
-    def feed_winning_pattern_to_qdrant(self, tenant_id: str, pattern_text: str, viral_score: float) -> str:
+    def feed_winning_pattern_to_qdrant(self, tenant_id: str, pattern_text: str, viral_score: float, niche: str = "") -> str:
         """
         Indexa una estructura de guion exitosa en la colección `marketing_brain` de Qdrant.
         """
         try:
-            logger.info(f"[{tenant_id}] Retroalimentando Qdrant con patrón ganador (Score: {viral_score}): '{pattern_text[:60]}...'")
-            return "SUCCESS_RAG_INDEXED"
+            from backend.services.rag_context import index_winning_pattern
+            success = index_winning_pattern(
+                tenant_id=tenant_id,
+                pattern_text=pattern_text,
+                viral_score=viral_score,
+                niche=niche,
+            )
+            return "SUCCESS_RAG_INDEXED" if success else "ERROR_RAG_INDEXING"
         except Exception as exc:
             logger.error(f"[{tenant_id}] Error indexando patrón ganador en Qdrant: {exc}")
             return "ERROR_RAG_INDEXING"

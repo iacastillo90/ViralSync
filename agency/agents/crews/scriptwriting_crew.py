@@ -50,8 +50,6 @@ async def run_scriptwriting_crew(
 
     # 3. Generación asistida por LLM (router compartido, proxy-first)
     try:
-        # Contexto dinámico del nicho (D7): umbral RUM de Redis (CVD-03) y
-        # tendencias sanitizadas de la caché (CVD-04). Ambos no-fatal.
         rum_threshold = resolve_rum_threshold(niche)
         trend_section = build_trend_section(niche)
         trend_line = (
@@ -76,6 +74,18 @@ async def run_scriptwriting_crew(
             60: "EXACTAMENTE 140 palabras en total (ritmo completo y detallado 60 segundos)",
         }.get(target_duration, "EXACTAMENTE 70 palabras en total (30 segundos)")
 
+        # Contexto RAG de patrones virales aprendidos en Qdrant
+        rag_pattern_lines = ""
+        try:
+            from backend.services.rag_context import get_winning_patterns
+            winning_patterns = get_winning_patterns(niche=niche, query=idea_title, limit=3)
+            if winning_patterns:
+                p_text = "\n".join([f"- Patrón (Score {p.get('viral_score', 0.8):.2f}): \"{p.get('pattern_text', '')}\"" for p in winning_patterns if p.get('pattern_text')])
+                if p_text:
+                    rag_pattern_lines = f"Patrones Virales Ganadores del Nicho (Qdrant RAG Memory):\n{p_text}\nUtiliza estos patrones como referencia para elevar la viralidad del gancho.\n"
+        except Exception as rag_err:
+            logger.warning(f"No se pudo obtener contexto RAG de Qdrant: {rag_err}")
+
         user_prompt = (
             f"Título de la idea: {idea_title}\n"
             f"Gancho inicial sugerido: {gancho_base}\n"
@@ -84,6 +94,7 @@ async def run_scriptwriting_crew(
             f"Promesa Principal de Producto (PPP): {niche_ppp}\n"
             f"Target RUM threshold ({niche}): {rum_threshold:.2f}\n"
             f"{trend_line}"
+            f"{rag_pattern_lines}"
             "Devuelve un objeto JSON con la siguiente estructura exacta:\n"
             "{\n"
             '  "gancho_0_5s": "Frase de gancho inicial (0-5s)",\n'
