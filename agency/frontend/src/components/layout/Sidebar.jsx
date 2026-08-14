@@ -42,14 +42,19 @@ export function Sidebar({ tenantId }) {
       href: effectiveTenantId === "nuevo" ? "/tenants/nuevo" : `/tenants/${effectiveTenantId}/guiones`,
     },
     {
-      label: "Leads Inbound",
+      label: "Calendario Editorial",
+      icon: Layers,
+      href: "/calendario",
+    },
+    {
+      label: "Leads CRM & Bot DMs",
       icon: MessageSquare,
       href: effectiveTenantId === "nuevo" ? "/tenants/nuevo" : `/tenants/${effectiveTenantId}/leads`,
     },
     {
-      label: "Métricas 72h",
+      label: "Analítica IA 360",
       icon: BarChart3,
-      href: effectiveTenantId === "nuevo" ? "/tenants/nuevo" : `/tenants/${effectiveTenantId}/metricas`,
+      href: "/analytics",
     },
     {
       label: "Cerebro RAG",

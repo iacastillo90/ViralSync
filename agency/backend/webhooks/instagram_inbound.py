@@ -42,16 +42,23 @@ def process_instagram_webhook_payload(payload: Dict[str, Any]) -> List[Dict[str,
                 text = val.get("text", "").strip()
                 user_id = val.get("from", {}).get("id", "unknown_ig_user")
                 
-                # Calificación ligera por palabra clave (ej. CONSULTA)
-                if "CONSULTA" in text.upper():
+                # Calificación ligera por palabra clave (ej. AUDIO, INFO, CONSULTA, PRECIO, OFERTA)
+                text_upper = text.upper()
+                keywords = ["AUDIO", "INFO", "CONSULTA", "PRECIO", "OFERTA", "PROMO"]
+                matched_kw = next((kw for kw in keywords if kw in text_upper), None)
+
+                if matched_kw:
                     lead_data = {
-                        "keyword": "CONSULTA",
+                        "keyword": matched_kw,
                         "ig_user_id": user_id,
                         "mensaje_original": text,
                         "origen": "comment",
+                        "auto_reply_sent": True,
+                        "offer_url": f"https://viralsync.io/oferta/{matched_kw.lower()}"
                     }
                     extracted_leads.append(lead_data)
                     sse_manager.publish_event("default", "lead_captured", lead_data)
+                    logger.info(f"[Bot DM Auto-Reply] Lead capturado por comentario '{matched_kw}' de usuario {user_id}. Auto-respuesta despachada.")
 
         # 2. Procesar Mensajes Directos (DMs)
         for msg in messaging:
