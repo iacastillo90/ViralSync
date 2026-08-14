@@ -71,6 +71,7 @@ export function VideosMacListView({
               const productName = vid.product_name || vid.service_name || vid.category || "Producto de Campaña";
               const isService = Boolean(vid.service_name || vid.is_service);
               const isApproved = vid.status === "approved" || vid.approved;
+              const isRejected = vid.status === "rejected";
               // Insignia de variante (FASE-4): distingue la fila `videos` elegida por provider.
               const variantLabel =
                 vid.source === "json2video"
@@ -152,10 +153,12 @@ export function VideosMacListView({
                       className={`px-2 py-0.5 rounded border text-[10px] font-mono font-bold ${
                         isApproved
                           ? "bg-emerald-950/80 text-emerald-300 border-emerald-500/40"
+                          : isRejected
+                          ? "bg-rose-950/80 text-rose-300 border-rose-500/40"
                           : "bg-amber-950/80 text-amber-300 border-amber-500/40"
                       }`}
                     >
-                      {isApproved ? "✓ Aprobado" : "⏳ Pendiente"}
+                      {isApproved ? "✓ Aprobado" : isRejected ? "✗ Rechazado" : "⏳ Pendiente"}
                     </span>
                   </td>
 
