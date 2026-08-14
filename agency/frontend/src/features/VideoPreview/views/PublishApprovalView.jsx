@@ -78,8 +78,9 @@ export function PublishApprovalView({ tenantId }) {
 
   // Mapear guiones/videos locales y videos de json2video en la misma coleccion
   const localVideos = useMemo(() => {
-    // 1. Mapear guiones
-    const scriptList = rawScripts.map((s) => {
+    // 1. Mapear guiones: cada video persistido en `rendered_videos` se convierte en un item aprobable.
+    //    Un guion sin renders queda como item "script" pendiente de renderizado.
+    const scriptList = rawScripts.flatMap((s) => {
       let pName = s.product_name || s.service_name || s.category;
       let isService = Boolean(s.service_name || s.is_service);
 
@@ -91,24 +92,55 @@ export function PublishApprovalView({ tenantId }) {
         }
       }
 
-      return {
+      const renderedVideos = Array.isArray(s.rendered_videos) ? s.rendered_videos : [];
+      if (renderedVideos.length === 0) {
+        return [
+          {
+            ...s,
+            product_name: pName || "Producto de Campaña",
+            is_service: isService,
+            title: s.title || s.gancho_0_5s || "Reel 9:16 Renderizado",
+            source: "script",
+          },
+        ];
+      }
+
+      // Un item por video renderizado (json2video del CDN o local de MinIO)
+      return renderedVideos.map((rv, idx) => ({
         ...s,
+        id: rv.id || s.id,
+        script_id: s.id,
         product_name: pName || "Producto de Campaña",
         is_service: isService,
-        title: s.title || s.gancho_0_5s || "Reel 9:16 Renderizado",
-        source: s.video_url || s.edited_video_uri ? "json2video" : "script",
-      };
+        title:
+          renderedVideos.length > 1
+            ? `${s.title || s.gancho_0_5s || "Reel 9:16 Renderizado"} (${idx + 1})`
+            : s.title || s.gancho_0_5s || "Reel 9:16 Renderizado",
+        created_at: rv.created_at || s.created_at,
+        video_url: rv.video_url,
+        edited_video_uri: rv.video_url,
+        source: rv.provider === "local" ? "local" : "json2video",
+        has_rendered_video: true,
+      }));
     });
 
-    // 2. Mapear videos de json2video guardados en MinIO/Media
+    // 2. Mapear videos de json2video guardados en MinIO/Media (fallback:
+    //    solo si el guion no expuso el video via `rendered_videos`).
     const mediaVideos = [];
     rawMedia.forEach((m) => {
       if (m.type === "video" || (m.filename && m.filename.match(/\.(mp4|mov|webm)$/i))) {
-        const matchedScript = scriptList.find((s) => m.filename.includes(s.id) || m.id.includes(s.id));
+        const matchedScript = scriptList.find(
+          (s) =>
+            m.filename.includes(s.id) ||
+            m.filename.includes(s.script_id) ||
+            m.id.includes(s.id)
+        );
         if (matchedScript) {
-          matchedScript.video_url = m.url || matchedScript.video_url;
-          matchedScript.edited_video_uri = m.url || matchedScript.edited_video_uri;
-          matchedScript.has_rendered_video = true;
+          if (!matchedScript.video_url) {
+            matchedScript.video_url = m.url || matchedScript.video_url;
+            matchedScript.edited_video_uri = m.url || matchedScript.edited_video_uri;
+            matchedScript.has_rendered_video = true;
+          }
         } else {
           const prod = products[0];
           const pName = m.product_name || (prod ? prod.name : "Producto de Campaña");
