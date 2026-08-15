@@ -251,6 +251,50 @@ def test_webhook_endpoint_enqueues_worker_and_returns_200():
     _run(_test())
 
 
+def test_webhook_endpoint_returns_500_on_sync_failure_not_ack():
+    """RESILIENCE-001: ante fallo síncrono el endpoint NO responde 200 queued_dlq;
+    responde 500 para que Meta reintente (redelivery) y el lead no se pierda."""
+    from httpx import AsyncClient, ASGITransport
+    from backend.main import app
+
+    tenant_c = str(uuid.uuid4())
+    payload = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "entry_fail",
+                "changes": [
+                    {
+                        "field": "comments",
+                        "value": {
+                            "id": "comment_fail",
+                            "text": "Quiero AUDIO",
+                            "media": {"owner": {"id": "acct_fail"}},
+                            "from": {"id": "user_ig_fail"},
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+
+    async def _test():
+        await init_db()
+        with patch(
+            "backend.webhooks.instagram_inbound._resolve_tenant_from_payload",
+            side_effect=RuntimeError("db down"),
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as ac:
+                response = await ac.post("/webhooks/instagram", json=payload)
+        assert response.status_code == 500
+        data = response.json()
+        assert "Error en procesamiento síncrono" in data["detail"]
+
+    _run(_test())
+
+
 class _FakeRedisClient:
     """Cliente Redis fake que registra los LPUSH para verificar el DLQ sin infra real."""
 
