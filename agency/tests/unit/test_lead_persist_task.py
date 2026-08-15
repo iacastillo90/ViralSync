@@ -1,19 +1,21 @@
 """
 test_lead_persist_task.py
 
-Pruebas TDD para el worker async de persistencia de leads de Instagram (S1a — DM Leads CRM).
-Cubre REQ-DM-LEAD-01 (tenant resuelto), REQ-DM-LEAD-05 (idempotencia por hash) y el scoring
-determinista (qualification_score + status). La clasificación vía dm_graph,
-conversacion_history y el test de envío gateado se agregan en S1b.
+Pruebas TDD para el worker async de persistencia de leads de Instagram (S1 — DM Leads CRM).
+Cubre REQ-DM-LEAD-01 (tenant resuelto), REQ-DM-LEAD-04 (clasificación en conversacion_history),
+REQ-DM-LEAD-05 (idempotencia por hash) y REQ-DM-LEAD-06 (envío gateado: sin Graph API ni
+pending_manual). El core async se testea directamente (patrón asyncio.run de la suite).
 
 Aislamiento: el SQLite :memory: (StaticPool) persiste entre tests del mismo proceso, así que
-cada test usa tenant + ig_user_id únicos.
+cada test usa tenant + ig_user_id únicos. El LLM se parchea a "offline" en los tests que corren
+el grafo: ese es exactamente el escenario de fallback del diseño (Qdrant/LLM caídos), y evita
+llamadas de red reales con las keys del .env.
 """
 
 import asyncio
 import json
 import uuid
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 from sqlalchemy import select, func
 
@@ -28,6 +30,13 @@ _COMMENT_AUDIO = {
     "mensaje_original": "¡Me encanta este micrófono! Quiero comprar el sistema con AUDIO por favor",
     "origen": "comment",
     "keyword": "AUDIO",
+}
+
+_QUESTION_MSG = {
+    "ig_user_id": "user_q1",
+    "mensaje_original": "¿cómo funciona el servicio?",
+    "origen": "comment",
+    "keyword": "CONSULTA",
 }
 
 
@@ -57,9 +66,10 @@ async def _persist_fresh(tenant_id: str, lead_data: dict) -> dict:
     return await persist_lead_core(tenant_id, dict(lead_data))
 
 
-def test_lead_persisted_with_resolved_tenant():
+@patch("agents.llm.acomplete", side_effect=RuntimeError("LLM offline"))
+def test_lead_persisted_with_resolved_tenant(_mock_llm):
     """REQ-DM-LEAD-01: el lead persiste con el tenant resuelto (no 'default'),
-    platform=instagram, status=Calificado y qualification_score>=60 (scoring S1a)."""
+    platform=instagram, status=Calificado y qualification_score>=60."""
     tenant_id = str(uuid.uuid4())
     lead_data = {**_COMMENT_AUDIO, "ig_user_id": "user_ig_777"}
 
@@ -85,7 +95,8 @@ def test_lead_persisted_with_resolved_tenant():
     _run(_assert())
 
 
-def test_repeated_webhook_does_not_duplicate():
+@patch("agents.llm.acomplete", side_effect=RuntimeError("LLM offline"))
+def test_repeated_webhook_does_not_duplicate(_mock_llm):
     """REQ-DM-LEAD-05: mismo (user, message) -> el segundo webhook no inserta fila."""
     tenant_id = str(uuid.uuid4())
     lead_data = {**_COMMENT_AUDIO, "ig_user_id": "user_ig_dup_01"}
@@ -115,6 +126,141 @@ def test_repeated_webhook_does_not_duplicate():
     _run(_test())
 
 
+@patch("agents.llm.acomplete", side_effect=RuntimeError("LLM offline"))
+def test_classification_persisted_in_conversacion_history(_mock_llm):
+    """REQ-DM-LEAD-04: la clasificación del dm_graph queda en conversacion_history."""
+    tenant_id = str(uuid.uuid4())
+    lead_data = {**_COMMENT_AUDIO, "ig_user_id": "user_ig_cls_02"}
+
+    result = _run(_persist_fresh(tenant_id, lead_data))
+    assert result["status"] == "created"
+    assert result["intent"] == "purchase_intent"
+
+    async def _assert():
+        async with AsyncSessionLocal() as session:
+            lead = (
+                await session.execute(
+                    select(Lead).where(Lead.ig_user_id == "user_ig_cls_02")
+                )
+            ).scalars().one()
+            history = json.loads(lead.conversacion_history)
+            assert isinstance(history, list) and len(history) >= 1
+            assert history[0]["intent"] == "purchase_intent"
+            assert "confidence" in history[0]
+
+    _run(_assert())
+
+
+@patch("agents.dm_graph.build_dm_graph", side_effect=RuntimeError("graph roto"))
+def test_dm_graph_failure_falls_back_and_keeps_persistence(_mock_graph):
+    """REQ-DM-LEAD-04: si el dm_graph falla, se usa classify_intent y la persistencia NO se rompe."""
+    tenant_id = str(uuid.uuid4())
+    lead_data = {**_COMMENT_AUDIO, "ig_user_id": "user_ig_fbk_03"}
+
+    result = _run(_persist_fresh(tenant_id, lead_data))
+    assert result["status"] == "created"
+
+    async def _assert():
+        async with AsyncSessionLocal() as session:
+            lead = (
+                await session.execute(
+                    select(Lead).where(Lead.ig_user_id == "user_ig_fbk_03")
+                )
+            ).scalars().one()
+            history = json.loads(lead.conversacion_history)
+            assert history[0]["intent"] == "purchase_intent"
+
+    _run(_assert())
+
+
+@patch("agents.llm.acomplete", side_effect=RuntimeError("LLM offline"))
+def test_no_dm_send_side_effects(_mock_llm):
+    """REQ-DM-LEAD-06: el flujo S1 no produce envío simulado ni pending_manual.
+    Para intent 'question' el grafo ruta al send node: se ejecuta (solo log + SSE,
+    sin llamada Graph API) y el resultado no contiene estado simulado de envío."""
+    from agents.dm_graph import node_send_dm_reply
+
+    tenant_id = str(uuid.uuid4())
+    lead_data = {**_QUESTION_MSG, "ig_user_id": "user_q1"}
+
+    async def _test():
+        await init_db()
+        async with AsyncSessionLocal() as session:
+            await _seed_tenant(session, tenant_id)
+
+        # Envuelve el send node real (log + SSE) para registrar su invocación sin
+        # alterar su comportamiento: probar el wiring sin side-effects externos.
+        send_node = AsyncMock(wraps=node_send_dm_reply)
+        with patch("agents.dm_graph.node_send_dm_reply", new=send_node):
+            result = await persist_lead_core(tenant_id, lead_data)
+        assert result["status"] == "created"
+        assert send_node.await_count == 1
+        assert "pending_manual" not in json.dumps(result)
+
+        async with AsyncSessionLocal() as session:
+            lead = (
+                await session.execute(select(Lead).where(Lead.ig_user_id == "user_q1"))
+            ).scalars().one()
+            assert "pending_manual" not in (lead.conversacion_history or "")
+
+    _run(_test())
+
+
+class _FakeRedisClient:
+    """Cliente Redis fake que registra los LPUSH para verificar el DLQ sin infra real."""
+
+    def __init__(self):
+        self.lpushed = []
+
+    def lpush(self, key: str, value: str) -> int:
+        self.lpushed.append((key, value))
+        return 1
+
+
+def test_terminal_failure_writes_payload_to_dlq():
+    """RESILIENCE-001: al agotar retries, el payload fallido se escribe en Redis (lead_persist:dlq).
+
+    Simula un fallo de DB (persist_lead_core levanta) con retries agotados
+    (push_request con retries == max_retries) y verifica que el payload con
+    tenant_id, lead_data, error, ts y attempts llegue al sink durable.
+    """
+    import redis as redis_module
+    from workers.lead_persist_task import persist_instagram_lead
+
+    fake_redis = _FakeRedisClient()
+    tenant_id = str(uuid.uuid4())
+    lead_data = {**_COMMENT_AUDIO, "ig_user_id": "user_ig_dlq"}
+
+    persist_instagram_lead.push_request(
+        id="task-dlq-1", args=(tenant_id, lead_data), retries=2
+    )
+    try:
+        with patch.object(
+            redis_module.Redis, "from_url", return_value=fake_redis
+        ), patch(
+            "workers.lead_persist_task.persist_lead_core",
+            side_effect=RuntimeError("db down"),
+        ):
+            result = persist_instagram_lead.run(tenant_id, lead_data)
+    finally:
+        persist_instagram_lead.pop_request()
+
+    # El fallo terminal sigue reportando "failed" honestamente...
+    assert result["status"] == "failed"
+    assert result["error"] == "db down"
+
+    # ...pero el payload ya NO se pierde: queda en el sink durable bajo lead_persist:dlq.
+    assert len(fake_redis.lpushed) == 1
+    key, raw = fake_redis.lpushed[0]
+    assert key == "lead_persist:dlq"
+    payload = json.loads(raw)
+    assert payload["tenant_id"] == tenant_id
+    assert payload["lead_data"] == lead_data
+    assert payload["error"] == "db down"
+    assert payload["attempts"] == 3  # 1 intento inicial + 2 retries (max_retries=2)
+    assert isinstance(payload["ts"], str) and payload["ts"]
+
+
 def test_lead_persist_task_registered_and_core_reachable():
     """Contrato Celery: la task pública existe y delega en el core (mismo nombre de ruta)."""
     from workers.lead_persist_task import persist_instagram_lead
@@ -123,7 +269,8 @@ def test_lead_persist_task_registered_and_core_reachable():
     assert callable(persist_instagram_lead.run)
 
 
-def test_webhook_payload_resolves_tenant_and_persists():
+@patch("agents.llm.acomplete", side_effect=RuntimeError("LLM offline"))
+def test_webhook_payload_resolves_tenant_and_persists(_mock_llm):
     """T-S1-06: payload con media.owner.id -> tenant_b (no 'default'); el lead persiste con ese tenant."""
     from backend.webhooks.instagram_inbound import (
         process_instagram_webhook_payload,
@@ -196,7 +343,8 @@ def test_webhook_payload_without_account_falls_back_to_default():
     _run(_test())
 
 
-def test_webhook_endpoint_enqueues_worker_and_returns_200():
+@patch("agents.llm.acomplete", side_effect=RuntimeError("LLM offline"))
+def test_webhook_endpoint_enqueues_worker_and_returns_200(_mock_llm):
     """T-S1-07: POST /webhooks/instagram -> 200 inmediato y el worker (eager) persiste
     el lead con el tenant resuelto por cuenta (flujo webhook -> worker completo)."""
     from httpx import AsyncClient, ASGITransport
@@ -293,58 +441,3 @@ def test_webhook_endpoint_returns_500_on_sync_failure_not_ack():
         assert "Error en procesamiento síncrono" in data["detail"]
 
     _run(_test())
-
-
-class _FakeRedisClient:
-    """Cliente Redis fake que registra los LPUSH para verificar el DLQ sin infra real."""
-
-    def __init__(self):
-        self.lpushed = []
-
-    def lpush(self, key: str, value: str) -> int:
-        self.lpushed.append((key, value))
-        return 1
-
-
-def test_terminal_failure_writes_payload_to_dlq():
-    """RESILIENCE-001: al agotar retries, el payload fallido se escribe en Redis (lead_persist:dlq).
-
-    Simula un fallo de DB (persist_lead_core levanta) con retries agotados
-    (push_request con retries == max_retries) y verifica que el payload con
-    tenant_id, lead_data, error, ts y attempts llegue al sink durable.
-    """
-    import redis as redis_module
-    from workers.lead_persist_task import persist_instagram_lead
-
-    fake_redis = _FakeRedisClient()
-    tenant_id = str(uuid.uuid4())
-    lead_data = {**_COMMENT_AUDIO, "ig_user_id": "user_ig_dlq"}
-
-    persist_instagram_lead.push_request(
-        id="task-dlq-1", args=(tenant_id, lead_data), retries=2
-    )
-    try:
-        with patch.object(
-            redis_module.Redis, "from_url", return_value=fake_redis
-        ), patch(
-            "workers.lead_persist_task.persist_lead_core",
-            side_effect=RuntimeError("db down"),
-        ):
-            result = persist_instagram_lead.run(tenant_id, lead_data)
-    finally:
-        persist_instagram_lead.pop_request()
-
-    # El fallo terminal sigue reportando "failed" honestamente...
-    assert result["status"] == "failed"
-    assert result["error"] == "db down"
-
-    # ...pero el payload ya NO se pierde: queda en el sink durable bajo lead_persist:dlq.
-    assert len(fake_redis.lpushed) == 1
-    key, raw = fake_redis.lpushed[0]
-    assert key == "lead_persist:dlq"
-    payload = json.loads(raw)
-    assert payload["tenant_id"] == tenant_id
-    assert payload["lead_data"] == lead_data
-    assert payload["error"] == "db down"
-    assert payload["attempts"] == 3  # 1 intento inicial + 2 retries (max_retries=2)
-    assert isinstance(payload["ts"], str) and payload["ts"]

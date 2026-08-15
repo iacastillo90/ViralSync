@@ -1,14 +1,14 @@
 """
 lead_persist_task.py
 
-Worker Celery async de persistencia de leads de Instagram (S1a — DM Leads CRM).
-REQ-DM-LEAD-01/05: persiste el lead con el tenant resuelto (nunca "default"),
-idempotencia por `dedup_hash` (sha256 de user|mensaje) y scoring determinista
-(`lead_scoring`) con intent por reglas (`classify_intent`).
+Worker Celery async de persistencia de leads de Instagram (S1 — DM Leads CRM).
+REQ-DM-LEAD-01/04/05/06: persiste el lead con el tenant resuelto (nunca "default"),
+idempotencia por `dedup_hash`, scoring determinista (lead_scoring) y clasificación
+best-effort vía `dm_graph` persistida como JSON en `conversacion_history`.
 
-La clasificación vía `dm_graph` y su persistencia en `conversacion_history` se
-agregan en S1b (wiring del grafo). El envío queda GATEADO (decisión usuario P3):
-`node_send_dm_reply` NO se toca — el flujo S1 solo persiste + scorea.
+El envío queda GATEADO (decisión usuario P3): `node_send_dm_reply` NO se toca —
+el flujo S1 solo persiste + scorea + clasifica. Cualquier fallo del grafo, Qdrant o
+LLM degrada a `classify_intent` (reglas) sin romper la persistencia.
 """
 
 import asyncio
@@ -17,7 +17,7 @@ import json
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import select
 
@@ -25,6 +25,7 @@ from workers.celery_app import celery_app, REDIS_URL
 from backend.db.session import AsyncSessionLocal
 from backend.db.models import Lead
 from backend.services.lead_scoring import score_lead
+from agents import dm_graph as dm_graph_module
 from agents.nodes.dm_response import classify_intent
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,46 @@ def _dedup_hash(ig_user_id: str, message: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _read_intent(lead: Lead) -> Optional[str]:
+    """Extrae el intent de la última clasificación persistida (si existe)."""
+    try:
+        history = json.loads(lead.conversacion_history) if lead.conversacion_history else []
+        if isinstance(history, list) and history:
+            return history[-1].get("intent")
+    except (ValueError, TypeError):
+        pass
+    return None
+
+
+async def _run_dm_classification(
+    tenant_id: str, lead_id: str, message: str
+) -> Dict[str, Any]:
+    """Ejecuta el dm_graph con state mínimo y devuelve intent/confidence.
+
+    Best-effort: cualquier fallo (LLM, Qdrant, grafo) degrada a `classify_intent`
+    con confianza de respaldo. Nunca rompe la persistencia del lead.
+    """
+    try:
+        graph = dm_graph_module.build_dm_graph()
+        result = await graph.ainvoke(
+            {
+                "tenant_id": tenant_id,
+                "lead_id": lead_id,
+                "incoming_message": message,
+            }
+        )
+        return {
+            "intent": result.get("intent") or classify_intent(message),
+            "confidence": float(result.get("confidence_score") or 0.0),
+            "reply_text": result.get("reply_text", ""),
+        }
+    except Exception as exc:  # noqa: BLE001 - best-effort: fallback sin romper persistencia
+        logger.warning(
+            "[%s] dm_graph falló (%s); usando classify_intent de respaldo.", tenant_id, exc
+        )
+        return {"intent": classify_intent(message), "confidence": 0.0, "reply_text": ""}
+
+
 def _run_async(coro):
     """Ejecuta un coroutine de forma síncrona (patrón graph_execution_task).
 
@@ -93,7 +134,7 @@ async def persist_lead_core(tenant_id: str, lead_data: Dict[str, Any]) -> Dict[s
 
     :param tenant_id: tenant ya resuelto por el webhook (account -> tenant).
     :param lead_data: {ig_user_id, mensaje_original, origen, keyword}.
-    :return: dict con status created/duplicate y metadata del scoring.
+    :return: dict con status created/duplicate y metadata de la clasificación.
     """
     ig_user_id = str(lead_data.get("ig_user_id") or "")
     message = str(lead_data.get("mensaje_original") or "")
@@ -112,7 +153,11 @@ async def persist_lead_core(tenant_id: str, lead_data: Dict[str, Any]) -> Dict[s
                 "[%s] Webhook duplicado para lead '%s' (hash %s). Retornando existente.",
                 tenant_id, existing.id, dedup[:12],
             )
-            return {"status": "duplicate", "lead_id": str(existing.id)}
+            return {
+                "status": "duplicate",
+                "lead_id": str(existing.id),
+                "intent": _read_intent(existing),
+            }
 
         # 2. INSERT Lead con status inicial 'Nuevo' (el webhook no trae video: video_id NULL).
         lead_id = str(uuid.uuid4())
@@ -132,17 +177,23 @@ async def persist_lead_core(tenant_id: str, lead_data: Dict[str, Any]) -> Dict[s
         session.add(lead)
         await session.commit()
 
-    # 3. Scoring determinista (REQ-DM-LEAD-03): intent por reglas; la clasificación
-    #    del dm_graph y el historial conversacion_history se agregan en S1b.
-    intent = classify_intent(message)
-    score, status = score_lead(message, intent)
+    # 3. Clasificación best-effort vía dm_graph (REQ-DM-LEAD-04) -> intent para el score.
+    classification = await _run_dm_classification(tenant_id, lead_id, message)
+    intent = classification.get("intent") or "unclear"
 
-    # 4. Update con el score y status calificados.
+    # 4. Scoring determinista (REQ-DM-LEAD-03) + update + historial.
+    score, status = score_lead(message, intent)
+    history_entry = {
+        "intent": intent,
+        "confidence": classification.get("confidence", 0.0),
+        "ts": datetime.utcnow().isoformat(),
+    }
     async with AsyncSessionLocal() as session:
         lead = await session.get(Lead, lead_id)
         if lead is not None:
             lead.qualification_score = score
             lead.status = status
+            lead.conversacion_history = json.dumps([history_entry], ensure_ascii=False)
             await session.commit()
 
     logger.info(
