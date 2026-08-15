@@ -24,6 +24,7 @@ import json
 from datetime import datetime
 
 import litellm
+from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
@@ -70,10 +71,20 @@ class AllProvidersFailedError(RuntimeError):
 
 
 def _call_completion(**kwargs):
-    """Single LLM completion call. Seam mocked by unit tests."""
+    """Single LLM completion call. Seam mocked by unit tests.
+
+    Proxy path: cuando el modelo es ``motor-agencia`` (gateway LiteLLM), se usa el
+    cliente OpenAI estándar apuntando al proxy en lugar de ``litellm.completion``.
+    Evita el salto litellm-SDK -> litellm-proxy que truncaba respuestas largas
+    (APIConnectionError/empty content) y degradaba el scoring LLM a reglas puras.
+    """
     call_kwargs = dict(kwargs)
     if call_kwargs.get("model") == "motor-agencia":
-        call_kwargs["model"] = "openai/motor-agencia"
+        api_base = call_kwargs.pop("api_base")
+        api_key = call_kwargs.pop("api_key")
+        model = call_kwargs.pop("model")
+        client = OpenAI(base_url=api_base, api_key=api_key, timeout=120)
+        return client.chat.completions.create(model=model, **call_kwargs)
     return litellm.completion(**call_kwargs)
 
 
