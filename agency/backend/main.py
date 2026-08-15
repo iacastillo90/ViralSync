@@ -8,6 +8,7 @@ Webhooks Meta HMAC y Streaming SSE en Tiempo Real.
 
 import os
 import asyncio
+import logging
 from typing import AsyncGenerator, Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException, Header, Depends
@@ -43,6 +44,8 @@ from backend.routers.voice import router as voice_router
 from backend.db.checkpointer import is_force_sqlite, setup_postgres_checkpointer, close_postgres_checkpointer
 
 setup_logging()
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -213,9 +216,10 @@ async def receive_instagram_webhook(
             "leads": extracted_leads,
         }
     except Exception as exc:
-        from workers.webhook_dlq_task import process_failed_webhook_retry
-        process_failed_webhook_retry.delay(payload=payload, tenant_id="default")
-        return {
-            "status": "queued_dlq",
-            "message": f"Error en procesamiento síncrono ({exc}). Encolado en Celery DLQ.",
-        }
+        # RESILIENCE-001 (S1a2 review): no ackear 200 hacia una DLQ que no persiste.
+        # Al devolver 500, Meta reintenta el webhook (redelivery) y el lead no se pierde.
+        logger.error("Error en procesamiento síncrono del webhook de Instagram: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error en procesamiento síncrono del webhook de Instagram: {exc}",
+        )
