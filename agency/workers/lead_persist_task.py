@@ -82,6 +82,23 @@ def _read_intent(lead: Lead) -> Optional[str]:
     return None
 
 
+def _is_incomplete_lead(lead: Lead) -> bool:
+    """Detecta un lead a medio persistir (INSERT commiteado sin clasificación).
+
+    Ventana de fallo (RELIABILITY-001): si el worker muere o hay un error
+    transitorio entre el commit del INSERT (status 'Nuevo'/score 0) y el commit
+    del UPDATE (score/status/history), el redelivery encontraría la fila como
+    'duplicate' y nunca la completaría. Un lead INCOMPLETO (sin evidencia de
+    clasificación) se trata como recuperable; un lead COMPLETO (aunque tenga
+    intent 'unclear' con score 0) NO, para no violar la idempotencia del dedup.
+    """
+    return (
+        _read_intent(lead) is None
+        and lead.qualification_score == 0
+        and not lead.conversacion_history
+    )
+
+
 async def _run_dm_classification(
     tenant_id: str, lead_id: str, message: str
 ) -> Dict[str, Any]:
@@ -129,6 +146,41 @@ def _run_async(coro):
         return pool.submit(asyncio.run, coro).result()
 
 
+async def _classify_score_and_update(
+    tenant_id: str, lead_id: str, message: str
+) -> Dict[str, Any]:
+    """Clasifica (best-effort), scorea y persiste el UPDATE del lead (REQ-DM-LEAD-03/04).
+
+    Bloque compartido por el path de lead NUEVO y por la recuperación de leads
+    INCOMPLETOS (RELIABILITY-001): garantiza que un lead recuperado recibe
+    exactamente la misma clasificación/score/historial que uno recién creado.
+    Cualquier fallo del grafo/LLM degrada a `classify_intent` sin romper la
+    persistencia (best-effort).
+    """
+    classification = await _run_dm_classification(tenant_id, lead_id, message)
+    intent = classification.get("intent") or "unclear"
+
+    score, status = score_lead(message, intent)
+    history_entry = {
+        "intent": intent,
+        "confidence": classification.get("confidence", 0.0),
+        "ts": datetime.utcnow().isoformat(),
+    }
+    async with AsyncSessionLocal() as session:
+        lead = await session.get(Lead, lead_id)
+        if lead is not None:
+            lead.qualification_score = score
+            lead.status = status
+            lead.conversacion_history = json.dumps([history_entry], ensure_ascii=False)
+            await session.commit()
+
+    return {
+        "intent": intent,
+        "qualification_score": score,
+        "lead_status": status,
+    }
+
+
 async def persist_lead_core(tenant_id: str, lead_data: Dict[str, Any]) -> Dict[str, Any]:
     """Core async de persistencia del lead (testeable, patrón de la suite).
 
@@ -148,7 +200,7 @@ async def persist_lead_core(tenant_id: str, lead_data: Dict[str, Any]) -> Dict[s
         existing = (
             await session.execute(select(Lead).where(Lead.dedup_hash == dedup))
         ).scalars().first()
-        if existing is not None:
+        if existing is not None and not _is_incomplete_lead(existing):
             logger.info(
                 "[%s] Webhook duplicado para lead '%s' (hash %s). Retornando existente.",
                 tenant_id, existing.id, dedup[:12],
@@ -159,53 +211,69 @@ async def persist_lead_core(tenant_id: str, lead_data: Dict[str, Any]) -> Dict[s
                 "intent": _read_intent(existing),
             }
 
-        # 2. INSERT Lead con status inicial 'Nuevo' (el webhook no trae video: video_id NULL).
-        lead_id = str(uuid.uuid4())
-        lead = Lead(
-            id=lead_id,
-            tenant_id=tenant_id,
-            video_id=None,
-            keyword=keyword,
-            ig_user_id=ig_user_id,
-            mensaje_original=message,
-            origen=origin,
-            status="Nuevo",
-            qualification_score=0,
-            platform="instagram",
-            dedup_hash=dedup,
+    # 1b. Recovery (RELIABILITY-001): el INSERT se commiteó pero la fase de
+    # clasificación/scoring (UPDATE) nunca terminó (error transitorio o worker
+    # muerto entre los dos commits). El redelivery encuentra el lead 'Nuevo'/
+    # score 0/sin historial: en vez de reportar 'duplicate' y dejarlo incompleto
+    # para siempre, se completa la clasificación sobre la MISMA fila (mismo
+    # lead_id, sin fila duplicada).
+    if existing is not None:
+        logger.warning(
+            "[%s] Lead '%s' incompleto (INSERT sin clasificación); recuperando...",
+            tenant_id, existing.id,
         )
+        completed = await _classify_score_and_update(
+            tenant_id, str(existing.id), message
+        )
+        logger.info(
+            "[%s] Lead '%s' recuperado: intent=%s score=%s status=%s",
+            tenant_id, existing.id,
+            completed["intent"], completed["qualification_score"],
+            completed["lead_status"],
+        )
+        return {
+            "status": "duplicate",
+            "recovered": True,
+            "lead_id": str(existing.id),
+            "intent": completed["intent"],
+            "qualification_score": completed["qualification_score"],
+            "lead_status": completed["lead_status"],
+        }
+
+    # 2. INSERT Lead con status inicial 'Nuevo' (el webhook no trae video: video_id NULL).
+    lead_id = str(uuid.uuid4())
+    lead = Lead(
+        id=lead_id,
+        tenant_id=tenant_id,
+        video_id=None,
+        keyword=keyword,
+        ig_user_id=ig_user_id,
+        mensaje_original=message,
+        origen=origin,
+        status="Nuevo",
+        qualification_score=0,
+        platform="instagram",
+        dedup_hash=dedup,
+    )
+    async with AsyncSessionLocal() as session:
         session.add(lead)
         await session.commit()
 
-    # 3. Clasificación best-effort vía dm_graph (REQ-DM-LEAD-04) -> intent para el score.
-    classification = await _run_dm_classification(tenant_id, lead_id, message)
-    intent = classification.get("intent") or "unclear"
-
-    # 4. Scoring determinista (REQ-DM-LEAD-03) + update + historial.
-    score, status = score_lead(message, intent)
-    history_entry = {
-        "intent": intent,
-        "confidence": classification.get("confidence", 0.0),
-        "ts": datetime.utcnow().isoformat(),
-    }
-    async with AsyncSessionLocal() as session:
-        lead = await session.get(Lead, lead_id)
-        if lead is not None:
-            lead.qualification_score = score
-            lead.status = status
-            lead.conversacion_history = json.dumps([history_entry], ensure_ascii=False)
-            await session.commit()
+    # 3. Clasificación + scoring + update (REQ-DM-LEAD-03/04): mismo bloque que la
+    # recuperación de leads incompletos (1b).
+    completed = await _classify_score_and_update(tenant_id, lead_id, message)
 
     logger.info(
         "[%s] Lead '%s' persistido: intent=%s score=%s status=%s",
-        tenant_id, lead_id, intent, score, status,
+        tenant_id, lead_id, completed["intent"], completed["qualification_score"],
+        completed["lead_status"],
     )
     return {
         "status": "created",
         "lead_id": lead_id,
-        "intent": intent,
-        "qualification_score": score,
-        "lead_status": status,
+        "intent": completed["intent"],
+        "qualification_score": completed["qualification_score"],
+        "lead_status": completed["lead_status"],
     }
 
 
