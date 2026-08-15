@@ -17,6 +17,8 @@ import json
 import uuid
 from unittest.mock import patch, AsyncMock
 
+import pytest
+
 from sqlalchemy import select, func
 
 from backend.db.session import init_db, AsyncSessionLocal
@@ -439,5 +441,75 @@ def test_webhook_endpoint_returns_500_on_sync_failure_not_ack():
         assert response.status_code == 500
         data = response.json()
         assert "Error en procesamiento síncrono" in data["detail"]
+
+    _run(_test())
+
+
+@patch("agents.llm.acomplete", side_effect=RuntimeError("LLM offline"))
+def test_retry_after_partial_insert_recovers_classification(_mock_llm):
+    """RELIABILITY-001: un lead con el INSERT commiteado pero sin clasificación
+    (fallo entre los dos commits) se recupera en el redelivery: se clasifica,
+    se scorea y se persiste sobre la MISMA fila, en vez de quedar 'duplicate'
+    para siempre con status='Nuevo'/score 0/sin historial."""
+    tenant_id = str(uuid.uuid4())
+    lead_data = {**_COMMENT_AUDIO, "ig_user_id": "user_ig_recover_01"}
+
+    async def _test():
+        await init_db()
+        async with AsyncSessionLocal() as session:
+            await _seed_tenant(session, tenant_id)
+
+        # --- Ventana de fallo: el INSERT commitea, pero la fase de clasificación
+        # (y por tanto el UPDATE con score/status/history) levanta y nunca corre.
+        with patch(
+            "workers.lead_persist_task._run_dm_classification",
+            side_effect=RuntimeError("db down during classification"),
+        ):
+            with pytest.raises(RuntimeError):
+                await persist_lead_core(tenant_id, lead_data)
+
+        # El lead quedó a medio persistir: 'Nuevo', score 0, sin historial.
+        async with AsyncSessionLocal() as session:
+            half = (
+                await session.execute(
+                    select(Lead).where(Lead.ig_user_id == "user_ig_recover_01")
+                )
+            ).scalars().one()
+            assert half.status == "Nuevo"
+            assert half.qualification_score == 0
+            assert half.conversacion_history is None
+            half_id = str(half.id)
+
+        # --- Redelivery: la clasificación ya funciona y el dedup NO debe reportar
+        # 'duplicate' sin más: debe COMPLETAR el lead (mismo lead_id, sin fila nueva).
+        second = await persist_lead_core(tenant_id, lead_data)
+        assert second["status"] == "duplicate"
+        assert second.get("recovered") is True
+        assert second["lead_id"] == half_id
+        assert second["intent"] == "purchase_intent"
+        assert second["qualification_score"] >= 60
+        assert second["lead_status"] == "Calificado"
+
+        async with AsyncSessionLocal() as session:
+            count = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(Lead)
+                    .where(Lead.ig_user_id == "user_ig_recover_01")
+                )
+            ).scalars().one()
+            assert count == 1  # sin fila duplicada
+
+            lead = (
+                await session.execute(
+                    select(Lead).where(Lead.ig_user_id == "user_ig_recover_01")
+                )
+            ).scalars().one()
+            assert str(lead.id) == half_id
+            assert lead.status == "Calificado"
+            assert lead.qualification_score >= 60
+            history = json.loads(lead.conversacion_history)
+            assert isinstance(history, list) and len(history) == 1
+            assert history[0]["intent"] == "purchase_intent"
 
     _run(_test())
