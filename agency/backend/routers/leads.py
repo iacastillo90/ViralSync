@@ -7,7 +7,8 @@ antes de compararlo contra la URL. Nunca devuelve datos de ejemplo ante errores 
 """
 
 import logging
-from typing import List, Dict, Any
+import json
+from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Request, HTTPException, status, Depends
 from pydantic import BaseModel
 
@@ -64,6 +65,19 @@ def _verify_tenant_access_fail_closed(request: Request, tenant_id: str):
         )
 
 
+def _extract_intent_from_history(conversacion_history: Optional[str]) -> Optional[str]:
+    """Extrae el intent de la última clasificación persistida (T-S1-08, REQ-DM-LEAD-01)."""
+    if not conversacion_history:
+        return None
+    try:
+        history = json.loads(conversacion_history)
+        if isinstance(history, list) and history:
+            return history[-1].get("intent")
+    except (ValueError, TypeError):
+        pass
+    return None
+
+
 @router.get("/{tenant_id}/leads")
 async def get_tenant_leads(
     tenant_id: str, request: Request, db=Depends(get_async_db)
@@ -88,6 +102,9 @@ async def get_tenant_leads(
                 "ig_user_id": l.ig_user_id,
                 "mensaje_original": l.mensaje_original,
                 "origen": l.origen,
+                "status": l.status,
+                "qualification_score": l.qualification_score,
+                "intent": _extract_intent_from_history(l.conversacion_history),
                 "calificado_at": l.calificado_at.isoformat() if l.calificado_at else None,
                 "handled_by_human_at": l.handled_by_human_at.isoformat() if l.handled_by_human_at else None,
             }

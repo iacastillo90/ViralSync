@@ -123,6 +123,134 @@ def test_lead_persist_task_registered_and_core_reachable():
     assert callable(persist_instagram_lead.run)
 
 
+def test_webhook_payload_resolves_tenant_and_persists():
+    """T-S1-06: payload con media.owner.id -> tenant_b (no 'default'); el lead persiste con ese tenant."""
+    from backend.webhooks.instagram_inbound import (
+        process_instagram_webhook_payload,
+        _resolve_tenant_from_payload,
+    )
+
+    tenant_b = str(uuid.uuid4())
+
+    async def _test():
+        await init_db()
+        async with AsyncSessionLocal() as session:
+            account_id = await _seed_tenant(session, tenant_b)
+
+        payload = {
+            "object": "instagram",
+            "entry": [
+                {
+                    "id": "entry_t6",
+                    "changes": [
+                        {
+                            "field": "comments",
+                            "value": {
+                                "id": "comment_t6",
+                                "text": "¡Me encanta! Quiero comprar el sistema con AUDIO por favor",
+                                "media": {"owner": {"id": account_id}},
+                                "from": {"id": "user_ig_t6"},
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+
+        tenant_id = await _resolve_tenant_from_payload(payload)
+        assert tenant_id == tenant_b
+
+        leads = process_instagram_webhook_payload(payload, tenant_id=tenant_id)
+        assert len(leads) == 1
+        assert leads[0]["keyword"] == "AUDIO"
+
+        result = await persist_lead_core(tenant_id, leads[0])
+        assert result["status"] == "created"
+
+        async with AsyncSessionLocal() as session:
+            lead = (
+                await session.execute(
+                    select(Lead).where(Lead.ig_user_id == "user_ig_t6")
+                )
+            ).scalars().one()
+            assert lead.tenant_id == tenant_b
+            assert lead.keyword == "AUDIO"
+
+    _run(_test())
+
+
+def test_webhook_payload_without_account_falls_back_to_default():
+    """T-S1-06: payload flat (sin cuenta mapeable) -> _resolve_tenant_from_payload => 'default'."""
+    from backend.webhooks.instagram_inbound import _resolve_tenant_from_payload
+
+    flat_payload = {
+        "object": "instagram",
+        "entry": [{"id": "entry_x", "changes": [{"field": "comments", "value": {"text": "hola"}}]}],
+    }
+
+    async def _test():
+        await init_db()
+        tenant_id = await _resolve_tenant_from_payload(flat_payload)
+        assert tenant_id == "default"
+
+    _run(_test())
+
+
+def test_webhook_endpoint_enqueues_worker_and_returns_200():
+    """T-S1-07: POST /webhooks/instagram -> 200 inmediato y el worker (eager) persiste
+    el lead con el tenant resuelto por cuenta (flujo webhook -> worker completo)."""
+    from httpx import AsyncClient, ASGITransport
+    from backend.main import app
+
+    tenant_b = str(uuid.uuid4())
+    payload = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "entry_e2e",
+                "changes": [
+                    {
+                        "field": "comments",
+                        "value": {
+                            "id": "comment_e2e",
+                            "text": "Quiero comprar el sistema con AUDIO por favor",
+                            "media": {"owner": {"id": None}},
+                            "from": {"id": "user_ig_e2e"},
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+
+    async def _test():
+        await init_db()
+        async with AsyncSessionLocal() as session:
+            account_id = await _seed_tenant(session, tenant_b)
+        payload["entry"][0]["changes"][0]["value"]["media"]["owner"]["id"] = account_id
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            response = await ac.post("/webhooks/instagram", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["processed_leads_count"] == 1
+
+        async with AsyncSessionLocal() as session:
+            lead = (
+                await session.execute(
+                    select(Lead).where(Lead.ig_user_id == "user_ig_e2e")
+                )
+            ).scalars().one()
+            assert lead.tenant_id == tenant_b
+            assert lead.keyword == "AUDIO"
+
+    _run(_test())
+
+
 class _FakeRedisClient:
     """Cliente Redis fake que registra los LPUSH para verificar el DLQ sin infra real."""
 

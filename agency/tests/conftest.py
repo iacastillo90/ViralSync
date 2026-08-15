@@ -12,6 +12,13 @@ import os
 # no apunte a PostgreSQL/5432 (inaccesible en CI/local).
 os.environ["FORCE_SQLITE"] = "true"
 
+# Celery Eager Mode a nivel de módulo (no solo vía monkeypatch): workers.celery_app
+# lee la variable al importarse (durante la colección), de modo que los
+# `task.delay(...)` de los endpoints (p.ej. persist_instagram_lead) se ejecutan
+# inline en los tests en lugar de publicar al broker Redis.
+os.environ["CELERY_TASK_ALWAYS_EAGER"] = "true"
+os.environ["CELERY_TASK_EAGER_PROPAGATES"] = "true"
+
 import pytest  # noqa: E402
 
 from backend.db.session import init_db, AsyncSessionLocal  # noqa: E402
