@@ -143,10 +143,12 @@ class Lead(Base):
     __tablename__ = "leads"
     __table_args__ = (
         Index("idx_leads_tenant_status_calificado", "tenant_id", "status", "calificado_at"),
+        # Migración 011 (REQ-DM-LEAD-02): índice para filtrar por estado.
+        Index("idx_leads_status", "status"),
     )
 
 
-    # Alineada con migrations/001_init_schema.sql (169-182) + 002 (23-26):
+    # Alineada con migrations/001_init_schema.sql (169-182) + 002 (23-26) + 011:
     # la migración SQL es la fuente de verdad para el esquema de producción, de
     # modo que el ORM NO debe declarar columnas ausentes del DDL SQL (p. ej.
     # created_at no existe en la tabla leads). create_all sólo crea las tablas que
@@ -154,12 +156,18 @@ class Lead(Base):
     # ORM debe mapear exactamente las columnas que SELECT/UPDATE tocan.
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
-    video_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), nullable=False)
+    # Migración 011: video_id pasa a nullable — el webhook de Meta no siempre trae video.
+    video_id: Mapped[Optional[str]] = mapped_column(Uuid(as_uuid=False))
     keyword: Mapped[str] = mapped_column(String(128), nullable=False)
     ig_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
     mensaje_original: Mapped[str] = mapped_column(Text, nullable=False)
     origen: Mapped[str] = mapped_column(String(64), nullable=False, default="comment")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="new")
+    # Migración 011 (REQ-DM-LEAD-02/03): scoring 0-100 + plataforma origen.
+    qualification_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    platform: Mapped[str] = mapped_column(String(32), nullable=False, default="instagram")
+    # Migración 011 (REQ-DM-LEAD-05): sha256(ig_user_id|mensaje) para idempotencia del webhook.
+    dedup_hash: Mapped[Optional[str]] = mapped_column(String(64), unique=True)
     calificado_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
     handled_by_human_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     outcome: Mapped[Optional[str]] = mapped_column(String(32))
