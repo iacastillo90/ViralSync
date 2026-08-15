@@ -11,7 +11,9 @@ cada test usa tenant + ig_user_id únicos.
 """
 
 import asyncio
+import json
 import uuid
+from unittest.mock import patch
 
 from sqlalchemy import select, func
 
@@ -119,3 +121,58 @@ def test_lead_persist_task_registered_and_core_reachable():
 
     assert persist_instagram_lead.name == "workers.lead_persist_task.persist_instagram_lead"
     assert callable(persist_instagram_lead.run)
+
+
+class _FakeRedisClient:
+    """Cliente Redis fake que registra los LPUSH para verificar el DLQ sin infra real."""
+
+    def __init__(self):
+        self.lpushed = []
+
+    def lpush(self, key: str, value: str) -> int:
+        self.lpushed.append((key, value))
+        return 1
+
+
+def test_terminal_failure_writes_payload_to_dlq():
+    """RESILIENCE-001: al agotar retries, el payload fallido se escribe en Redis (lead_persist:dlq).
+
+    Simula un fallo de DB (persist_lead_core levanta) con retries agotados
+    (push_request con retries == max_retries) y verifica que el payload con
+    tenant_id, lead_data, error, ts y attempts llegue al sink durable.
+    """
+    import redis as redis_module
+    from workers.lead_persist_task import persist_instagram_lead
+
+    fake_redis = _FakeRedisClient()
+    tenant_id = str(uuid.uuid4())
+    lead_data = {**_COMMENT_AUDIO, "ig_user_id": "user_ig_dlq"}
+
+    persist_instagram_lead.push_request(
+        id="task-dlq-1", args=(tenant_id, lead_data), retries=2
+    )
+    try:
+        with patch.object(
+            redis_module.Redis, "from_url", return_value=fake_redis
+        ), patch(
+            "workers.lead_persist_task.persist_lead_core",
+            side_effect=RuntimeError("db down"),
+        ):
+            result = persist_instagram_lead.run(tenant_id, lead_data)
+    finally:
+        persist_instagram_lead.pop_request()
+
+    # El fallo terminal sigue reportando "failed" honestamente...
+    assert result["status"] == "failed"
+    assert result["error"] == "db down"
+
+    # ...pero el payload ya NO se pierde: queda en el sink durable bajo lead_persist:dlq.
+    assert len(fake_redis.lpushed) == 1
+    key, raw = fake_redis.lpushed[0]
+    assert key == "lead_persist:dlq"
+    payload = json.loads(raw)
+    assert payload["tenant_id"] == tenant_id
+    assert payload["lead_data"] == lead_data
+    assert payload["error"] == "db down"
+    assert payload["attempts"] == 3  # 1 intento inicial + 2 retries (max_retries=2)
+    assert isinstance(payload["ts"], str) and payload["ts"]

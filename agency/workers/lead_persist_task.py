@@ -13,19 +13,55 @@ agregan en S1b (wiring del grafo). El envío queda GATEADO (decisión usuario P3
 
 import asyncio
 import hashlib
+import json
 import logging
 import uuid
+from datetime import datetime
 from typing import Any, Dict
 
 from sqlalchemy import select
 
-from workers.celery_app import celery_app
+from workers.celery_app import celery_app, REDIS_URL
 from backend.db.session import AsyncSessionLocal
 from backend.db.models import Lead
 from backend.services.lead_scoring import score_lead
 from agents.nodes.dm_response import classify_intent
 
 logger = logging.getLogger(__name__)
+
+# Sink durable para fallos terminales (RESILIENCE-001): lista en Redis que conserva
+# los payloads no persistidos para auditoría/replay posterior (patrón DLQ).
+_DLQ_KEY = "lead_persist:dlq"
+
+
+def _push_to_dlq(
+    tenant_id: str, lead_data: Dict[str, Any], error: str, attempts: int
+) -> None:
+    """Escribe el payload fallido en el DLQ de Redis (best-effort).
+
+    Tras agotar `max_retries` el mensaje se ackea y el lead se perdería sin este
+    sink durable. Patrón del repo (metrics_loop/llm_budget): `redis.Redis.from_url`
+    con import lazy y socket_timeout corto; si Redis falla, se loguea y el task
+    retorna "failed" igual (el DLQ no debe romper el flujo de error).
+    """
+    try:
+        import redis
+
+        r = redis.Redis.from_url(REDIS_URL, socket_timeout=1.0)
+        payload = {
+            "tenant_id": tenant_id,
+            "lead_data": lead_data,
+            "error": error,
+            "ts": datetime.utcnow().isoformat(),
+            "attempts": attempts,
+        }
+        r.lpush(_DLQ_KEY, json.dumps(payload, ensure_ascii=False))
+        logger.error("[%s] Payload fallido enviado a DLQ %s (attempts=%s).", tenant_id, _DLQ_KEY, attempts)
+    except Exception as dlq_exc:  # noqa: BLE001 - best-effort: el DLQ no debe romper el flujo
+        logger.error(
+            "[%s] No se pudo escribir el DLQ %s: %s",
+            tenant_id, _DLQ_KEY, dlq_exc, exc_info=True,
+        )
 
 
 def _dedup_hash(ig_user_id: str, message: str) -> str:
@@ -136,4 +172,7 @@ def persist_instagram_lead(self, tenant_id: str, lead_data: Dict[str, Any]) -> D
         logger.error("[%s] Error en persist_instagram_lead: %s", tenant_id, exc, exc_info=True)
         if self.request.retries < self.max_retries:
             raise self.retry(exc=exc, countdown=5) from exc
+        # RESILIENCE-001: retries agotados -> el mensaje se ackea; el payload NO se
+        # pierde, va al sink durable en Redis (lead_persist:dlq) para auditoría/replay.
+        _push_to_dlq(tenant_id, lead_data, str(exc), attempts=self.request.retries + 1)
         return {"status": "failed", "error": str(exc)}
