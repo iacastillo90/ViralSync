@@ -198,7 +198,15 @@ async def receive_instagram_webhook(
     payload = await request.json()
 
     try:
-        extracted_leads = process_instagram_webhook_payload(payload)
+        from backend.webhooks.instagram_inbound import _resolve_tenant_from_payload
+        from workers.lead_persist_task import persist_instagram_lead
+
+        # Resolución de tenant por cuenta (REQ-DM-LEAD-01) + enqueue del worker
+        # (T-S1-06/07): el 200 al webhook queda desacoplado del trabajo async.
+        tenant_id = await _resolve_tenant_from_payload(payload)
+        extracted_leads = process_instagram_webhook_payload(payload, tenant_id=tenant_id)
+        for lead_data in extracted_leads:
+            persist_instagram_lead.delay(tenant_id, lead_data)
         return {
             "status": "ok",
             "processed_leads_count": len(extracted_leads),

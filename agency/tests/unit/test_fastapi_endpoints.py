@@ -11,7 +11,7 @@ import pytest
 from httpx import AsyncClient, ASGITransport
 from backend.main import app
 from backend.security.auth import create_access_token
-from backend.db.models import Tenant, VideoMetric
+from backend.db.models import Tenant, VideoMetric, Lead
 
 
 def _auth_header(tenant_id: str, role: str = "admin") -> dict:
@@ -300,3 +300,48 @@ async def test_get_tenant_detail_requires_own_jwt(init_test_db):
         assert intruder.status_code == 403, (
             f"JWT de otro tenant NO puede ver el detalle, recibió {intruder.status_code}"
         )
+
+
+@pytest.mark.anyio
+async def test_get_leads_exposes_scoring_fields(db_session):
+    """T-S1-08: GET /{tenant}/leads expone qualification_score, status e intent (S1)."""
+    import uuid as _uuid
+
+    tenant_id = "4e5f6a7b-8c9d-4e0f-1a2b-3c4d5e6f7a8b"
+    db_session.add(Tenant(id=tenant_id, name="Scoring Tenant S1"))
+    await db_session.commit()
+
+    db_session.add(
+        Lead(
+            id=str(_uuid.uuid4()),
+            tenant_id=tenant_id,
+            video_id=None,
+            keyword="AUDIO",
+            ig_user_id="user_score_1",
+            mensaje_original="Quiero comprar el sistema con AUDIO por favor",
+            origen="comment",
+            status="Calificado",
+            qualification_score=90,
+            platform="instagram",
+            dedup_hash="hash-score-s1",
+            conversacion_history=(
+                '[{"intent": "purchase_intent", "confidence": 0.92, "ts": "2026-01-01T00:00:00"}]'
+            ),
+        )
+    )
+    await db_session.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        response = await ac.get(
+            f"/api/v1/tenants/{tenant_id}/leads",
+            headers=_auth_header(tenant_id),
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list) and len(data) == 1
+    row = data[0]
+    assert row["qualification_score"] == 90
+    assert row["status"] == "Calificado"
+    assert row["intent"] == "purchase_intent"
