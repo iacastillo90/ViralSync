@@ -21,6 +21,7 @@ jobs:
         uses: astral-sh/setup-uv@v3
       - name: Install dependencies and run tests
         run: |
+          uv venv
           uv pip install -r requirements.lock
           uvx ruff check agency/backend agency/agents agency/workers agency/knowledge agency/gateway
           uvx pip-audit -r requirements.lock
@@ -28,6 +29,9 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+      NEXT_PUBLIC_SSE_URL: http://localhost:8000/realtime/sse
     steps:
       - uses: actions/checkout@v4
       - name: Build frontend
