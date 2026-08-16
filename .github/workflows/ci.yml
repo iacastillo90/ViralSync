@@ -29,7 +29,7 @@ jobs:
           uvx pip-audit -r requirements.lock || echo "::warning::pip-audit found preexisting vulnerabilities (litellm, pyjwt, python-jose); security debt tracked in issue #23."
           # Regression gate: run the full unit suite, with preexisting-main failures
           # (video crew/renderer microservice) deselected until the debt issue is fixed.
-          pytest --cov=agency/backend agency/tests/unit \
+          uv run pytest --cov=agency/backend agency/tests/unit \
             --ignore=agency/tests/unit/test_video_prompt_crew.py \
             --ignore=agency/tests/unit/test_video_renderer_microservice.py
 
