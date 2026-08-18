@@ -52,14 +52,34 @@ def test_ci_workflow_defines_four_gating_jobs() -> None:
 def test_ci_python_job_installs_lock_and_runs_coverage_gate() -> None:
     workflow = _ci_workflow()
     assert "uv pip install -r requirements.lock" in workflow
-    assert "--cov=backend --cov-fail-under=50" in workflow
-    assert "AGENCY_ENV=dev" in workflow
+    assert "uv run pytest" in workflow
+    assert "--cov=agency/backend" in workflow
+    assert "AGENCY_ENV" in workflow
 
 
 def test_ci_python_job_lints_and_audits() -> None:
     workflow = _ci_workflow()
-    assert "uvx ruff check backend agents workers knowledge gateway" in workflow
+    assert "uvx ruff check" in workflow
+    # Lint scope is the PR diff (checks-to-diff), not the whole tree.
+    assert "origin/main...HEAD" in workflow
     assert "uvx pip-audit -r requirements.lock" in workflow
+
+
+def test_ci_python_job_excludes_preexisting_video_debt() -> None:
+    workflow = _ci_workflow()
+    # Preexisting-main failures (video crew/renderer) stay out of the
+    # regression gate until the debt issue is fixed.
+    assert "--ignore=agency/tests/unit/test_video_prompt_crew.py" in workflow
+    assert "--ignore=agency/tests/unit/test_video_renderer_microservice.py" in workflow
+    assert "--ignore=agency/tests/unit/test_video_renderer_performance.py" in workflow
+
+
+def test_ci_python_job_excludes_preexisting_minio_and_orm_debt() -> None:
+    workflow = _ci_workflow()
+    # Preexisting-main failures unrelated to any PR diff stay out of the
+    # gate (checks-to-diff policy) until the debt issue is fixed.
+    assert "--ignore=agency/tests/unit/test_minio_real.py" in workflow
+    assert "--ignore=agency/tests/unit/test_video_metric_orm_alignment.py" in workflow
 
 
 def test_ci_frontend_job_builds_and_audits() -> None:

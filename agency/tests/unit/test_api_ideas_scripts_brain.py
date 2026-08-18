@@ -227,6 +227,7 @@ async def test_scripts_rows_expose_ddl_001_shape(db_session):
     expected_keys = {
         "id", "tenant_id", "idea_id", "gancho_0_5s", "contexto_5_30s",
         "moraleja_30_50s", "cta_50_60s", "keyword", "created_at",
+        "approval_status", "trend_score", "trend_rationale", "rendered_videos",
     }
     assert set(body[0].keys()) == expected_keys
     assert body[0]["keyword"] == "CONSULTA"
