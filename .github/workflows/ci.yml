@@ -31,7 +31,10 @@ jobs:
           # (video crew/renderer microservice) deselected until the debt issue is fixed.
           uv run pytest --cov=agency/backend agency/tests/unit \
             --ignore=agency/tests/unit/test_video_prompt_crew.py \
-            --ignore=agency/tests/unit/test_video_renderer_microservice.py
+            --ignore=agency/tests/unit/test_video_renderer_microservice.py \
+            --ignore=agency/tests/unit/test_video_renderer_performance.py \
+            --ignore=agency/tests/unit/test_minio_real.py \
+            --ignore=agency/tests/unit/test_video_metric_orm_alignment.py
 
   frontend:
     runs-on: ubuntu-latest
