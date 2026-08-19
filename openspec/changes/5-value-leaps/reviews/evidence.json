@@ -1,0 +1,57 @@
+{
+  "schema": "gentle-ai.review-evidence/v1",
+  "lineage_id": "5-value-leaps-s1a1",
+  "evidence_hash": "sha256:4023ef25a81dd5455a9fc55e00d3d41d5577fcfaf74e6ee9eeb2120037d2ed3a",
+  "classifications": {
+    "RELIABILITY-001": {
+      "class": "deterministic",
+      "proof": "git show f40467e -- agency/backend/main.py:206-209 wire persist_instagram_lead.delay; wiring verificado en rama feat/5-value-leaps-s1a2"
+    },
+    "RESILIENCE-001": {
+      "class": "deterministic",
+      "proof": "commit d0d007a: _push_to_dlq LPUSH a lead_persist:dlq antes de return failed; pytest test_terminal_failure_writes_payload_to_dlq verde; 29 passed 0 failed"
+    }
+  },
+  "outcomes": {
+    "READABILITY-001": "info",
+    "READABILITY-002": "info",
+    "READABILITY-003": "info",
+    "READABILITY-004": "info",
+    "READABILITY-005": "info",
+    "READABILITY-006": "info",
+    "READABILITY-007": "info",
+    "READABILITY-008": "info",
+    "READABILITY-009": "info",
+    "RELIABILITY-001": "corroborated",
+    "RELIABILITY-002": "info",
+    "RELIABILITY-003": "info",
+    "RELIABILITY-004": "info",
+    "RELIABILITY-005": "info",
+    "RELIABILITY-006": "info",
+    "RELIABILITY-007": "info",
+    "RELIABILITY-008": "info",
+    "RESILIENCE-001": "corroborated",
+    "RESILIENCE-002": "info",
+    "RESILIENCE-003": "info",
+    "RESILIENCE-004": "info",
+    "RESILIENCE-005": "info",
+    "RESILIENCE-006": "info",
+    "RISK-001": "info",
+    "RISK-002": "info",
+    "RISK-003": "info",
+    "RISK-004": "info"
+  },
+  "fix_finding_ids": [
+    "RELIABILITY-001",
+    "RESILIENCE-001"
+  ],
+  "fix_delta_hash": "sha256:20243a82cc1fa30d4611cc3dd834c4c3fba25e0051d6cdbb2f0a7e4b53cfcd16",
+  "follow_ups": [
+    {
+      "observation": "RELIABILITY-001 resuelto por evidencia de cadena: el wiring webhook->worker llega en el PR hijo S1a2 (f40467e, main.py:206-209 persist_instagram_lead.delay); no es parte del fix-diff local de S1a1.",
+      "proof_refs": [
+        "feat/5-value-leaps-s1a2 f40467e agency/backend/main.py:206-209"
+      ]
+    }
+  ]
+}

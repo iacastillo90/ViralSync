@@ -1,0 +1,23 @@
+{
+  "schema": "gentle-ai.review-gate-request/v1",
+  "gate": "pre-pr",
+  "target": {
+    "kind": "base-diff",
+    "base_ref": "30bcddf15d5710e261a79f3db65b992468812584",
+    "revision": "eb624d8015d06c8a38fe0b4c33915977952edf4c",
+    "intended_untracked": [],
+    "ledger_ids": [
+      "RELIABILITY-001",
+      "RESILIENCE-001"
+    ]
+  },
+  "store_revision": "sha256:12bf6d79fdef24c7484f34caee52e0ca41fbb5cce548a5f1e553c6c765f2b08f",
+  "genesis_revision": "sha256:73f9c4d539167c5ff4b8a690cf318b176d257a84b56a5d5e7fc6bd0e8fa6fba7",
+  "chain_identity": "sha256:790e15ec88d60aa5ed04a7e9a0c3010f31e8c5e3e119b1cf014bf443206f9cf5",
+  "bundle_digest": "sha256:ce222f5455c51611995fceda696098c8a13541f6b4a5778238812885264d66e3",
+  "policy_artifact": "/home/ivan/Desktop/AgentMarketingIA/openspec/changes/5-value-leaps/reviews/policy.md",
+  "ledger_artifact": "/home/ivan/Desktop/AgentMarketingIA/openspec/changes/5-value-leaps/reviews/ledger.json",
+  "evidence_artifact": "",
+  "evidence_content": "Spec verification: REQ-DM-LEAD-01..06 cubiertos por S1a1+S1a2+S1b; tests 29 passed 0 failed; migracion 011 aplicada en Postgres vivo; ledgers 4R congelados; fix-delta validator approve; sin BLOCKER/CRITICAL pendientes en scope",
+  "external_evidence": ""
+}

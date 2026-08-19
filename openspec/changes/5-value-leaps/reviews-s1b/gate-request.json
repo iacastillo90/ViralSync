@@ -1,0 +1,22 @@
+{
+  "schema": "gentle-ai.review-gate-request/v1",
+  "gate": "pre-pr",
+  "target": {
+    "kind": "base-diff",
+    "base_ref": "b6e7a03",
+    "revision": "951c4d3",
+    "intended_untracked": [],
+    "ledger_ids": [
+      "RELIABILITY-001"
+    ]
+  },
+  "store_revision": "sha256:32b7e5b9c3b10b34f1169e06238e62eb6d6b42f3831d9348b3ad5abf335cb798",
+  "genesis_revision": "sha256:30fd092bec3e0b2d18f0d97ce134b1d31dfc9f7457d5ac4d47cbc2d47b4b5725",
+  "chain_identity": "sha256:74a2be07d9719643fab5152c1ddaa0f438f8c58c657412781a961eff5a6e6808",
+  "bundle_digest": "sha256:3ad15de8d3efef02b4bf3fa4d9b71cbb297b261621c7656e592fc3fb35b1ec6f",
+  "policy_artifact": "/home/ivan/Desktop/AgentMarketingIA/openspec/changes/5-value-leaps/reviews/policy.md",
+  "ledger_artifact": "/home/ivan/Desktop/AgentMarketingIA/openspec/changes/5-value-leaps/reviews-s1b/ledger.json",
+  "evidence_artifact": "/home/ivan/Desktop/AgentMarketingIA/openspec/changes/5-value-leaps/reviews-s1b/evidence.txt",
+  "evidence_content": "",
+  "external_evidence": ""
+}
