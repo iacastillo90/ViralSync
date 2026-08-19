@@ -1,9 +1,9 @@
 "use client";
 
 import { use } from "react";
-import { InboundLeadsView } from "@/features/LeadsInbound/views/InboundLeadsView";
+import { LeadsKanbanView } from "@/features/LeadsInbound/views/LeadsKanbanView";
 
 export default function LeadsPage({ params }) {
   const resolvedParams = use(params);
-  return <InboundLeadsView tenantId={resolvedParams.tenantId} />;
+  return <LeadsKanbanView tenantId={resolvedParams.tenantId} />;
 }

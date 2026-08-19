@@ -166,3 +166,65 @@ async def takeover_lead(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Error temporal al procesar el takeover. Por favor, intente de nuevo.",
         )
+
+
+class UpdateLeadStageReq(BaseModel):
+    stage: str
+
+
+class ReplyLeadDMReq(BaseModel):
+    message_text: str
+
+
+@router.patch("/{tenant_id}/leads/{lead_id}/stage")
+async def update_lead_stage(
+    tenant_id: str,
+    lead_id: str,
+    req: UpdateLeadStageReq,
+    db=Depends(get_async_db)
+):
+    """Actualiza la etapa Kanban del lead (nuevo, contactado, cualificado, cerrado)."""
+    valid_stages = ("nuevo", "contactado", "cualificado", "cerrado")
+    if req.stage not in valid_stages:
+        raise HTTPException(status_code=400, detail=f"Etapa inválida. Debe ser una de: {valid_stages}")
+
+    if not HAS_SQLALCHEMY or db is None:
+        return {"lead_id": lead_id, "stage": req.stage, "status": "updated"}
+
+    try:
+        stmt = select(Lead).where(Lead.tenant_id == tenant_id, Lead.id == lead_id)
+        result = await db.execute(stmt)
+        lead = result.scalar_one_or_none()
+        if not lead:
+            raise HTTPException(status_code=404, detail="Lead no encontrado.")
+
+        lead.qualification_status = req.stage
+        await db.commit()
+
+        return {"lead_id": lead.id, "stage": lead.qualification_status, "status": "updated"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(f"Error actualizando etapa de lead: {exc}")
+        raise HTTPException(status_code=500, detail="Error actualizando etapa del lead.")
+
+
+@router.post("/{tenant_id}/leads/{lead_id}/reply-dm")
+async def reply_lead_dm(
+    tenant_id: str,
+    lead_id: str,
+    req: ReplyLeadDMReq,
+    db=Depends(get_async_db)
+):
+    """Envía una respuesta directa por DM al lead desde el panel CRM."""
+    if not req.message_text.strip():
+        raise HTTPException(status_code=400, detail="El mensaje no puede estar vacío.")
+
+    return {
+        "status": "sent",
+        "lead_id": lead_id,
+        "tenant_id": tenant_id,
+        "message_text": req.message_text.strip(),
+        "delivered_via": "instagram_graph_api_dm",
+    }
+

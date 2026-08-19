@@ -279,3 +279,21 @@ class VideoMetric(Base):
     classification: Mapped[str] = mapped_column(String(32), nullable=False, default="VERDE")
     action_taken: Mapped[Optional[str]] = mapped_column(Text)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+
+
+class ScheduledPost(Base):
+    __tablename__ = "scheduled_posts"
+    __table_args__ = (
+        Index("idx_scheduled_posts_tenant_date", "tenant_id", "scheduled_at", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    video_id: Mapped[Optional[str]] = mapped_column(ForeignKey("videos.id"))
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    platform: Mapped[str] = mapped_column(String(32), default="instagram_reels")
+    caption: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="scheduled")
+    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    post_id: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)

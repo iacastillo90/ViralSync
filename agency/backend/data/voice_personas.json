@@ -1,0 +1,74 @@
+[
+  {
+    "id": "voice_es_alvaro",
+    "name": "Álvaro — Locutor Enérgico & Comercial",
+    "voice_code": "es-ES-AlvaroNeural",
+    "gender": "male",
+    "style": "Enérgico, Dinámico, Directo",
+    "recommended_niche": "E-Commerce, Promociones, Fitness",
+    "preview_sample": "¡Stop de cometer este error si quieres escalar tus ventas hoy mismo!"
+  },
+  {
+    "id": "voice_es_dalia",
+    "name": "Dalia — Ejecutiva B2B & Corporativa",
+    "voice_code": "es-MX-DaliaNeural",
+    "gender": "female",
+    "style": "Profesional, Clara, Convincente",
+    "recommended_niche": "Negocios B2B, SaaS, Consultoría",
+    "preview_sample": "Descubre los 3 pilares clave para optimizar la retención de tus clientes."
+  },
+  {
+    "id": "voice_es_alonso",
+    "name": "Alonso — Fundador Tech & Creador",
+    "voice_code": "es-US-AlonsoNeural",
+    "gender": "male",
+    "style": "Cercano, Innovador, Experto",
+    "recommended_niche": "Tecnología, Startups, Inteligencia Artificial",
+    "preview_sample": "Así es como automatizamos nuestro flujo de contenido en menos de 5 minutos."
+  },
+  {
+    "id": "voice_es_tomas",
+    "name": "Tomás — Narrador Documental & Historia",
+    "voice_code": "es-AR-TomasNeural",
+    "gender": "male",
+    "style": "Profundo, Intrigante, Pausado",
+    "recommended_niche": "Podcasts, Storytelling, Educación",
+    "preview_sample": "La verdad incómoda que nadie te cuenta sobre el crecimiento orgánico."
+  },
+  {
+    "id": "voice_es_gonzalo",
+    "name": "Gonzalo — Coach & Motivacional",
+    "voice_code": "es-CO-GonzaloNeural",
+    "gender": "male",
+    "style": "Inspirador, Calido, Seguro",
+    "recommended_niche": "Desarrollo Personal, Salud, Mindset",
+    "preview_sample": "El secreto no está en trabajar más horas, sino en enfocar tu energía."
+  },
+  {
+    "id": "voice_es_elvira",
+    "name": "Elvira — Creadora Trend & Lifestyle",
+    "voice_code": "es-ES-ElviraNeural",
+    "gender": "female",
+    "style": "Fresca, Juvenil, Viral",
+    "recommended_niche": "Moda, Belleza, Tendencias Shorts",
+    "preview_sample": "Haz esto en tus próximos videos y nota la diferencia en 24 horas."
+  },
+  {
+    "id": "voice_es_jorge",
+    "name": "Jorge — Experto Financiero & Real Estate",
+    "voice_code": "es-MX-JorgeNeural",
+    "gender": "male",
+    "style": "Analítico, Serio, Confiable",
+    "recommended_niche": "Finanzas, Inversiones, Bienes Raíces",
+    "preview_sample": "Calcula el retorno exacto de tu inversión antes de tomar una decisión."
+  },
+  {
+    "id": "voice_es_lorenzo",
+    "name": "Lorenzo — Explicativo & Tutoriales",
+    "voice_code": "es-CL-LorenzoNeural",
+    "gender": "male",
+    "style": "Didáctico, Claro, Paso a Paso",
+    "recommended_niche": "Cursos, Tutoriales, How-To",
+    "preview_sample": "Te muestro paso a paso el método exacto para configurar tu cuenta."
+  }
+]

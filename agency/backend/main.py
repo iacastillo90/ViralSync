@@ -40,8 +40,9 @@ from backend.routers.templates import router as templates_router
 from backend.routers.rag import router as rag_router
 from backend.routers.campaigns import router as campaigns_router
 from backend.routers.ab_testing import router as ab_testing_router
-from backend.routers.voice import router as voice_router
-from backend.routers.competitors import router as competitors_router
+from backend.routers.voice_personas import router as voice_personas_router
+from backend.routers.branding import router as branding_router
+from backend.routers.competitor_mining import router as competitor_mining_router
 from backend.db.checkpointer import is_force_sqlite, setup_postgres_checkpointer, close_postgres_checkpointer
 
 setup_logging()
@@ -115,8 +116,9 @@ app.include_router(dashboard_router, dependencies=_TENANT_GUARD)
 app.include_router(rag_router, dependencies=_TENANT_GUARD)
 app.include_router(campaigns_router, dependencies=_TENANT_GUARD)
 app.include_router(ab_testing_router, dependencies=_TENANT_GUARD)
-app.include_router(voice_router, dependencies=_TENANT_GUARD)
-app.include_router(competitors_router, dependencies=_TENANT_GUARD)
+app.include_router(branding_router, dependencies=_TENANT_GUARD)
+app.include_router(competitor_mining_router, dependencies=_TENANT_GUARD)
+app.include_router(voice_personas_router)
 app.include_router(templates_router)
 
 INSTAGRAM_APP_SECRET = os.getenv("INSTAGRAM_APP_SECRET", "secreto_meta_app_dev")
