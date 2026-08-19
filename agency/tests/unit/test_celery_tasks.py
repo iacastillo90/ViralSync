@@ -44,3 +44,17 @@ def test_metrics_loop_task_rojo():
     )
     assert res["classification"] == "ROJO"
     assert res["ratio"] == 0.45
+
+
+def test_lead_persist_task_discoverable_and_routed_to_webhooks():
+    """T-S1-05: persist_instagram_lead está registrada en Celery y ruteada a la cola 'webhooks'."""
+    from workers.lead_persist_task import persist_instagram_lead
+    from workers.celery_app import celery_app
+
+    # Descubrible: registrada en el app de Celery tras el include.
+    assert persist_instagram_lead.name in celery_app.tasks
+
+    # Routed: la resolución real del router apunta a la cola webhooks (patrón DLQ).
+    route = celery_app.amqp.router.route({}, persist_instagram_lead.name)
+    queue = route.get("queue")
+    assert getattr(queue, "name", queue) == "webhooks"

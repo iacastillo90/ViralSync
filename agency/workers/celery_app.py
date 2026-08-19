@@ -21,6 +21,7 @@ celery_app = Celery(
         "workers.trend_scraper_task",
         "workers.graph_execution_task",
         "workers.rum_learning_task",
+        "workers.lead_persist_task",
     ],
 )
 
@@ -35,6 +36,7 @@ celery_app.conf.update(
     task_routes={
         "workers.video_edit_task.*": {"queue": "rendering"},
         "workers.webhook_dlq_task.*": {"queue": "webhooks"},
+        "workers.lead_persist_task.*": {"queue": "webhooks"},
         "workers.metrics_loop_task.*": {"queue": "default"},
         "workers.trend_scraper_task.*": {"queue": "default"},
         "workers.graph_execution_task.*": {"queue": "default"},
