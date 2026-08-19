@@ -228,9 +228,12 @@ async def test_scripts_rows_expose_ddl_001_shape(db_session):
         "id", "tenant_id", "idea_id", "gancho_0_5s", "contexto_5_30s",
         "moraleja_30_50s", "cta_50_60s", "keyword", "created_at",
         "approval_status", "trend_score", "trend_rationale", "rendered_videos",
+        "voice_persona_id",
     }
     assert set(body[0].keys()) == expected_keys
     assert body[0]["keyword"] == "CONSULTA"
+    # T-S2a-05: el campo voice_persona_id se expone siempre (None si no asignado).
+    assert body[0]["voice_persona_id"] is None
 
 
 @pytest.mark.anyio
