@@ -33,6 +33,10 @@ class Tenant(Base):
     litellm_virtual_key: Mapped[Optional[str]] = mapped_column(Text)
     monthly_llm_budget_usd: Mapped[float] = mapped_column(Numeric(10, 2), default=20.0)
     status: Mapped[str] = mapped_column(String(32), default="active")
+    # Migración 013 (S3 — Auto-Publicación, REQ-PUB-05): mejor slot de publicación
+    # sugerido por Gemini o heurística, persistido como JSONB
+    # {"day_of_week": int 0-6, "hour": int 0-23, "source": "gemini"|"heuristic"}.
+    best_time_slot: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
 
@@ -207,6 +211,9 @@ class Video(Base):
     edited_video_uri: Mapped[Optional[str]] = mapped_column(Text)
     # Motor que generó el render (migración 007): 'json2video' | 'local'.
     provider: Mapped[Optional[str]] = mapped_column(String(20))
+    # Migración 013 (S3 — Auto-Publicación, REQ-PUB-01): plataforma destino del
+    # video; el auto-publish rutea por ella (REQ-PUB-02).
+    platform: Mapped[str] = mapped_column(String(32), nullable=False, default="instagram")
     publish_approval_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     instagram_post_id: Mapped[Optional[str]] = mapped_column(Text)
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

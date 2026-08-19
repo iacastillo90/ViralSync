@@ -14,7 +14,7 @@ from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.db.session import get_async_db
@@ -128,9 +128,12 @@ async def schedule_video_publication(
                 detail=f"Video con ID {req.video_id} no encontrado para el tenant {tenant_id}"
             )
 
-        # Actualizar estado de publicación y fecha objetivo
+        # Actualizar estado de publicación y fecha objetivo (REQ-PUB-06):
+        # persiste la plataforma elegida en videos.platform para que el beat
+        # diario rutee el video por ella (REQ-PUB-02).
         video.publish_approval_status = "approved"
         video.published_at = req.scheduled_at
+        video.platform = req.platform or video.platform
         await db.commit()
 
         logger.info(

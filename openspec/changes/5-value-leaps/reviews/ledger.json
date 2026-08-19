@@ -1,0 +1,280 @@
+{
+  "schema": "gentle-ai.review-ledger/v1",
+  "lineage_id": "5-value-leaps-s1a1",
+  "ledger_hash": "sha256:428a2716e41ec2812a63150e1d2f2b1f50285114b2423d23742835045d8ea943",
+  "findings": [
+    {
+      "id": "RISK-001",
+      "lens": "risk",
+      "location": "agency/workers/lead_persist_task.py:71-79",
+      "severity": "WARNING",
+      "claim": "dedup_hash se computa sin scope de tenant; el UNIQUE global uq_leads_dedup_hash colisiona entre tenants distintos.",
+      "proof_refs": [
+        "agency/migrations/011_leads_qualification.sql",
+        "agency/workers/lead_persist_task.py:71-79"
+      ]
+    },
+    {
+      "id": "RISK-002",
+      "lens": "risk",
+      "location": "agency/workers/lead_persist_task.py",
+      "severity": "WARNING",
+      "claim": "El payload del lead se persiste y expone sin sanitizar; se debe confirmar el manejo de PII antes de logging persistente.",
+      "proof_refs": [
+        "agency/workers/lead_persist_task.py"
+      ]
+    },
+    {
+      "id": "RISK-003",
+      "lens": "risk",
+      "location": "agency/backend/services/lead_scoring.py",
+      "severity": "WARNING",
+      "claim": "El scoring no verifica la autenticidad de la fuente del mensaje; el texto se procesa como dato no confiable.",
+      "proof_refs": [
+        "agency/backend/services/lead_scoring.py"
+      ]
+    },
+    {
+      "id": "RISK-004",
+      "lens": "risk",
+      "location": "agency/workers/lead_persist_task.py",
+      "severity": "WARNING",
+      "claim": "No hay límite de tamaño de payload; mensajes muy grandes podrían afectar memoria/Redis en el flujo de persistencia.",
+      "proof_refs": [
+        "agency/workers/lead_persist_task.py"
+      ]
+    },
+    {
+      "id": "RELIABILITY-001",
+      "lens": "reliability",
+      "location": "agency/workers/lead_persist_task.py",
+      "severity": "BLOCKER",
+      "claim": "En S1a1 no existe productor que invoque persist_instagram_lead; el flujo webhook->worker se cablea en el PR hijo S1a2 (f40467e).",
+      "proof_refs": [
+        "agency/backend/main.py:206-209",
+        "feat/5-value-leaps-s1a2"
+      ]
+    },
+    {
+      "id": "RELIABILITY-002",
+      "lens": "reliability",
+      "location": "agency/workers/lead_persist_task.py",
+      "severity": "WARNING",
+      "claim": "El worker usa dos sesiones/transacciones (INSERT commit -> score UPDATE); un retry post-INSERT salta el scoring por el dedup.",
+      "proof_refs": [
+        "agency/workers/lead_persist_task.py"
+      ]
+    },
+    {
+      "id": "RELIABILITY-003",
+      "lens": "reliability",
+      "location": "agency/backend/services/lead_scoring.py",
+      "severity": "WARNING",
+      "claim": "Los umbrales de scoring no están configurados; los cortes Nuevo/Contactado/Calificado son constantes fijas no documentadas.",
+      "proof_refs": [
+        "agency/backend/services/lead_scoring.py"
+      ]
+    },
+    {
+      "id": "RELIABILITY-004",
+      "lens": "reliability",
+      "location": "agency/workers/lead_persist_task.py",
+      "severity": "WARNING",
+      "claim": "El dedup no considera el tenant en el hash; mensajes idénticos de tenants distintos se deduplican incorrectamente.",
+      "proof_refs": [
+        "agency/workers/lead_persist_task.py"
+      ]
+    },
+    {
+      "id": "RELIABILITY-005",
+      "lens": "reliability",
+      "location": "agency/workers/lead_persist_task.py",
+      "severity": "WARNING",
+      "claim": "max_retries=2 sin backoff explícito observable; reintentos inmediatos pueden amplificar carga en Redis/Postgres.",
+      "proof_refs": [
+        "agency/workers/lead_persist_task.py"
+      ]
+    },
+    {
+      "id": "RELIABILITY-006",
+      "lens": "reliability",
+      "location": "agency/workers/lead_persist_task.py",
+      "severity": "SUGGESTION",
+      "claim": "El worker no registra métricas de éxito/fallo por estado; falta observabilidad de cola.",
+      "proof_refs": [
+        "agency/workers/lead_persist_task.py"
+      ]
+    },
+    {
+      "id": "RELIABILITY-007",
+      "lens": "reliability",
+      "location": "agency/workers/lead_persist_task.py",
+      "severity": "WARNING",
+      "claim": "La migración 011 altera columnas NOT NULL sin backfill explícito para filas existentes con video_id null.",
+      "proof_refs": [
+        "agency/migrations/011_leads_qualification.sql"
+      ]
+    },
+    {
+      "id": "RELIABILITY-008",
+      "lens": "reliability",
+      "location": "agency/workers/lead_persist_task.py",
+      "severity": "SUGGESTION",
+      "claim": "Faltan pruebas de concurrencia para el dedup UNIQUE; el catch de IntegrityError no se cubre en tests.",
+      "proof_refs": [
+        "agency/tests/unit/test_lead_persist_task.py"
+      ]
+    },
+    {
+      "id": "READABILITY-001",
+      "lens": "readability",
+      "location": "agency/backend/db/models.py",
+      "severity": "WARNING",
+      "claim": "El vocabulario de status está triplicado: default ORM 'new', takeover 'handled_by_human' y scoring Nuevo/Contactado/Calificado.",
+      "proof_refs": [
+        "agency/backend/db/models.py",
+        "agency/backend/services/lead_scoring.py"
+      ]
+    },
+    {
+      "id": "READABILITY-002",
+      "lens": "readability",
+      "location": "agency/workers/lead_persist_task.py",
+      "severity": "WARNING",
+      "claim": "_dedup_hash y _resolve_tenant_from_payload combinan lógica de negocio y persistencia en un solo worker extenso.",
+      "proof_refs": [
+        "agency/workers/lead_persist_task.py"
+      ]
+    },
+    {
+      "id": "READABILITY-003",
+      "lens": "readability",
+      "location": "agency/backend/db/models.py",
+      "severity": "WARNING",
+      "claim": "Nuevas columnas de Lead sin documentar semántica (platform nullable vs platform='instagram').",
+      "proof_refs": [
+        "agency/backend/db/models.py"
+      ]
+    },
+    {
+      "id": "READABILITY-004",
+      "lens": "readability",
+      "location": "agency/backend/services/lead_scoring.py",
+      "severity": "SUGGESTION",
+      "claim": "score_lead mezcla reglas de negocio con cálculo; extraer constantes y tabla de decisiones mejoraría legibilidad.",
+      "proof_refs": [
+        "agency/backend/services/lead_scoring.py"
+      ]
+    },
+    {
+      "id": "READABILITY-005",
+      "lens": "readability",
+      "location": "agency/migrations/011_leads_qualification.sql",
+      "severity": "WARNING",
+      "claim": "La migración no incluye comentario de propósito; índices sin prefijo de convención del proyecto.",
+      "proof_refs": [
+        "agency/migrations/011_leads_qualification.sql"
+      ]
+    },
+    {
+      "id": "READABILITY-006",
+      "lens": "readability",
+      "location": "agency/workers/lead_persist_task.py",
+      "severity": "WARNING",
+      "claim": "Errores de retry y de fallo terminal se registran con mensajes distintos sin estructura común.",
+      "proof_refs": [
+        "agency/workers/lead_persist_task.py"
+      ]
+    },
+    {
+      "id": "READABILITY-007",
+      "lens": "readability",
+      "location": "agency/backend/db/models.py",
+      "severity": "SUGGESTION",
+      "claim": "instagram_inbound reutiliza el patrón de payload dict sin tipos; un dataclass/typed dict mejoraría la intención.",
+      "proof_refs": [
+        "agency/backend/db/models.py"
+      ]
+    },
+    {
+      "id": "READABILITY-008",
+      "lens": "readability",
+      "location": "agency/backend/services/lead_scoring.py",
+      "severity": "SUGGESTION",
+      "claim": "Nombres de keywords de scoring no centralizados; repetidos en tests y servicio.",
+      "proof_refs": [
+        "agency/backend/services/lead_scoring.py"
+      ]
+    },
+    {
+      "id": "READABILITY-009",
+      "lens": "readability",
+      "location": "agency/workers/lead_persist_task.py",
+      "severity": "SUGGESTION",
+      "claim": "El módulo mezcla importación de Celery app y lógica pura; separar función pura de la tarea bindeada.",
+      "proof_refs": [
+        "agency/workers/lead_persist_task.py"
+      ]
+    },
+    {
+      "id": "RESILIENCE-001",
+      "lens": "resilience",
+      "location": "agency/workers/lead_persist_task.py",
+      "severity": "CRITICAL",
+      "claim": "Tras agotar max_retries=2 el fallo terminal pierde el lead sin rastro; no existe sink durable (DLQ).",
+      "proof_refs": [
+        "agency/workers/lead_persist_task.py"
+      ]
+    },
+    {
+      "id": "RESILIENCE-002",
+      "lens": "resilience",
+      "location": "agency/workers/lead_persist_task.py",
+      "severity": "WARNING",
+      "claim": "webhook_dlq_task declara DLQ Redis pero solo retorna dict; patrón de sink no durable replicado en el flujo.",
+      "proof_refs": [
+        "agency/workers/webhook_dlq_task.py"
+      ]
+    },
+    {
+      "id": "RESILIENCE-003",
+      "lens": "resilience",
+      "location": "agency/workers/lead_persist_task.py",
+      "severity": "WARNING",
+      "claim": "Si Redis no está disponible, el fallback best-effort del DLQ también puede fallar sin rastro.",
+      "proof_refs": [
+        "agency/workers/lead_persist_task.py"
+      ]
+    },
+    {
+      "id": "RESILIENCE-004",
+      "lens": "resilience",
+      "location": "agency/backend/services/lead_scoring.py",
+      "severity": "WARNING",
+      "claim": "La puntuación depende de servicios externos (LLM) sin timeout/circuit breaker explícito.",
+      "proof_refs": [
+        "agency/backend/services/lead_scoring.py"
+      ]
+    },
+    {
+      "id": "RESILIENCE-005",
+      "lens": "resilience",
+      "location": "agency/workers/lead_persist_task.py",
+      "severity": "WARNING",
+      "claim": "No hay alerta/métrica cuando la cola DLQ acumula entradas; fallos silenciosos prolongados.",
+      "proof_refs": [
+        "agency/workers/lead_persist_task.py"
+      ]
+    },
+    {
+      "id": "RESILIENCE-006",
+      "lens": "resilience",
+      "location": "agency/workers/lead_persist_task.py",
+      "severity": "SUGGESTION",
+      "claim": "Reintentos sin jitter en el mismo worker; considerar exponential backoff con jitter.",
+      "proof_refs": [
+        "agency/workers/lead_persist_task.py"
+      ]
+    }
+  ]
+}

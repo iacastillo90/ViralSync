@@ -1,0 +1,22 @@
+{
+  "schema": "gentle-ai.review-gate-request/v1",
+  "gate": "pre-pr",
+  "target": {
+    "kind": "base-diff",
+    "base_ref": "d0d007a",
+    "revision": "b6e7a03",
+    "intended_untracked": [],
+    "ledger_ids": [
+      "RESILIENCE-001"
+    ]
+  },
+  "store_revision": "sha256:99fee03283151a95b34802d034666f88a2d7fac7e767d8e83afe1e58b22c2da1",
+  "genesis_revision": "sha256:0b8f84c1b87d0ae1c8e50bac6ae0fd43202a355a0e86442bc00839535f4b957c",
+  "chain_identity": "sha256:916e3ad6c7facb0496614eec3c14c054f847aa006e3436fd501ba0d5c618ad61",
+  "bundle_digest": "sha256:4b8c4bf8161f2bdf409518de0cd9acb1a46037691c7c1ecf8fc11bdc1efe6f58",
+  "policy_artifact": "/home/ivan/Desktop/AgentMarketingIA/openspec/changes/5-value-leaps/reviews/policy.md",
+  "ledger_artifact": "/home/ivan/Desktop/AgentMarketingIA/openspec/changes/5-value-leaps/reviews-s1a2/ledger.json",
+  "evidence_artifact": "/home/ivan/Desktop/AgentMarketingIA/openspec/changes/5-value-leaps/reviews-s1a2/evidence.txt",
+  "evidence_content": "",
+  "external_evidence": ""
+}

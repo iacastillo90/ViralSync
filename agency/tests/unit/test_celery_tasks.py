@@ -6,6 +6,7 @@ Pruebas unitarias para las tareas Celery en Eager Mode (ejecución síncrona).
 
 from workers.video_edit_task import process_video_postproduction
 from workers.metrics_loop_task import audit_72h_metrics
+from workers.celery_app import celery_app
 
 
 def test_video_edit_task_eager_execution():
@@ -58,3 +59,27 @@ def test_lead_persist_task_discoverable_and_routed_to_webhooks():
     route = celery_app.amqp.router.route({}, persist_instagram_lead.name)
     queue = route.get("queue")
     assert getattr(queue, "name", queue) == "webhooks"
+
+
+def test_publisher_task_registered_in_include():
+    """REQ-PUB-03: el worker de auto-publicación está registrado en el
+    include de Celery para que el beat pueda ejecutarlo."""
+    assert "workers.publisher_task" in celery_app.conf.include
+
+
+def test_publisher_task_daily_beat_schedule():
+    """REQ-PUB-03, REQ-PUB-06: el beat diario dispara la auto-publicación a
+    las 08:00 UTC (AUTO_PUBLISH_HOUR por defecto)."""
+    beat = celery_app.conf.beat_schedule or {}
+    entry = beat.get("auto-publish-daily")
+    assert entry is not None, "Debe existir el entry 'auto-publish-daily'"
+    assert (
+        entry["task"] == "workers.publisher_task.auto_publish_scheduled_videos_task"
+    ), "El beat debe apuntar a la tarea del publisher_task"
+    assert entry["schedule"].hour == {8}, "Hora default 08:00 UTC"
+    assert entry["schedule"].minute == {0}
+
+
+def test_publisher_task_routed_to_default_queue():
+    routes = celery_app.conf.task_routes or {}
+    assert routes.get("workers.publisher_task.*") == {"queue": "default"}

@@ -7,6 +7,7 @@ Configuración de concurrencia serializada (concurrency=1 en dev) y modo Eager e
 
 import os
 from celery import Celery
+from celery.schedules import crontab
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
@@ -22,6 +23,7 @@ celery_app = Celery(
         "workers.graph_execution_task",
         "workers.rum_learning_task",
         "workers.lead_persist_task",
+        "workers.publisher_task",
     ],
 )
 
@@ -41,6 +43,15 @@ celery_app.conf.update(
         "workers.trend_scraper_task.*": {"queue": "default"},
         "workers.graph_execution_task.*": {"queue": "default"},
         "workers.rum_learning_task.*": {"queue": "default"},
+        "workers.publisher_task.*": {"queue": "default"},
+    },
+    beat_schedule={
+        "auto-publish-daily": {
+            "task": "workers.publisher_task.auto_publish_scheduled_videos_task",
+            "schedule": crontab(
+                hour=os.getenv("AUTO_PUBLISH_HOUR", "8"), minute=0
+            ),
+        },
     },
 )
 
