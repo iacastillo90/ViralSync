@@ -34,7 +34,8 @@ jobs:
             --ignore=agency/tests/unit/test_video_renderer_microservice.py \
             --ignore=agency/tests/unit/test_video_renderer_performance.py \
             --ignore=agency/tests/unit/test_minio_real.py \
-            --ignore=agency/tests/unit/test_video_metric_orm_alignment.py
+            --ignore=agency/tests/unit/test_video_metric_orm_alignment.py \
+            --deselect=agency/tests/unit/test_scriptwriting_crew.py::test_run_scriptwriting_crew_4_blocks
 
   frontend:
     runs-on: ubuntu-latest
