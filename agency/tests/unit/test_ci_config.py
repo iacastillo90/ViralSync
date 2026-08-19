@@ -82,6 +82,17 @@ def test_ci_python_job_excludes_preexisting_minio_and_orm_debt() -> None:
     assert "--ignore=agency/tests/unit/test_video_metric_orm_alignment.py" in workflow
 
 
+def test_ci_python_job_deselects_real_llm_flaky_script_test() -> None:
+    workflow = _ci_workflow()
+    # test_run_scriptwriting_crew_4_blocks calls the real LLM without a stub
+    # (non-deterministic keyword assertion); preexisting-main debt tracked in
+    # issue #23. The other two tests in the file stub acomplete and stay active.
+    assert (
+        "--deselect=agency/tests/unit/test_scriptwriting_crew.py::"
+        "test_run_scriptwriting_crew_4_blocks" in workflow
+    )
+
+
 def test_ci_frontend_job_builds_and_audits() -> None:
     workflow = _ci_workflow()
     assert "npm ci" in workflow

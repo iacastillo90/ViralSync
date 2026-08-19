@@ -13,7 +13,7 @@ migraciones.
 
 from datetime import datetime
 from typing import Optional, Any
-from sqlalchemy import String, Text, Float, Integer, DateTime, Boolean, JSON, ForeignKey, Uuid, Numeric, Index
+from sqlalchemy import String, Text, Integer, DateTime, Boolean, JSON, ForeignKey, Uuid, Numeric, Index
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -102,7 +102,25 @@ class Script(Base):
     approval_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     trend_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2))
     trend_rationale: Mapped[Optional[str]] = mapped_column(Text)
+    # Migración 012 (S2 — Voice Personas, REQ-VOICE-04): persona de voz asociada al
+    # guion; el render resuelve tts_voice/azure voice desde ella por idioma (REQ-VOICE-05).
+    voice_persona_id: Mapped[Optional[str]] = mapped_column(ForeignKey("voice_personas.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class VoicePersona(Base):
+    # Alineada con migrations/012_voice_personas.sql (REQ-VOICE-01): catálogo de
+    # personas de voz con voz por motor (Edge-TTS + json2video Azure) y un mapa
+    # locale_voices (JSONB) para resolver la voz del idioma destino en el render.
+    __tablename__ = "voice_personas"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    edge_tts_voice: Mapped[str] = mapped_column(Text, nullable=False)
+    json2video_voice: Mapped[str] = mapped_column(Text, nullable=False)
+    locale_voices: Mapped[Any] = mapped_column(JSON, nullable=False, default=dict)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
 class Niche(Base):
