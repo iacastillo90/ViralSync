@@ -19,6 +19,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
+import { ExecutiveReportButton } from "@/components/analytics/ExecutiveReportButton";
 
 export function DashboardView({ tenantId }) {
   const [dashboardData, setDashboardData] = useState(null);
@@ -78,16 +79,17 @@ export function DashboardView({ tenantId }) {
             </p>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-3 shrink-0">
+            <ExecutiveReportButton tenantId={tenantId} />
             <Link
               href={`/tenants/${tenantId}/aprobaciones/ideas`}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-5 py-3 rounded-2xl shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition-all transform hover:-translate-y-0.5"
+              className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition-all transform hover:-translate-y-0.5"
             >
               <Sparkles className="w-4 h-4" /> Nueva Ideación
             </Link>
             <Link
               href={`/tenants/${tenantId}/guiones`}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold px-5 py-3 rounded-2xl transition-all flex items-center gap-2"
+              className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold px-5 py-2.5 rounded-xl transition-all flex items-center gap-2"
             >
               <FileText className="w-4 h-4 text-indigo-400" /> Ver Guiones
             </Link>

@@ -144,9 +144,27 @@ async def get_metrics_72h(
         )
 
 
+from fastapi import Response, Query
+
 @router.get("/{tenant_id}/reports/monthly-pdf")
-async def get_monthly_pdf_report(tenant_id: str, db=Depends(get_async_db)):
-    """Retorna los datos y metadatos del reporte ejecutivo en PDF para el tenant."""
+async def get_monthly_pdf_report(
+    tenant_id: str,
+    download: bool = Query(False),
+    db=Depends(get_async_db)
+):
+    """
+    Retorna los metadatos o el archivo binario PDF real (si download=true) del reporte ejecutivo.
+    """
     metrics_summary = await get_metrics_72h(tenant_id, db)
-    from backend.reports.pdf_generator import generate_tenant_roi_pdf_report
+    from backend.reports.pdf_generator import generate_tenant_roi_pdf_report, build_tenant_pdf_bytes
+
+    if download:
+        pdf_bytes = build_tenant_pdf_bytes(tenant_id, metrics_summary)
+        filename = f"viralsync_reporte_ejecutivo_{tenant_id[:8]}.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
     return generate_tenant_roi_pdf_report(tenant_id, metrics_summary)

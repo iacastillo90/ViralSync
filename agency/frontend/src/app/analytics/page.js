@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
+import { ExecutiveReportButton } from "@/components/analytics/ExecutiveReportButton";
+
 export default function AnalyticsPage() {
   const { tenantId } = useAgentStore();
   const activeTenantId = tenantId || "92c96882-9eb6-4f50-b7b6-316c3eb6e9a5";
@@ -59,6 +61,9 @@ export default function AnalyticsPage() {
               <p className="text-xs text-slate-400 mt-1">
                 Monitoreo de Viralidad post-difusión, Retención y Retroalimentación Vectorial en Qdrant
               </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <ExecutiveReportButton tenantId={activeTenantId} />
             </div>
           </div>
 

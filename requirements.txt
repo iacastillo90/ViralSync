@@ -34,3 +34,4 @@ sqlalchemy[asyncio]~=2.0.36
 tenacity~=8.2.0
 pyjwt~=2.8.0
 python-jose[cryptography]~=3.3.0
+reportlab~=5.0.0
