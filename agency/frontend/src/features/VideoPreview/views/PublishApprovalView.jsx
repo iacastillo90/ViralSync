@@ -21,6 +21,7 @@ import {
   AlertCircle,
   Play,
   Download,
+  Mic,
 } from "lucide-react";
 
 /**
@@ -52,6 +53,9 @@ export function PublishApprovalView({ tenantId }) {
   const { data: scriptsData, loading: loadingScripts, error: errorScripts, refresh: refreshScripts } = useTenantResource("scripts", tenantId);
   const { data: mediaData, refresh: refreshMedia } = useTenantResource("media", tenantId);
   const { data: productsData } = useTenantResource("products", tenantId);
+  // S2b — REQ-VOICE-04: catálogo de personas de voz (GET /voice-personas) para
+  // resolver el nombre de la persona del guion como badge aditivo.
+  const { data: voicePersonasData } = useTenantResource("voice-personas", tenantId);
 
   // Función de refresco combinado
   const refresh = () => {
@@ -75,6 +79,12 @@ export function PublishApprovalView({ tenantId }) {
   const rawScripts = Array.isArray(scriptsData) ? scriptsData : [];
   const rawMedia = Array.isArray(mediaData) ? mediaData : [];
   const products = Array.isArray(productsData) ? productsData : [];
+  const voicePersonas = Array.isArray(voicePersonasData) ? voicePersonasData : [];
+  const personaById = useMemo(() => {
+    const map = {};
+    voicePersonas.forEach((p) => { map[p.id] = p; });
+    return map;
+  }, [voicePersonas]);
 
   // Mapear guiones/videos locales y videos de json2video en la misma coleccion
   const localVideos = useMemo(() => {
@@ -101,6 +111,9 @@ export function PublishApprovalView({ tenantId }) {
             is_service: isService,
             title: s.title || s.gancho_0_5s || "Reel 9:16 Renderizado",
             source: "script",
+            voice_persona_name: s.voice_persona_id
+              ? personaById[s.voice_persona_id]?.name || null
+              : null,
           },
         ];
       }
@@ -122,6 +135,9 @@ export function PublishApprovalView({ tenantId }) {
         source: rv.provider === "local" ? "local" : "json2video",
         status: rv.publish_approval_status || "pending",
         has_rendered_video: true,
+        voice_persona_name: s.voice_persona_id
+          ? personaById[s.voice_persona_id]?.name || null
+          : null,
       }));
     });
 
@@ -163,7 +179,7 @@ export function PublishApprovalView({ tenantId }) {
     });
 
     return [...scriptList, ...mediaVideos];
-  }, [rawScripts, rawMedia, products, tenantId]);
+  }, [rawScripts, rawMedia, products, tenantId, personaById]);
 
   // Agrupar carpetas por idea_id / Lote de Ideación en Nivel 1
   const folderList = useMemo(() => {
@@ -596,6 +612,12 @@ export function PublishApprovalView({ tenantId }) {
               <h3 className="text-sm font-bold text-slate-100 truncate pr-6">
                 {previewVideo.title || "Reproductor de Video 9:16"}
               </h3>
+              {/* S2b — REQ-VOICE-04: badge aditivo con la persona de voz del guion */}
+              {previewVideo.voice_persona_name && (
+                <span className="bg-violet-950/60 text-violet-300 border border-violet-500/40 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold inline-flex items-center gap-1 shrink-0">
+                  <Mic className="w-3 h-3" /> {previewVideo.voice_persona_name}
+                </span>
+              )}
             </div>
 
             <div className="relative aspect-[9/16] max-h-[60vh] bg-slate-950 rounded-xl overflow-hidden border border-slate-800 mx-auto">

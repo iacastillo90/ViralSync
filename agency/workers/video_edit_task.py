@@ -10,19 +10,64 @@ import os
 import logging
 import httpx
 from typing import Dict, Any, List, Optional
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt
 from workers.celery_app import celery_app
 from agents.crews.video_director_crew import run_video_director_crew
-from agents.mcp_servers.video_gen_client import (
-    VideoGenerationClient,
-    ShotstackClient,
-    generate_storyboard_videos,
-)
+from agents.mcp_servers.video_gen_client import generate_storyboard_videos
 
 logger = logging.getLogger(__name__)
 
 RENDERER_SERVICE_URL = os.getenv("RENDERER_SERVICE_URL", "http://video_renderer:8001/render")
 FALLBACK_RENDERER_URL = "http://localhost:8001/render"
+
+
+async def _load_voice_persona_async(voice_persona_id: str):
+    """Carga la persona de voz por id desde la DB (S2b — REQ-VOICE-02)."""
+    from sqlalchemy import select
+    from backend.db.session import AsyncSessionLocal
+    from backend.db.models import VoicePersona
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(VoicePersona).where(VoicePersona.id == voice_persona_id)
+        )
+        return result.scalars().first()
+
+
+def _resolve_script_voices(script: Optional[Dict[str, Any]]) -> tuple:
+    """Resuelve las voces de la persona del guion por idioma (S2b — REQ-VOICE-02/05).
+
+    Carga la persona desde ``script["voice_persona_id"]``, deriva el idioma de
+    ``keyword`` (``LANG:XX``, default ``es``) y devuelve
+    ``(edge_tts_voice, json2video_voice)``. Best-effort deliberado: guion sin
+    persona o persona irresoluble devuelve ``(None, None)`` y el render cae al
+    ``DEFAULT_VOICE`` del renderer — la voz nunca rompe el render (REQ-VOICE-02).
+    """
+    if not isinstance(script, dict) or not script.get("voice_persona_id"):
+        return None, None
+
+    from backend.services.voice_resolver import lang_from_keyword, resolve_voice
+
+    try:
+        import asyncio
+        persona = asyncio.run(_load_voice_persona_async(script["voice_persona_id"]))
+    except Exception as exc:
+        logger.warning(
+            f"Fallo cargando persona de voz {script.get('voice_persona_id')} "
+            f"para render ({exc}). Usando voz por defecto del renderer."
+        )
+        return None, None
+    if persona is None:
+        logger.warning(
+            f"Persona de voz {script.get('voice_persona_id')} no encontrada. "
+            "Usando voz por defecto del renderer."
+        )
+        return None, None
+
+    lang = lang_from_keyword(script.get("keyword"))
+    edge_voice = resolve_voice(persona, lang)
+    azure_voice = getattr(persona, "json2video_voice", None) or edge_voice
+    return edge_voice, azure_voice
 
 
 def _storyboard_to_scenes(storyboard: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
@@ -129,7 +174,6 @@ def trigger_video_render(
         }
 
     render_payload = director_result.get("render_payload", {})
-    curated_metadata = director_result.get("metadata", {})
 
     # Inyectar la duración objetivo estricta del guion (15s, 30s, 45s, 60s)
     raw_td = float(script.get("target_duration") or idea.get("target_duration") or 30.0)
@@ -179,6 +223,11 @@ def trigger_video_render(
             },
         ]
 
+    # S2b — REQ-VOICE-02/05: voces de la persona del guion (edge-tts por escena,
+    # azure para json2video). Best-effort; sin persona -> (None, None) y el
+    # render cae al DEFAULT_VOICE del renderer.
+    edge_voice, azure_voice = _resolve_script_voices(script)
+
     # Reenviar el storyboard a scenes[] del payload de render
     if storyboard:
         scenes = _storyboard_to_scenes(storyboard)
@@ -187,6 +236,12 @@ def trigger_video_render(
                 for sc in scenes:
                     if not sc.get("image_url"):
                         sc["image_url"] = product_image_url
+            # La voz de la persona se inyecta en cada escena (Edge-TTS usa
+            # `scene.tts_voice or DEFAULT_VOICE`); sin persona las escenas
+            # quedan sin tts_voice (default del renderer).
+            if edge_voice:
+                for sc in scenes:
+                    sc.setdefault("tts_voice", edge_voice)
             render_payload = {**render_payload, "scenes": scenes}
             logger.info(f"[{tenant_id}] Reenviando {len(scenes)} escenas del storyboard al renderer.")
 
@@ -210,7 +265,8 @@ def trigger_video_render(
                 script=script,
                 keywords=render_payload.get("keywords", []),
                 tenant_id=tenant_id,
-                title=render_payload.get("title", "ViralSync Marketing Video")
+                title=render_payload.get("title", "ViralSync Marketing Video"),
+                voice=azure_voice or "es-MX-JorgeNeural",
             )
             if json2video_url:
                 # Migrar a MinIO para una URL permanente (la CDN de json2video
