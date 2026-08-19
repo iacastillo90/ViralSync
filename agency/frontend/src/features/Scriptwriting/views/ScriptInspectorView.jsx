@@ -8,7 +8,7 @@ import { ScriptsMacGridView } from "@/components/scripts/ScriptsMacGridView";
 import { ScriptsMacListView } from "@/components/scripts/ScriptsMacListView";
 import { EditScriptModal } from "@/components/scripts/EditScriptModal";
 import { TranslateScriptModal } from "@/components/scripts/TranslateScriptModal";
-import { Sparkles, Loader2, FolderOpen, ArrowLeft, Folder, Calendar, Wrench, Package, Video, Play, X, CheckCircle2, AlertCircle } from "lucide-react";
+import { Sparkles, Loader2, FolderOpen, ArrowLeft, Folder, Calendar, Wrench, Package, Video, Play, X, CheckCircle2, AlertCircle, Mic } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { ViewScenePromptsModal } from "@/components/scripts/ViewScenePromptsModal";
@@ -40,6 +40,8 @@ function formatDateTime(isoString) {
 export function ScriptInspectorView({ tenantId }) {
   const { data, loading, error, refresh } = useTenantResource("scripts", tenantId);
   const { data: productsData } = useTenantResource("products", tenantId);
+  // S2b — REQ-VOICE-04: catálogo de personas de voz activas (GET /voice-personas)
+  const { data: voicePersonasData } = useTenantResource("voice-personas", tenantId);
   const searchParams = useSearchParams();
   const ideaIdParam = searchParams ? searchParams.get("ideaId") : null;
   const router = useRouter();
@@ -81,6 +83,11 @@ export function ScriptInspectorView({ tenantId }) {
 
   // Lista local editable de guiones
   const [localScripts, setLocalScripts] = useState([]);
+
+  // S2b — REQ-VOICE-04: selector de voz de persona (draft + asignación en curso)
+  const voicePersonas = Array.isArray(voicePersonasData) ? voicePersonasData : [];
+  const [voiceDraft, setVoiceDraft] = useState("");
+  const [isVoiceAssigning, setIsVoiceAssigning] = useState(false);
 
   useEffect(() => {
     if (Array.isArray(data)) {
@@ -471,6 +478,45 @@ export function ScriptInspectorView({ tenantId }) {
     setIsTranslateModalOpen(true);
   };
 
+  // S2b — REQ-VOICE-04: asignar persona de voz a los guiones seleccionados
+  // (PATCH /scripts/{id}/voice-persona, contrato del router voice.py S2a).
+  const handleAssignVoicePersona = async () => {
+    if (!voiceDraft || selectedIds.length === 0) return;
+    setIsVoiceAssigning(true);
+    try {
+      for (const scriptId of selectedIds) {
+        await fetchWithTenant(
+          `/tenants/${tenantId}/scripts/${scriptId}/voice-persona`,
+          { method: "PATCH", body: JSON.stringify({ voice_persona_id: voiceDraft }) },
+          tenantId
+        );
+      }
+      // Actualización optimista local (el dict del script expone voice_persona_id)
+      setLocalScripts((prev) =>
+        prev.map((s) =>
+          selectedIds.includes(s.id) ? { ...s, voice_persona_id: voiceDraft } : s
+        )
+      );
+      const personaName =
+        voicePersonas.find((p) => p.id === voiceDraft)?.name || "asignada";
+      setNotification({
+        type: "success",
+        title: "✅ Voz Asignada",
+        message: `La persona "${personaName}" se asignó a ${selectedIds.length} guión(es) seleccionado(s).`,
+      });
+      setSelectedIds([]);
+      setVoiceDraft("");
+    } catch (err) {
+      setNotification({
+        type: "error",
+        title: "Error al Asignar Voz",
+        message: err.message || "No se pudo asignar la persona de voz. Intenta de nuevo.",
+      });
+    } finally {
+      setIsVoiceAssigning(false);
+    }
+  };
+
   // Ejecutar Traducción con la API Backend del Tenant
   const handleTranslateScript = async (script, targetLang) => {
     if (!script || !script.id) return;
@@ -766,6 +812,46 @@ export function ScriptInspectorView({ tenantId }) {
             </button>
             <span className="text-xs text-slate-400 flex items-center gap-1.5 font-medium">
               <FolderOpen className="w-4 h-4 text-indigo-400" /> Carpeta activa: <strong className="text-indigo-300">{activeFolder}</strong> ({filteredScripts.length} guiones)
+            </span>
+          </div>
+
+          {/* S2b — REQ-VOICE-04: Selector aditivo de voz de persona (lista GET /voice-personas,
+              asigna vía PATCH /scripts/{id}/voice-persona a los guiones seleccionados) */}
+          <div className="bg-slate-950/70 border border-indigo-500/20 rounded-xl px-4 py-3 flex flex-wrap items-center gap-3 text-xs shadow-md">
+            <div className="flex items-center gap-2 font-bold text-indigo-300">
+              <Mic className="w-4 h-4 text-indigo-400" /> Voz de persona
+            </div>
+            <select
+              value={voiceDraft}
+              onChange={(e) => setVoiceDraft(e.target.value)}
+              disabled={isVoiceAssigning}
+              className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-medium focus:border-indigo-500 outline-none min-w-[200px]"
+            >
+              <option value="">Sin voz (default del renderer)</option>
+              {voicePersonas.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} — {p.edge_tts_voice}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleAssignVoicePersona}
+              disabled={!voiceDraft || selectedIds.length === 0 || isVoiceAssigning}
+              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all"
+            >
+              {isVoiceAssigning ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Mic className="w-3.5 h-3.5" />
+              )}
+              Asignar voz
+            </button>
+            <span className="text-[11px] text-slate-500">
+              {selectedIds.length === 0
+                ? "Selecciona uno o más guiones para asignarles la voz."
+                : selectedIds.length === 1
+                ? "1 guión seleccionado."
+                : `${selectedIds.length} guiones seleccionados.`}
             </span>
           </div>
 
