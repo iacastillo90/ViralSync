@@ -42,6 +42,8 @@ def _script_to_dict(s) -> Dict[str, Any]:
         "approval_status": getattr(s, "approval_status", "pending"),
         "trend_score": float(s.trend_score) if getattr(s, "trend_score", None) is not None else None,
         "trend_rationale": getattr(s, "trend_rationale", None),
+        # Migración 012: persona de voz asociada al guion (REQ-VOICE-04/05)
+        "voice_persona_id": getattr(s, "voice_persona_id", None),
         "created_at": s.created_at.isoformat() if s.created_at else None,
     }
 
@@ -297,6 +299,9 @@ async def translate_script(
             moraleja_30_50s=parsed.get("moraleja_30_50s") or orig_script.moraleja_30_50s,
             cta_50_60s=parsed.get("cta_50_60s") or orig_script.cta_50_60s,
             keyword=f"LANG:{target_lang.upper()}",
+            # REQ-VOICE-05: el guion traducido conserva la persona de voz original
+            # para que el render use la voz del idioma destino (voice_resolver).
+            voice_persona_id=orig_script.voice_persona_id,
             created_at=datetime.utcnow(),
         )
         db.add(new_script)
