@@ -13,7 +13,7 @@ migraciones.
 
 from datetime import datetime
 from typing import Optional, Any
-from sqlalchemy import String, Text, Float, Integer, DateTime, Boolean, JSON, ForeignKey, Uuid, Numeric, Index
+from sqlalchemy import String, Text, Integer, DateTime, Boolean, JSON, ForeignKey, Uuid, Numeric, Index
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
