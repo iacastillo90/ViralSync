@@ -140,7 +140,7 @@ Orden de implementación: S1 (DM Leads CRM, PR #1) → S2 (Voice Personas, PR #2
 
 ## S3 — Auto-Publicación (PR #3)
 
-> **Estado**: 🚧 Implementado (T-S3-01..06) en `feat/5-value-leaps-s3`, pendiente de PR. Validado: 27 tests S3 + gate completo (375 passed, 3 skipped, 1 deselected).
+> **Estado**: ✅ Mergeado a `main` vía PR #29 (2026-08-19) con size:exception aprobada (~916 líneas de código por forecast subestimado + artefactos openspec del change). Rebase sobre main previo limpio tras resolver conflictos S1↔S3 (test_db_indexes, celery_app, test_celery_tasks). Gate: 398 passed, 3 skipped, 1 deselected + ruff limpio. Fix incluido: test_publisher_task filtra por tenant (acoplamiento de orden con test_calendar_api).
 
 ### T-S3-01: Migración 013 — videos.platform + tenants.best_time_slot
 - **Descripción**: Crear `agency/migrations/013_videos_platform.sql`: `videos.platform TEXT NOT NULL DEFAULT 'instagram'` y `tenants.best_time_slot JSONB`.
