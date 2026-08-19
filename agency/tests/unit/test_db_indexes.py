@@ -8,7 +8,7 @@ Tenant.best_time_slot (REQ-PUB-01, REQ-PUB-05).
 """
 
 from pathlib import Path
-from backend.db.models import Idea, Lead, Video, VideoMetric
+from backend.db.models import Idea, Lead, Video, VideoMetric, CompetitorAccount
 
 _MIGRATIONS_DIR = Path(__file__).parents[2] / "migrations"
 
@@ -84,3 +84,26 @@ def test_migration_013_models_declare_platform_and_best_time_slot():
         "Video.platform debe tener default 'instagram'"
     )
     assert "best_time_slot" in Tenant.__table__.c, "Tenant.best_time_slot debe declararse en el modelo"
+
+
+def test_migration_014_competitor_accounts_exists():
+    """REQ-COMP-01: la migración 014 existe junto a su índice compuesto."""
+    migration_path = _MIGRATIONS_DIR / "014_competitor_accounts.sql"
+    assert migration_path.exists(), "La migración 014_competitor_accounts.sql debe existir"
+    sql = migration_path.read_text()
+    assert "CREATE TABLE" in sql.upper() and "competitor_accounts" in sql
+    assert "idx_competitor_accounts_tenant" in sql, "014 debe declarar idx_competitor_accounts_tenant (tenant_id, is_active)"
+    assert "ON DELETE CASCADE" in sql.upper(), "tenant_id debe referenciar tenants(id) ON DELETE CASCADE"
+    assert "niche" in sql and "is_active" in sql and "created_at" in sql
+
+
+def test_competitor_account_model_maps_migration_014():
+    """REQ-COMP-01: el modelo CompetitorAccount mapea los campos de la migración 014."""
+    table = CompetitorAccount.__table__
+    for column in ("id", "tenant_id", "platform", "username", "display_name", "niche", "is_active", "created_at"):
+        assert column in table.c, f"CompetitorAccount debe declarar la columna '{column}'"
+    assert table.c.platform.default is not None and table.c.platform.default.arg == "instagram"
+    assert any(idx.name == "idx_competitor_accounts_tenant" for idx in table.indexes), (
+        "El modelo debe declarar idx_competitor_accounts_tenant (tenant_id, is_active)"
+    )
+    assert table.c.tenant_id.nullable is False
