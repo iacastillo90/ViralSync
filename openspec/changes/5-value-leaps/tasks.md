@@ -4,7 +4,7 @@ Orden de implementación: S1 (DM Leads CRM, PR #1) → S2 (Voice Personas, PR #2
 
 ## S1 — DM Leads CRM (PR #1)
 
-> **Estado**: 🔄 PR #28 abierto (2026-08-19), pendiente de CI/merge a `main` — histórico: los artifacts del slice declaraban "Archivado/entregado 2026-08-15", pero los commits vivían solo en las ramas `s1a1`/`s1a2`/`s1b` sin PR. Recuperado por cherry-pick de los 6 commits (`616bde7`..`951c4d3`) sobre `main` actual (con S2 ya integrado) + fix de lint heredado. Validado local: gate completo (383 passed con tests S1 incluidos) + ruff limpio.
+> **Estado**: ✅ Mergeado a `main` vía PR #28 (2026-08-19) — histórico: los artifacts del slice declaraban "Archivado/entregado 2026-08-15", pero los commits vivían solo en las ramas `s1a1`/`s1a2`/`s1b` sin PR. Recuperado por cherry-pick de los 6 commits (`616bde7`..`951c4d3`) sobre `main` actual (con S2 ya integrado) + fix de lint heredado. Validado local: gate completo (383 passed con tests S1 incluidos) + ruff limpio.
 
 ### T-S1-01: Migración 011 — leads.qualification_score + DROP NOT NULL video_id
 - **Descripción**: Crear `agency/migrations/011_leads_qualification.sql`: `ADD COLUMN IF NOT EXISTS qualification_score INTEGER NOT NULL DEFAULT 0`, `platform TEXT NOT NULL DEFAULT 'instagram'`, `dedup_hash TEXT`, `ALTER COLUMN video_id DROP NOT NULL` (el webhook no trae video), `CREATE UNIQUE INDEX uq_leads_dedup_hash` y `CREATE INDEX idx_leads_status`.
@@ -192,7 +192,9 @@ Orden de implementación: S1 (DM Leads CRM, PR #1) → S2 (Voice Personas, PR #2
 
 ## S4 — Competitor Benchmark (PR #4)
 
-### T-S4-01: Migración 014 — competitor_accounts
+> **Estado**: ✅ Mergeado a `main` vía PR #30 (2026-08-19). Implementación completa T-S4-01..06 con TDD estricto. Nota operativa: el primer arranque del sub-agente `sdd-apply` devolvió vacío en dos intentos; se delegó al agente `general` con el mismo contrato y quedó implementado. Gate completo: 417 passed, 3 skipped, 1 deselected + ruff limpio (se corrigió un F841 en un test). 5 work units con commits convencionales.
+
+### T-S4-01: Migración 014 — competitor_accounts ✅
 - **Descripción**: Crear `agency/migrations/014_competitor_accounts.sql`: tabla `competitor_accounts` (id, tenant_id FK CASCADE, platform, username, display_name, niche, is_active, created_at) + `idx_competitor_accounts_tenant (tenant_id, is_active)`.
 - **REQs**: REQ-COMP-01
 - **Depende de**: —
@@ -200,7 +202,7 @@ Orden de implementación: S1 (DM Leads CRM, PR #1) → S2 (Voice Personas, PR #2
 - **Criterios**: `pytest tests/unit/test_db_indexes.py` (extendido: migración 014 existe) + `test_competitor_ingest.py`
 - **Estimación**: ~25 líneas
 
-### T-S4-02: Modelo CompetitorAccount
+### T-S4-02: Modelo CompetitorAccount ✅
 - **Descripción**: En `agency/backend/db/models.py`, agregar `CompetitorAccount` con los campos de 014.
 - **REQs**: REQ-COMP-01
 - **Depende de**: T-S4-01
@@ -208,7 +210,7 @@ Orden de implementación: S1 (DM Leads CRM, PR #1) → S2 (Voice Personas, PR #2
 - **Criterios**: `pytest tests/unit/test_competitor_ingest.py` (modelo crea fila con tenant/platform/niche)
 - **Estimación**: ~15 líneas
 
-### T-S4-03: rag_context con fuente (source)
+### T-S4-03: rag_context con fuente (source) ✅
 - **Descripción**: En `agency/backend/services/rag_context.py`, extender `index_winning_pattern(tenant_id, pattern_text, viral_score, niche="", source="own", account_id=None)` (payload `+{"source", "account_id"}`; `"own"` = compat con `analytics_agent`, mismo hash 384-d de `simple_embedding`) y `get_winning_patterns(niche="", query="", limit=3, source=None)` con filtro opcional.
 - **REQs**: REQ-COMP-03, REQ-COMP-04
 - **Depende de**: T-S4-02
@@ -216,7 +218,7 @@ Orden de implementación: S1 (DM Leads CRM, PR #1) → S2 (Voice Personas, PR #2
 - **Criterios**: `pytest tests/unit/test_ingest_knowledge.py` o `test_competitor_ingest.py` (payload con `source="competitor"`; filtro por source; default `"own"` no rompe analytics_agent)
 - **Estimación**: ~25 líneas
 
-### T-S4-04: Servicio competitor_ingest
+### T-S4-04: Servicio competitor_ingest ✅
 - **Descripción**: Crear `agency/backend/services/competitor_ingest.py` con `ingest_competitor(account) -> int`: `asearxng_search_sanitized(f"{username} {niche} gancho viral", num_results=5)` (cache 6h existente) → `extract_hook_structure(title, snippet)` → `index_winning_pattern(..., source="competitor", account_id=...)` en Qdrant. Solo cuentas `is_active`.
 - **REQs**: REQ-COMP-02, REQ-COMP-03
 - **Depende de**: T-S4-03
@@ -224,7 +226,7 @@ Orden de implementación: S1 (DM Leads CRM, PR #1) → S2 (Voice Personas, PR #2
 - **Criterios**: RED `pytest tests/unit/test_competitor_ingest.py` (hook indexado con `source="competitor"` y hash 384-d) → GREEN
 - **Estimación**: ~85 líneas (+ ~60 test)
 
-### T-S4-05: Router competitors CRUD + trigger ingestión
+### T-S4-05: Router competitors CRUD + trigger ingestión ✅
 - **Descripción**: Crear `agency/backend/routers/competitors.py` (prefijo `/api/v1/tenants/{tenant_id}`): `GET /competitors`, `POST /competitors` `{platform, username, display_name, niche}`, `PATCH /competitors/{id}` (toggle `is_active`) y `POST /competitors/{id}/ingest` → dispara `ingest_competitor`.
 - **REQs**: REQ-COMP-01, REQ-COMP-02
 - **Depende de**: T-S4-04
@@ -232,7 +234,7 @@ Orden de implementación: S1 (DM Leads CRM, PR #1) → S2 (Voice Personas, PR #2
 - **Criterios**: `pytest tests/unit/test_competitor_benchmark_api.py` (creación persiste; ingest manual dispara indexación)
 - **Estimación**: ~70 líneas
 
-### T-S4-06: Endpoint GET /{tenant}/rag/benchmark
+### T-S4-06: Endpoint GET /{tenant}/rag/benchmark ✅
 - **Descripción**: En `agency/backend/routers/rag.py`, agregar `GET /{tenant}/rag/benchmark?niche=X&limit=5` → `{"own_hooks", "competitor_hooks", "top_similar", "gaps"}`: propios (`source="own"` o ausente) vs ajenos (`source="competitor"` y solo cuentas activas), top-N por similitud + gap analysis determinista por estructura.
 - **REQs**: REQ-COMP-04
 - **Depende de**: T-S4-03, T-S4-04
