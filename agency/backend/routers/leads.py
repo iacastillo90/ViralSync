@@ -15,14 +15,15 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 try:
-    from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy import select
     from backend.db.session import get_async_db
     from backend.db.models import Lead
     HAS_SQLALCHEMY = True
 except ImportError:
     HAS_SQLALCHEMY = False
-    get_async_db = lambda: None
+
+    def get_async_db():
+        return None
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["Leads Inbound"])
 
@@ -95,20 +96,20 @@ async def get_tenant_leads(
         leads_orm = result.scalars().all()
         return [
             {
-                "id": l.id,
-                "tenant_id": l.tenant_id,
-                "video_id": l.video_id,
-                "keyword": l.keyword,
-                "ig_user_id": l.ig_user_id,
-                "mensaje_original": l.mensaje_original,
-                "origen": l.origen,
-                "status": l.status,
-                "qualification_score": l.qualification_score,
-                "intent": _extract_intent_from_history(l.conversacion_history),
-                "calificado_at": l.calificado_at.isoformat() if l.calificado_at else None,
-                "handled_by_human_at": l.handled_by_human_at.isoformat() if l.handled_by_human_at else None,
+                "id": lead.id,
+                "tenant_id": lead.tenant_id,
+                "video_id": lead.video_id,
+                "keyword": lead.keyword,
+                "ig_user_id": lead.ig_user_id,
+                "mensaje_original": lead.mensaje_original,
+                "origen": lead.origen,
+                "status": lead.status,
+                "qualification_score": lead.qualification_score,
+                "intent": _extract_intent_from_history(lead.conversacion_history),
+                "calificado_at": lead.calificado_at.isoformat() if lead.calificado_at else None,
+                "handled_by_human_at": lead.handled_by_human_at.isoformat() if lead.handled_by_human_at else None,
             }
-            for l in leads_orm
+            for lead in leads_orm
         ]
     except Exception as exc:
         # Error de DB → 503 explícito. Nunca devolver datos de ejemplo que enmascaren el fallo.

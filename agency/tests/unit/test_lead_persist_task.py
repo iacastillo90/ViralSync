@@ -407,7 +407,6 @@ def test_webhook_endpoint_returns_500_on_sync_failure_not_ack():
     from httpx import AsyncClient, ASGITransport
     from backend.main import app
 
-    tenant_c = str(uuid.uuid4())
     payload = {
         "object": "instagram",
         "entry": [

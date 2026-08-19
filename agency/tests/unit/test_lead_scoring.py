@@ -6,8 +6,6 @@ keyword + intención clasificada -> score 0-100 y status Nuevo/Contactado/Califi
 Servicio sin IO, determinista (patrón trend_scorer).
 """
 
-import pytest
-
 from backend.services.lead_scoring import score_lead
 
 
