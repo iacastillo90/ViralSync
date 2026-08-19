@@ -127,6 +127,26 @@ class VoicePersona(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
+class CompetitorAccount(Base):
+    # Alineada con migrations/014_competitor_accounts.sql (REQ-COMP-01): catálogo
+    # de cuentas competidoras por tenant (S4 — Competitor Benchmark). La ingestión
+    # (REQ-COMP-02) indexa hooks con source="competitor" y el benchmark (REQ-COMP-04)
+    # excluye las cuentas inactivas vía idx_competitor_accounts_tenant.
+    __tablename__ = "competitor_accounts"
+    __table_args__ = (
+        Index("idx_competitor_accounts_tenant", "tenant_id", "is_active"),
+    )
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    platform: Mapped[str] = mapped_column(String(32), nullable=False, default="instagram")
+    username: Mapped[str] = mapped_column(Text, nullable=False)
+    display_name: Mapped[Optional[str]] = mapped_column(Text)
+    niche: Mapped[Optional[str]] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+
+
 class Niche(Base):
     # Alineada con migrations/001_init_schema.sql (24-31): micronicho/ppp/
     # personaje_marca_json. La migración SQL es la fuente de verdad — el DDL de
