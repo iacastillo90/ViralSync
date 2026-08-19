@@ -1,22 +1,35 @@
 """
 publisher_task.py
 
-Tarea asíncrona Celery para la auto-publicación multi-canal en producción (Instagram Reels, TikTok, YouTube Shorts).
+Tarea asíncrona Celery para la auto-publicación multi-canal (Instagram Reels, TikTok, YouTube Shorts).
 Escanea la base de datos PostgreSQL en busca de videos agendados cuyo tiempo de publicación haya vencido
 y ejecuta la llamada a la Meta Graph API para publicar el video de forma 100% autónoma.
+
+S3 — Auto-Publicación (REQ-PUB-02/04/07): el task ya NO duplica llamadas directas a la
+Meta Graph API; delega al microservicio outbound `:8002` con el MISMO contrato de
+`agents/nodes/publish.py` (`POST {PUBLISHER_URL}/publish`), con credenciales tenant-first
+(`instagram_graph_api_token_ref` / `instagram_business_account_id`, fallback a env en dev)
+y routing por `video.platform` (PublisherFactory del micro).
+Idempotencia (REQ-PUB-04): tras publicar, el video pasa a `publish_approval_status='published'`
+y deja de matchear la query de videos 'approved' vencidos; además el micro dedupea por
+idempotency_key (RESILIENCE-001).
+
+`_publish_to_instagram_reels` se conserva como helper legacy (compatibilidad con
+test_auto_publisher); el flujo productivo no lo usa.
 """
 
 import os
+import hashlib
 import logging
 import asyncio
 import httpx
 from datetime import datetime, timezone
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 from workers.celery_app import celery_app
 from backend.db.session import AsyncSessionLocal
-from backend.db.models import Video, Script, Idea
-from sqlalchemy import select
+from backend.db.models import Video, Script, Idea, Tenant
+from sqlalchemy import or_, select
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +37,21 @@ META_GRAPH_API_URL = os.getenv("META_GRAPH_API_URL", "https://graph.facebook.com
 INSTAGRAM_ACCOUNT_ID = os.getenv("INSTAGRAM_ACCOUNT_ID", "dev_instagram_account_123")
 INSTAGRAM_ACCESS_TOKEN = os.getenv("INSTAGRAM_ACCESS_TOKEN", "dev_meta_access_token_456")
 
+# Microservicio outbound de publicación (compose `video_publisher`, :8002).
+PUBLISHER_URL = os.getenv("PUBLISHER_URL", "http://localhost:8002")
+# El flujo real del micro incluye el poll de IG (~60s) + container/publish; el
+# timeout del backend debe cubrirlo (mismo valor que agents/nodes/publish.py).
+_PUBLISH_TIMEOUT = 150.0
+
 
 async def _publish_to_instagram_reels(video_url: str, caption: str) -> Dict[str, Any]:
     """
     Ejecuta el flujo de publicación de 2 pasos de la Meta Graph API para Instagram Reels:
     1. POST /{ig-user-id}/media (Crear contenedor de video reel).
     2. POST /{ig-user-id}/media_publish (Publicar el contenedor).
+
+    Legacy (compatibilidad con test_auto_publisher): el flujo productivo delega en
+    el microservicio :8002, no en este helper.
     """
     logger.info(f"[Meta API] Iniciando creación de contenedor de media para Reel: {video_url[:80]}...")
 
@@ -76,17 +98,45 @@ async def _publish_to_instagram_reels(video_url: str, caption: str) -> Dict[str,
         return {"status": "success", "media_id": creation_id, "post_id": post_id}
 
 
+def _build_credentials(tenant: Tenant) -> tuple[str, str]:
+    """Credenciales tenant-first (REQ-PUB-07).
+
+    Usa `instagram_business_account_id` / `instagram_graph_api_token_ref` del
+    tenant cuando están seteados; sin ellos cae a las variables de entorno
+    (tokens `dev_`/`token_` simulan en el adaptador del micro, AGENCY_ENV=dev).
+    """
+    user_id = tenant.instagram_business_account_id or os.getenv(
+        "INSTAGRAM_ACCOUNT_ID", "dev_instagram_account_123"
+    )
+    token = tenant.instagram_graph_api_token_ref or os.getenv(
+        "INSTAGRAM_ACCESS_TOKEN", "dev_meta_access_token_456"
+    )
+    return user_id, token
+
+
+def _publish_idempotency_key(tenant_id: str, platform: str, edited_uri: str) -> str:
+    """Stable idempotency key por (tenant, platform, video) — mismo contrato que
+    `agents/nodes/publish.py` (RESILIENCE-001): un retry del mismo publish envía la
+    misma key y el micro dedupea en vez de postear dos veces.
+    """
+    raw = f"{tenant_id}|{platform}|{edited_uri}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
 async def _process_pending_publications():
-    """Busca videos agendados vencidos y los publica autónomamente."""
+    """Busca videos 'approved' cuyo tiempo de publicación venció y los publica
+    delegando al microservicio outbound (:8002)."""
     async with AsyncSessionLocal() as session:
         now_utc = datetime.now(timezone.utc)
+        # REQ-PUB-04: videos 'approved' sin published_at (nunca programados) o
+        # con published_at vencido. Los 'published' ya no matchean (idempotente).
         stmt = (
             select(Video, Script, Idea)
             .join(Script, Video.script_id == Script.id, isouter=True)
             .join(Idea, Script.idea_id == Idea.id, isouter=True)
             .where(
                 Video.publish_approval_status == "approved",
-                Video.published_at <= now_utc,
+                or_(Video.published_at.is_(None), Video.published_at <= now_utc),
             )
         )
         result = await session.execute(stmt)
@@ -96,19 +146,55 @@ async def _process_pending_publications():
 
         published_count = 0
         for video, script, idea in rows:
-            caption_text = idea.texto if idea else "Reel ViralSync AI Commercial"
-            if script and script.gancho_0_5s:
-                caption_text = f"{script.gancho_0_5s}\n\n{caption_text}\n\n#ViralSync #MarketingAI"
-
             try:
-                res = await _publish_to_instagram_reels(video.edited_video_uri, caption_text)
-                if res.get("status") == "success":
-                    video.publish_approval_status = "published"
-                    video.instagram_post_id = res.get("post_id")
-                    video.published_at = datetime.now(timezone.utc)
-                    await session.commit()
-                    published_count += 1
-                    logger.info(f"[{video.tenant_id}] Video {video.id} marcado como 'published'.")
+                if not video.edited_video_uri:
+                    logger.warning(
+                        f"[{video.tenant_id}] Video {video.id} sin edited_video_uri: "
+                        "no se publica ni se fabrica una URL."
+                    )
+                    continue
+
+                tenant = await session.get(Tenant, video.tenant_id)
+                user_id, token = _build_credentials(tenant)
+                platform = video.platform or "instagram"
+
+                caption_text = idea.texto if idea else "Reel ViralSync AI Commercial"
+                if script and script.gancho_0_5s:
+                    caption_text = f"{script.gancho_0_5s}\n\n{caption_text}\n\n#ViralSync #MarketingAI"
+
+                payload = {
+                    "tenant_id": video.tenant_id,
+                    "video_url": video.edited_video_uri,
+                    "caption": caption_text,
+                    "platform": platform,
+                    "instagram_user_id": user_id,
+                    "access_token": token,
+                    "idempotency_key": _publish_idempotency_key(
+                        video.tenant_id, platform, video.edited_video_uri
+                    ),
+                }
+
+                async with httpx.AsyncClient(timeout=_PUBLISH_TIMEOUT) as client:
+                    resp = await client.post(f"{PUBLISHER_URL}/publish", json=payload)
+                    resp.raise_for_status()
+                    result_json = resp.json()
+
+                post_id = result_json.get("published_post_id") if isinstance(result_json, dict) else None
+                if not post_id:
+                    logger.error(
+                        f"[{video.tenant_id}] Publisher devolvió respuesta sin published_post_id "
+                        f"para video {video.id}: no se inventa un id."
+                    )
+                    continue
+
+                video.instagram_post_id = post_id
+                video.published_at = datetime.now(timezone.utc)
+                video.publish_approval_status = "published"
+                await session.commit()
+                published_count += 1
+                logger.info(
+                    f"[{video.tenant_id}] Video {video.id} publicado en '{platform}' con Post ID '{post_id}'."
+                )
             except Exception as exc:
                 logger.error(f"[{video.tenant_id}] Error publicando video {video.id}: {exc}")
 
