@@ -59,11 +59,15 @@ class JSON2VideoClient:
         keywords: List[str],
         tenant_id: str,
         title: str = "ViralSync Marketing Video",
+        voice: str = "es-MX-JorgeNeural",
     ) -> str:
         """
         Envía un payload de video a JSON2Video v2 API y realiza polling hasta que termine.
         Usa elementos de tipo 'voice' (Azure TTS) para no depender de almacenamiento local expuesto.
         Retorna la URL final del video .mp4 hospedado en la nube.
+
+        ``voice`` (REQ-VOICE-03): voz Azure a usar en cada elemento voice; la
+        persona del guion la inyecta el worker de render (json2video_voice).
         """
         if not self.api_key:
             raise ValueError("JSON2VIDEO_API_KEY no está configurada")
@@ -99,7 +103,7 @@ class JSON2VideoClient:
                     "type": "voice",
                     "text": block["text"],
                     "model": "azure",
-                    "voice": "es-MX-JorgeNeural"
+                    "voice": voice
                 },
                 {
                     "type": "text",

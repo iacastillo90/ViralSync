@@ -6,7 +6,6 @@ con tolerancia a fallos y fallback al microservicio local.
 """
 
 import os
-import pytest
 from unittest.mock import patch, MagicMock
 from agents.mcp_servers.json2video_client import JSON2VideoClient
 from workers.video_edit_task import trigger_video_render
@@ -129,6 +128,86 @@ def test_trigger_video_render_json2video_success():
         assert result["status"] == "completed"
         assert result["provider"] == "json2video"
         assert result["video_url"] == "https://assets.json2video.com/renders/project_ok.mp4"
+
+
+def _captured_render(voice=None):
+    """Ejecuta render_video con mocks de red y devuelve el payload POST capturado."""
+    client = JSON2VideoClient(api_key="mock_key")
+    captured = {}
+
+    def mock_http_calls(url, *args, **kwargs):
+        if "pexels.com" in str(url):
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {"videos": []}
+            return resp
+        if "project=" in str(url):
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {
+                "success": True,
+                "movie": {"status": "done", "url": "https://cdn.example.com/video.mp4"},
+            }
+            return resp
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {"success": True, "project": "proj_voice_test"}
+        captured["payload"] = kwargs.get("json")
+        return resp
+
+    script = {
+        "gancho_0_5s": "3 consejos rápidos de productividad.",
+        "contexto_5_30s": "Sistematiza tus flujos diarios.",
+        "moraleja_30_50s": "El tiempo es tu recurso más escaso.",
+        "cta_50_60s": "Síguenos para más.",
+    }
+
+    with patch("httpx.Client.get", side_effect=mock_http_calls), \
+         patch("httpx.Client.post", side_effect=mock_http_calls), \
+         patch("time.sleep", return_value=None):
+        video_url = client.render_video(
+            script=script,
+            keywords=["automation"],
+            tenant_id="tenant-voice-test",
+            title="Voz Parametrizada",
+            **({"voice": voice} if voice else {}),
+        )
+    assert video_url == "https://cdn.example.com/video.mp4"
+    assert "payload" in captured, "El payload POST debe haberse capturado"
+    return captured["payload"]
+
+
+def _voice_elements(payload):
+    """Extrae los elementos {type: 'voice', model: 'azure'} del payload de escenas."""
+    scenes = payload.get("scenes") or []
+    return [
+        elem
+        for scene in scenes
+        for elem in (scene.get("elements") or [])
+        if elem.get("type") == "voice" and elem.get("model") == "azure"
+    ]
+
+
+def test_render_video_uses_parameterized_voice():
+    """REQ-VOICE-03: render_video(..., voice="X") usa `voice: "X"` en todos los
+    elementos voice del payload, en lugar del es-MX-JorgeNeural hardcodeado."""
+    payload = _captured_render(voice="es-ES-AlvaroNeural")
+    voices = _voice_elements(payload)
+    assert voices, "El payload debe contener elementos voice (azure)"
+    for elem in voices:
+        assert elem["voice"] == "es-ES-AlvaroNeural", (
+            f"El payload debe usar la voz parametrizada, recibió {elem['voice']}"
+        )
+
+
+def test_render_video_defaults_to_es_mx_jorge_voice():
+    """REQ-VOICE-03: sin voice explícito, el payload conserva el default
+    es-MX-JorgeNeural (compatibilidad con el comportamiento previo)."""
+    payload = _captured_render()
+    voices = _voice_elements(payload)
+    assert voices, "El payload debe contener elementos voice (azure)"
+    for elem in voices:
+        assert elem["voice"] == "es-MX-JorgeNeural"
 
 
 @patch.dict(os.environ, {
