@@ -10,7 +10,7 @@ import os
 import asyncio
 from typing import AsyncGenerator, Optional
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, HTTPException, Header, status, Depends
+from fastapi import FastAPI, Request, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -21,6 +21,7 @@ from backend.webhooks.instagram_inbound import process_instagram_webhook_payload
 
 from backend.logging_config import setup_logging
 from backend.db.session import init_db
+from backend.observability import setup_observability
 from backend import __version__
 
 # Importación de Routers Modularizados
@@ -62,9 +63,6 @@ async def lifespan(_app: FastAPI):
     yield
     if not is_force_sqlite():
         await close_postgres_checkpointer()
-
-
-from backend.observability import setup_observability
 
 app = FastAPI(
     title="ViralSync Platform API Enterprise",

@@ -22,7 +22,9 @@ try:
     HAS_SQLALCHEMY = True
 except ImportError:
     HAS_SQLALCHEMY = False
-    get_async_db = lambda: None
+
+    def get_async_db():
+        return None
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["Scripts 4 Bloques"])
 
